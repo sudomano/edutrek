@@ -1,0 +1,479 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:hive/hive.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart'; // Import the file_picker package
+import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/school_info.dart';
+import 'package:zitf_system/database/student.dart';
+import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/teacher_payment_purpose.dart';
+import 'package:zitf_system/database/teacher_payments.dart';
+import 'package:zitf_system/database/teachers.dart';
+import 'package:zitf_system/database/terms.dart';
+import 'package:zitf_system/database/withdrawalshome.dart';
+import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/reusable_codes/footer/footer.dart';
+import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
+
+class ImportClassesPages extends StatefulWidget {
+  @override
+  _ImportClassesPagesState createState() => _ImportClassesPagesState();
+}
+
+class _ImportClassesPagesState extends State<ImportClassesPages> {
+  int _selectedIndex = 0;
+
+  void _handleItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    onItemTapped(context, index); // Use the navigation logic
+  }
+
+  Box<Classes>? _classesBox;
+  Box<TeacherPaymentsPurposes>? _teacherPaymentsPurposesBox;
+  Box<PaymentPurpose>? _paymentPurposesBox;
+  Box<StudentPayment>? _studentPaymentsBox;
+  Box<TeacherPayment>? _teacherPaymentsBox;
+  Box<Student>? _studentsBox;
+  Box<Withdrawal>? _withdrawalsBox;
+  Box<Teachers>? _teachersBox;
+  Box<School>? _schoolBox;
+  Box<Terms>? _termsBox;
+  bool _isImporting = false; // To track import status
+
+  @override
+  void initState() {
+    super.initState();
+    _openHiveBoxes();
+  }
+
+  Future<void> _openHiveBoxes() async {
+    _classesBox = await Hive.openBox<Classes>('classes');
+    _teacherPaymentsPurposesBox = await Hive.openBox<TeacherPaymentsPurposes>(
+        'teacher_payments_purposes');
+    _paymentPurposesBox =
+        await Hive.openBox<PaymentPurpose>('payment_purposes');
+    _studentPaymentsBox =
+        await Hive.openBox<StudentPayment>('student_payments');
+    _teacherPaymentsBox =
+        await Hive.openBox<TeacherPayment>('teacher_payments');
+    _studentsBox = await Hive.openBox<Student>('students');
+    _withdrawalsBox = await Hive.openBox<Withdrawal>('withdrawals');
+    _teachersBox = await Hive.openBox<Teachers>('teachers');
+    _schoolBox = await Hive.openBox<School>('school');
+    _termsBox = await Hive.openBox<Terms>('terms');
+    print('All Hive boxes opened successfully.');
+  }
+
+  Future<void> importHiveData() async {
+    setState(() {
+      _isImporting = true; // Set importing status
+    });
+
+    try {
+      print('Starting data import...');
+
+      // Pick a JSON file
+      FilePickerResult? result = await FilePicker.platform
+          .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+      if (result != null) {
+        String filePath = result.files.single.path!;
+        String jsonData = await File(filePath).readAsString();
+        Map<String, dynamic> importData = jsonDecode(jsonData);
+
+        // Clear existing data (optional)
+        await _clearHiveData();
+
+        // Deserialize and save data
+        await _deserializeAndSave(
+            importData['classes'], _classFromJson, _classesBox);
+        await _deserializeAndSave(importData['teacher_payments_purposes'],
+            _teacherPaymentsPurposeFromJson, _teacherPaymentsPurposesBox);
+        await _deserializeAndSave(importData['payment_purposes'],
+            _paymentPurposeFromJson, _paymentPurposesBox);
+        await _deserializeAndSave(importData['student_payments'],
+            _studentPaymentFromJson, _studentPaymentsBox);
+        await _deserializeAndSave(importData['teacher_payments'],
+            _teacherPaymentFromJson, _teacherPaymentsBox);
+        await _deserializeAndSave(
+            importData['students'], _studentInfoFromJson, _studentsBox);
+        await _deserializeAndSave(
+            importData['withdrawals'], _withdrawalFromJson, _withdrawalsBox);
+        await _deserializeAndSave(
+            importData['teachers'], _teacherFromJson, _teachersBox);
+        await _deserializeAndSave(
+            importData['school'], _schoolFromJson, _schoolBox);
+        await _deserializeAndSave(
+            importData['terms'], _termsFromJson, _termsBox);
+
+        print('Data imported successfully.');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Data imported successfully.'),
+        ));
+      } else {
+        print('File selection canceled.');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error importing data: $e');
+      debugPrint('Stack trace: $stackTrace');
+    } finally {
+      setState(() {
+        _isImporting = false; // Reset importing status
+      });
+      print('Data import process completed.');
+    }
+  }
+
+  Future<void> _clearHiveData() async {
+    await _classesBox?.clear();
+    await _teacherPaymentsPurposesBox?.clear();
+    await _paymentPurposesBox?.clear();
+    await _studentPaymentsBox?.clear();
+    await _teacherPaymentsBox?.clear();
+    await _studentsBox?.clear();
+    await _withdrawalsBox?.clear();
+    await _teachersBox?.clear();
+    await _schoolBox?.clear();
+    await _termsBox?.clear();
+  }
+
+  Future<void> _deserializeAndSave<T>(List<dynamic>? data,
+      T Function(Map<String, dynamic>) fromJson, Box<T>? box) async {
+    if (data != null) {
+      for (var item in data) {
+        T obj = fromJson(item);
+        await box?.add(obj);
+      }
+    }
+  }
+
+  // Helper function to decode string to List<String>
+  List<String> _decodeToList(dynamic value) {
+    if (value is String) {
+      // If it's a string, try to decode it as JSON
+      try {
+        return List<String>.from(jsonDecode(value));
+      } catch (e) {
+        print('Error decoding string to List: $e');
+        return [];
+      }
+    } else if (value is List) {
+      // If it's already a list, return it directly
+      return List<String>.from(value);
+    }
+    return [];
+  }
+
+  // JSON Deserialization methods
+  Classes _classFromJson(Map<String, dynamic> json) {
+    return Classes(
+      id: json['id'],
+      className: json['className'],
+      classCode: json['classCode'],
+      date: DateTime.parse(json['date']),
+      termId: json['termId'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+    );
+  }
+
+  School _schoolFromJson(Map<String, dynamic> json) {
+    return School(
+      id: json['id'],
+      schoolName: json['schoolName'],
+      schoolCode: json['schoolCode'],
+      schoolAddress: json['schoolAddress'],
+      schoolPhoneNumber: json['schoolPhoneNumber'],
+      schoolEmail: json['schoolEmail'],
+      termId: json['termId'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+    );
+  }
+
+  Student _studentInfoFromJson(Map<String, dynamic> json) {
+    return Student(
+      id: json['id'],
+      name: json['name'],
+      surname: json['surname'],
+      class_: json['class'],
+      gender: json['gender'],
+      age: DateTime.parse(json['age']),
+      nationality: json['nationality'],
+      district: json['district'],
+      nationalIdNumber: json['nationalIdNumber'],
+      studentIdNumber: json['studentIdNumber'],
+      regNumber: json['regNumber'],
+      physicalAddress: json['physicalAddress'], // Parsing age to DateTime
+      paymentStatus: json['paymentStatus'],
+      phoneNumber: json['phoneNumber'],
+      religion: json['religion'],
+      denomination: json['denomination'],
+      formerSchool: json['formerSchool'],
+      previousSchoolPerformanceResults:
+          json['previousSchoolPerformanceResults'],
+      emergencyContactName: json['emergencyContactName'],
+      emergencyContactNumber: json['emergencyContactNumber'],
+
+      isPresent: json['isPresent'],
+      enrollmentStatus: json['enrollmentStatus'],
+
+      // Correctly parsing presentDates and absentDates as lists of DateTime
+      presentDates: (json['presentDates'] as List<dynamic>)
+          .map((date) => DateTime.parse(date as String))
+          .toList(),
+      absentDates: (json['absentDates'] as List<dynamic>)
+          .map((date) => DateTime.parse(date as String))
+          .toList(),
+
+      termId: json['termId'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+    );
+  }
+
+  StudentPayment _studentPaymentFromJson(Map<String, dynamic> json) {
+    return StudentPayment(
+      id: json['id'],
+      studentName: json['studentName'],
+      studentSurname: json['studentSurname'],
+      studentClass: json['studentClass'],
+      phoneNumber: json['phoneNumber'],
+      paymentPurpose: json['paymentPurpose'],
+      amountToPay: json['amountToPay'],
+      paymentDate: DateTime.parse(json['paymentDate']),
+      termId: json['termId'],
+      receiptNumber: json['receiptNumber'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+    );
+  }
+
+  TeacherPayment _teacherPaymentFromJson(Map<String, dynamic> json) {
+    return TeacherPayment(
+      studentName: json['studentName'],
+      id: json['id'],
+      studentSurname: json['studentSurname'],
+      studentClass: json['studentClass'],
+      phoneNumber: json['phoneNumber'],
+      paymentPurpose: json['paymentPurpose'],
+      amountToPay: json['amountToPay'],
+      paymentDate: DateTime.parse(json['paymentDate']),
+      termId: json['termId'],
+      receiptNumber: json['receiptNumber'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+    );
+  }
+
+  PaymentPurpose _paymentPurposeFromJson(Map<String, dynamic> json) {
+    return PaymentPurpose(
+      id: json['id'],
+      paymentPurpose: json['paymentPurpose'],
+      purposeAmount: json['purposeAmount'],
+      termId: json['termId'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+      purposeCode: json['purposeCode'],
+      associatedClasses: _decodeToList(['associatedClasses']),
+    );
+  }
+
+  TeacherPaymentsPurposes _teacherPaymentsPurposeFromJson(
+      Map<String, dynamic> json) {
+    return TeacherPaymentsPurposes(
+      id: json['id'] ?? '', // Provide a default empty string if null
+      paymentPurpose: json['purpose'] ?? '',
+      purposeCode: json['purposeCode'] ?? '', // Default empty string
+      purposeAmount: json['amount'] ?? 0.0, // Default value for numeric fields
+      termId: json['termId'], // Allow nullable if the field itself is nullable
+      syncStatus:
+          json['syncStatus'], // Allow nullable if the field itself is nullable
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null, // Handle nullable dates
+      operationType: json['operationType'] ?? '',
+      associatedStaff: _decodeToList(['associatedStaff']),
+// Default empty string
+    );
+  }
+
+  Teachers _teacherFromJson(Map<String, dynamic> json) {
+    return Teachers(
+      id: json['id'],
+
+      name: json['name'],
+      surname: json['surname'],
+      IdNumber: json['IdNumber'],
+      assignedClass: json['assignedClass'],
+      gender: json['gender'],
+
+      // Parsing dateOfBirth as DateTime
+      dateOfBirth: DateTime.parse(json['dateOfBirth']),
+
+      phoneNumber: json['phoneNumber'],
+      paymentPurpose: json['paymentPurpose'],
+      isPaid: json['isPaid'],
+      paymentAmount: json['paymentAmount'],
+
+      // paymentDate could be nullable, so we handle it safely
+      paymentDate: json['paymentDate'] != null
+          ? DateTime.parse(json['paymentDate'])
+          : null,
+
+      email: json['email'],
+      address: json['address'],
+
+      // Parsing hireDate as DateTime
+      hireDate: DateTime.parse(json['hireDate']),
+
+      qualifications: json['qualifications'],
+      employmentStatus: json['employmentStatus'],
+      termId: json['termId'],
+      syncStatus: json['syncStatus'],
+
+      // Handling nullable lastModified
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+
+      operationType: json['operationType'],
+      assignedClasses: _decodeToList(['assignedClasses']),
+    );
+  }
+
+  Withdrawal _withdrawalFromJson(Map<String, dynamic> json) {
+    return Withdrawal(
+      id: json['id'], // Matches 'amount' in the toJson
+
+      amount: json['amount'], // Matches 'amount' in the toJson
+      withdrawalPurpose:
+          json['withdrawalPurpose'], // Added to match withdrawalPurpose
+      termId: json['termId'], // Matches 'termId' in the toJson
+      withdrawalCode: json['withdrawalCode'],
+      // Parsing 'date' as DateTime
+      date: DateTime.parse(json['date']), // Fixed 'withdrawalDate' to 'date'
+
+      syncStatus: json['syncStatus'], // Matches 'syncStatus'
+
+      // Handling nullable lastModified
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+
+      operationType: json['operationType'], // Matches 'operationType'
+    );
+  }
+
+  Terms _termsFromJson(Map<String, dynamic> json) {
+    return Terms(
+      id: json['id'],
+      termId: json['termId'], // Adjusted to match termId
+      termName: json['termName'],
+
+      // Parsing startDate as DateTime
+      startDate: DateTime.parse(json['startDate']),
+
+      // endDate could be nullable, so we handle it safely
+      endDate: json['endDate'] != null ? DateTime.parse(json['endDate']) : null,
+
+      // Adjusted to match isActive field
+      isActive: json['isActive'],
+
+      // Adjusted to match status field
+      status: json['status'],
+
+      syncStatus: json['syncStatus'],
+
+      // Handling nullable lastModified
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+
+      operationType: json['operationType'],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLargeScreen =
+        MediaQuery.of(context).size.width > 600; // Example threshold
+
+    return Scaffold(
+      appBar: const CustomAppBar(title: 'Import Records'),
+      body: Column(
+        children: [
+          const SizedBox(
+            height: 15,
+          ),
+          buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
+          const SizedBox(
+            height: 10,
+          ),
+          Text(
+            'Local Data Backup',
+            style: GoogleFonts.montserrat(
+              fontSize: 20,
+              fontWeight: FontWeight.normal,
+              color:
+                  const Color.fromARGB(255, 0, 0, 0), // White text on gradient
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(
+            height: 40,
+          ),
+          Center(
+            child: ElevatedButton(
+              onPressed: _isImporting
+                  ? null
+                  : () async {
+                      print('import button clicked.');
+                      await importHiveData();
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            'All records have been imported successfully.'),
+                      ));
+                    },
+              child: _isImporting
+                  ? CircularProgressIndicator(color: Colors.white)
+                  : Text('Import All Database Records'),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: buildBottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onItemTapped: _handleItemTapped,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+}

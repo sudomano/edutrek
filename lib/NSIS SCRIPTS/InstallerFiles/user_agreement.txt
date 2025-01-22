@@ -1,0 +1,59 @@
+EduTrek School Management System - End User License Agreement (EULA)
+Effective Date: [01-01-2025]
+Version: 1.0.0
+
+1. AGREEMENT
+This End User License Agreement ("Agreement") is a legal agreement between you ("User") and [EduTrek Holdings] ("Company"), the owner of EduTrek School Management System ("Software"). By installing, copying, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree, do not install or use the Software.
+
+2. LICENSE GRANT
+The Company grants you a limited, non-exclusive, non-transferable license to use the Software under the following conditions:
+
+The Software is licensed, not sold, and remains the intellectual property of the Company.
+You may install and use one copy of the Software on a single device for personal, non-commercial, or internal business purposes.
+
+3. RESTRICTIONS
+You may NOT:
+
+Modify, reverse engineer, decompile, or disassemble the Software.
+Rent, lease, sublicense, or distribute the Software to third parties.
+Use the Software for illegal or unauthorized purposes.
+Remove or alter any copyright or proprietary notices in the Software.
+
+4. INTELLECTUAL PROPERTY
+The Software, including its code, documentation, appearance, structure, and organization, is the exclusive property of the Company and is protected by copyright and other intellectual property laws.
+
+5. DATA COLLECTION AND PRIVACY
+The Software may collect, store, and process personal and non-personal data for functionality purposes. The use of such data is governed by the Company's Privacy Policy, which is available at:
+[https://edutrekholdings.co.zw/privacy-policy]
+
+6. DISCLAIMER OF WARRANTIES
+
+The Software is provided "AS IS," without any express or implied warranties, including but not limited to the implied warranties of merchantability, fitness for a particular purpose, or non-infringement. The Company does not warrant that the Software will meet your requirements or operate without interruption or error.
+
+7. LIMITATION OF LIABILITY
+To the fullest extent permitted by law:
+
+The Company shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of data or profits, arising out of the use or inability to use the Software.
+The Company's total liability shall not exceed the amount you paid for the Software.
+
+8. TERMINATION
+This Agreement is effective until terminated. Your rights under this Agreement will terminate automatically without notice if you fail to comply with its terms. Upon termination, you must uninstall and destroy all copies of the Software.
+
+9. GOVERNING LAW
+This Agreement shall be governed by and construed in accordance with the laws of [Zimbabwe]. Any disputes arising under or in connection with this Agreement shall be subject to the exclusive jurisdiction of the courts of [Zimbabwe].
+
+10. UPDATES AND UPGRADES
+The Company may release updates or upgrades to the Software. Any updates provided to you shall be subject to the terms of this Agreement unless otherwise specified.
+
+11. ENTIRE AGREEMENT
+This Agreement constitutes the entire agreement between you and the Company concerning the Software and supersedes all prior agreements, whether written or oral, relating to its subject matter.
+
+12. CONTACT INFORMATION
+If you have any questions about this Agreement, you may contact the Company at:
+[EduTrek Holdings]
+[Harare Zimbabwe]
+[equiries@edutrekholdings.co.zw]
+[+263 77 330 9607]
+
+USER ACKNOWLEDGEMENT
+By clicking "I Agree," downloading, installing, or using the Software, you acknowledge that you have read this Agreement, understand it, and agree to be bound by its terms.
