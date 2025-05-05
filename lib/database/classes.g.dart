@@ -25,13 +25,15 @@ class ClassesAdapter extends TypeAdapter<Classes> {
       lastModified: fields[5] as DateTime?,
       operationType: fields[6] as String?,
       classCode: fields[7] as String?,
+      modifiedFields: (fields[8] as List?)?.cast<String>(),
+      terms: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Classes obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +49,11 @@ class ClassesAdapter extends TypeAdapter<Classes> {
       ..writeByte(6)
       ..write(obj.operationType)
       ..writeByte(7)
-      ..write(obj.classCode);
+      ..write(obj.classCode)
+      ..writeByte(8)
+      ..write(obj.modifiedFields)
+      ..writeByte(9)
+      ..write(obj.terms);
   }
 
   @override

@@ -1,87 +1,156 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:bluetooth_print/bluetooth_print.dart';
+import 'package:bluetooth_print/bluetooth_print_model.dart';
 
 class BluetoothHelper {
-  final BluetoothPrint bluetoothPrint =
-      BluetoothPrint.instance; // Correct initialization
+  final BluetoothPrint bluetoothPrint = BluetoothPrint.instance;
+  StreamSubscription<int>? _bluetoothStateSubscription;
+  StreamSubscription<List<BluetoothDevice>>? _scanSubscription;
   bool _connected = false;
+  bool _isScanning = false;
 
-  // Callback for connection state changes
+  bool get isConnected => _connected;
+
   void Function(bool isConnected, String message)? onConnectionStateChanged;
 
-  /// Initializes Bluetooth functionality
   Future<void> initBluetooth() async {
-    try {
-      // Start scanning for devices with a timeout
-      await bluetoothPrint.startScan(timeout: const Duration(seconds: 4));
+    debugPrint("🔄 Initializing Bluetooth...");
 
-      // Check if a Bluetooth connection already exists
-      bool isConnected = await bluetoothPrint.isConnected ?? false;
+    if (!await _isBluetoothEnabled()) {
+      _updateConnectionState(false, 'Bluetooth is OFF. Please enable it.');
+      return;
+    }
 
-      // Notify immediately if already connected
-      if (isConnected) {
-        _connected = true;
-        _notifyConnectionState(true, 'Already connected to the printer');
-        return;
+    if (_connected) {
+      _updateConnectionState(true, 'Already connected to printer');
+      return;
+    }
+
+    _bluetoothStateSubscription?.cancel();
+    _bluetoothStateSubscription = bluetoothPrint.state.listen((int state) {
+      debugPrint('🔄 Bluetooth state: $state');
+
+      if (state == BluetoothPrint.CONNECTED) {
+        _updateConnectionState(true, 'Connected to printer');
+      } else if (state == BluetoothPrint.DISCONNECTED) {
+        _updateConnectionState(false, 'Printer disconnected');
+      } else {
+        debugPrint('⚠️ Unknown Bluetooth state: $state');
       }
+    });
 
-      // Listen for state changes
-      bluetoothPrint.state.listen((state) {
-        debugPrint('Bluetooth state: $state');
-        switch (state) {
-          case BluetoothPrint.CONNECTED:
-            _connected = true;
-            _notifyConnectionState(true, 'Connected successfully');
-            break;
-          case BluetoothPrint.DISCONNECTED:
-            _connected = false;
-            _notifyConnectionState(false, 'Disconnected successfully');
-            break;
-          default:
-            debugPrint('Unhandled state: $state');
-            break;
-        }
+    if (_isScanning) {
+      debugPrint("⚠️ Scan already in progress. Stopping previous scan.");
+      await bluetoothPrint.stopScan();
+      _isScanning = false;
+    }
+
+    _isScanning = true;
+    List<BluetoothDevice> devices = [];
+
+    try {
+      debugPrint("🔍 Starting Bluetooth scan...");
+      await bluetoothPrint.startScan(timeout: const Duration(seconds: 5));
+
+      _scanSubscription?.cancel();
+      _scanSubscription = bluetoothPrint.scanResults.listen((result) {
+        devices = result;
       });
 
-      // Update UI if not connected
-      if (!_connected) {
-        _notifyConnectionState(false, 'Not connected. Please select a device.');
+      // Wait dynamically for scan results instead of using a fixed delay
+      await Future.delayed(const Duration(seconds: 5));
+      _scanSubscription?.cancel();
+
+      if (devices.isNotEmpty) {
+        debugPrint("✅ Found ${devices.length} device(s). Connecting...");
+        await connectToPrinter(devices.first);
+      } else {
+        debugPrint("❌ No printers found.");
+        _updateConnectionState(false, 'No printers found');
       }
     } catch (e) {
-      // Handle errors during initialization
-      debugPrint('Error initializing Bluetooth: $e');
-      _notifyConnectionState(
-          false, 'Failed to initialize Bluetooth. Please try again.');
+      debugPrint("❌ Error during Bluetooth scan: $e");
     } finally {
-      // Stop scanning
-      await bluetoothPrint.stopScan();
+      _isScanning = false;
+      try {
+        await bluetoothPrint.stopScan();
+      } catch (e) {
+        debugPrint("⚠️ Error stopping scan (already stopped?): $e");
+      }
     }
   }
 
-  /// Notifies the UI of connection state changes
-  void _notifyConnectionState(bool isConnected, String message) {
-    if (_connected != isConnected) {
-      _connected = isConnected;
-      onConnectionStateChanged?.call(isConnected, message);
+  Future<void> connectToPrinter(BluetoothDevice device) async {
+    debugPrint("🔗 Attempting to connect to printer: ${device.name}");
+
+    try {
+      await bluetoothPrint.connect(device);
+      _updateConnectionState(true, 'Connected to ${device.name}');
+      debugPrint("✅ Successfully connected to ${device.name}");
+    } catch (e) {
+      debugPrint('❌ Connection error: $e');
+      _updateConnectionState(false, 'Failed to connect to printer');
     }
   }
 
-  /// Verifies the connection status and updates the UI
+  Future<void> resetBluetooth() async {
+    debugPrint("🔄 Resetting Bluetooth...");
+
+    _bluetoothStateSubscription?.cancel();
+    _bluetoothStateSubscription = null;
+
+    try {
+      await bluetoothPrint.disconnect();
+    } catch (e) {
+      debugPrint("⚠️ Error disconnecting Bluetooth: $e");
+    }
+
+    _updateConnectionState(false, 'Bluetooth reset. Please reconnect.');
+
+    await Future.delayed(const Duration(seconds: 5));
+    await initBluetooth();
+  }
+
   Future<void> verifyConnection() async {
     try {
-      bool isConnected = await bluetoothPrint.isConnected ?? false;
-      if (isConnected && !_connected) {
-        _connected = true;
-        _notifyConnectionState(true, 'Connected successfully');
-      } else if (!isConnected && _connected) {
-        _connected = false;
-        _notifyConnectionState(false, 'Printer not connected');
+      bool currentlyConnected = (await bluetoothPrint.isConnected) ?? false;
+      if (currentlyConnected != _connected) {
+        _updateConnectionState(currentlyConnected,
+            currentlyConnected ? 'Printer connected' : 'Printer disconnected');
       }
     } catch (e) {
-      debugPrint('Error verifying connection: $e');
+      debugPrint('❌ Error verifying connection: $e');
+      _updateConnectionState(false, 'Error verifying connection');
     }
   }
 
-  /// Returns the current connection status
-  bool get isConnected => _connected;
+  Future<bool> _isBluetoothEnabled() async {
+    try {
+      int? state = await bluetoothPrint.state.firstWhere(
+        (s) =>
+            s == BluetoothPrint.CONNECTED || s == BluetoothPrint.DISCONNECTED,
+        orElse: () => BluetoothPrint.DISCONNECTED,
+      );
+      return state != BluetoothPrint.DISCONNECTED;
+    } catch (e) {
+      debugPrint('❌ Error checking Bluetooth state: $e');
+      return false;
+    }
+  }
+
+  void _updateConnectionState(bool isConnected, String message) {
+    if (_connected != isConnected) {
+      _connected = isConnected;
+      onConnectionStateChanged?.call(_connected, message);
+      debugPrint('🔔 Connection State Changed: $message');
+    }
+  }
+
+  void dispose() {
+    _bluetoothStateSubscription?.cancel();
+    _scanSubscription?.cancel();
+    bluetoothPrint.stopScan();
+    _connected = false;
+  }
 }

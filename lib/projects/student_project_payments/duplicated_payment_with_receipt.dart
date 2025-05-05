@@ -84,11 +84,15 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
     _loadDropdownData();
 
     // Create a BluetoothHelper instance
-    final bluetoothHelper = BluetoothHelper();
+    bluetoothHelper = BluetoothHelper();
 
     // Set up the connection state change callback
     bluetoothHelper.onConnectionStateChanged = (isConnected, message) {
       debugPrint('Connection Status: $isConnected, Message: $message');
+      setState(() {
+        _connected = isConnected; // Update UI state
+        tips = message; // Update message dynamically
+      });
     };
 
     // Initialize Bluetooth
@@ -173,7 +177,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
     final matchingStudents = studentBox.values
         .where((student) =>
             student.surname.toLowerCase().contains(query.toLowerCase()) &&
-            student.termId == globalTermId)
+            student.terms!.contains(globalTermId))
         .toList();
 
     if (matchingStudents.isEmpty) {
@@ -268,8 +272,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
               child: const Text('Confirm And Do Not Print Receipt?'),
             ),
             TextButton(
-              onPressed: BluetoothHelper().isConnected ||
-                      (_connected && BluetoothStates != 0)
+              onPressed: _connected
                   ? () async {
                       Map<String, dynamic> config = {};
                       try {
@@ -492,8 +495,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                         ));
 
                         // Send the data to the printer
-                        await BluetoothHelper()
-                            .bluetoothPrint
+                        await bluetoothHelper.bluetoothPrint
                             .printReceipt(config, list);
 
                         _makePayment();
@@ -594,7 +596,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
 
       debugPrint('New Payment Created: $newPayment');
     }
-    sendSms(allAdminPaymentsInfo.toString(), uphone);
+    sendSms(allAdminPaymentsInfo, uphone);
     _showSnackBar('Student Payment Made SUCCESSFULLY.');
 
     _resetForm();
@@ -647,15 +649,10 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
     return summary;
   }
 
-  Future<String> _generateAdminPaymentSummary(
-      String studentName,
-      String studentSurname,
-      String formattedDate,
-      String? uphone,
-      String? uname) async {
+  String _generateAdminPaymentSummary(String studentName, String studentSurname,
+      String formattedDate, String? uphone, String? uname) {
     String summary = '';
-    final Box<ProjectItem> box =
-        await Hive.openBox<ProjectItem>('projectItems');
+    final Box<ProjectItem> box = Hive.box<ProjectItem>('projectItems');
 
     // Filter payment purposes based on termId == globalTermId
     final List<ProjectItem> filteredPaymentPurposes = box.values
@@ -664,7 +661,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
         .toList();
     for (var payment in filteredPaymentPurposes) {
       final paymentPurpose = payment.name.toUpperCase();
-      final paymentAmount = payment.amount;
+      final paymentAmount = double.parse(_paymentAmountController.text);
 
       summary +=
           'Student $studentName $studentSurname has paid an AMOUNT OF \$ $paymentAmount for the PURPOSE OF $paymentPurpose on the DATE: $formattedDate.\n';
@@ -735,7 +732,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                                                 .toLowerCase()
                                                 .contains(
                                                     query.toLowerCase())) &&
-                                        student.termId == globalTermId)
+                                        student.terms!.contains(globalTermId))
                                     .toList();
                               });
                             },
@@ -809,7 +806,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
               return FloatingActionButton(
                 child: const Icon(Icons.search),
                 onPressed: () => bluetoothPrint.startScan(
-                    timeout: const Duration(seconds: 4)),
+                    timeout: const Duration(seconds: 5)),
               );
             }
           },
@@ -846,9 +843,9 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
               child: Column(
                 children: [
                   RefreshIndicator(
-                    onRefresh: () => BluetoothHelper().bluetoothPrint.startScan(
-                          timeout: const Duration(seconds: 4),
-                        ),
+                    onRefresh: () => bluetoothHelper.bluetoothPrint.startScan(
+                      timeout: const Duration(seconds: 5),
+                    ),
                     child: SingleChildScrollView(
                       child: Column(
                         children: <Widget>[
@@ -865,8 +862,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                           ),
                           const Divider(),
                           StreamBuilder<List<BluetoothDevice>>(
-                            stream:
-                                BluetoothHelper().bluetoothPrint.scanResults,
+                            stream: bluetoothHelper.bluetoothPrint.scanResults,
                             initialData: const [],
                             builder: (c, snapshot) => Column(
                               children: snapshot.data!
@@ -898,7 +894,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: <Widget>[
                                     OutlinedButton(
-                                      onPressed: BluetoothHelper().isConnected
+                                      onPressed: _connected
                                           ? null
                                           : () async {
                                               if (_device != null &&
@@ -907,7 +903,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                                                   tips = 'Connecting...';
                                                 });
                                                 try {
-                                                  await BluetoothHelper()
+                                                  await bluetoothHelper
                                                       .bluetoothPrint
                                                       .connect(_device!);
                                                   setState(() {
@@ -932,17 +928,18 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                                     ),
                                     const SizedBox(width: 10.0),
                                     OutlinedButton(
-                                      onPressed: BluetoothHelper().isConnected
+                                      onPressed: _connected
                                           ? () async {
                                               setState(() {
                                                 tips = 'Disconnecting...';
                                               });
                                               try {
-                                                await BluetoothHelper()
+                                                await bluetoothHelper
                                                     .bluetoothPrint
                                                     .disconnect();
                                                 setState(() {
                                                   tips = 'Disconnected';
+                                                  _connected = false;
                                                 });
                                               } catch (e) {
                                                 setState(() {
@@ -1069,6 +1066,8 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
 
   @override
   void dispose() {
+    bluetoothHelper.dispose(); // Properly dispose of BluetoothHelper
+
     _paymentAmountController.dispose();
     _studentSearchController.dispose();
     super.dispose();

@@ -72,6 +72,9 @@ class Teachers extends HiveObject {
   @HiveField(22)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  @HiveField(23)
+  List<String>? terms;
+
   Teachers({
     required this.name,
     required this.surname,
@@ -96,7 +99,8 @@ class Teachers extends HiveObject {
     this.operationType,
     this.id,
     this.modifiedFields,
-  });
+    List<String>? terms,
+  }) : terms = terms ?? [];
 
   Teachers copyWith({
     String? name,
@@ -122,6 +126,7 @@ class Teachers extends HiveObject {
     String? operationType,
     int? id,
     List<String>? modifiedFields,
+    List<String>? terms,
   }) {
     return Teachers(
       name: name ?? this.name,
@@ -147,6 +152,7 @@ class Teachers extends HiveObject {
       operationType: operationType ?? this.operationType,
       id: id ?? this.id,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      terms: terms ?? this.terms,
     );
   }
 }

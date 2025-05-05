@@ -33,7 +33,8 @@ class _AddTeacherPaymentPurposeScreenState
     final box = await Hive.box<Teachers>('teachers');
     final classes = box.values
         .where((purposeItem) =>
-            purposeItem.termId != null && purposeItem.termId == globalTermId)
+            purposeItem.termId != null &&
+            purposeItem.terms!.contains(globalTermId))
         .map((e) => '${e.IdNumber} (${e.surname} ${e.name})')
         .toList();
     setState(() {

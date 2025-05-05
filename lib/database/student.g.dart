@@ -47,13 +47,15 @@ class StudentAdapter extends TypeAdapter<Student> {
       emergencyContactNumber: fields[29] as String?,
       healthStauts: fields[30] as String?,
       healthDetailedInformation: fields[31] as String?,
+      modifiedFields: (fields[32] as List?)?.cast<String>(),
+      terms: (fields[33] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Student obj) {
     writer
-      ..writeByte(30)
+      ..writeByte(32)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -113,7 +115,11 @@ class StudentAdapter extends TypeAdapter<Student> {
       ..writeByte(30)
       ..write(obj.healthStauts)
       ..writeByte(31)
-      ..write(obj.healthDetailedInformation);
+      ..write(obj.healthDetailedInformation)
+      ..writeByte(32)
+      ..write(obj.modifiedFields)
+      ..writeByte(33)
+      ..write(obj.terms);
   }
 
   @override

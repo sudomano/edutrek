@@ -19,15 +19,16 @@ class _DeleteTeacherScreenState extends State<DeleteTeacherScreen> {
 
   void _searchTeacher() async {
     final box = await Hive.openBox<Teachers>('teachers');
-    final classes =
-        box.values.where((class_) => class_.termId == globalTermId).toList();
+    final classes = box.values
+        .where((class_) => class_.terms!.contains(globalTermId))
+        .toList();
     final searchTerm = _indexController.text.toLowerCase();
 
     final teacherWithIdNumber = classes
         .where((teachers) =>
             teachers.IdNumber.toLowerCase()
                 .startsWith(searchTerm.toLowerCase()) &&
-            teachers.termId == globalTermId)
+            teachers.terms!.contains(globalTermId))
         .toList();
     teacherWithIdNumber.sort((a, b) => a.surname.compareTo(b.surname));
 
@@ -39,7 +40,7 @@ class _DeleteTeacherScreenState extends State<DeleteTeacherScreen> {
   void _deleteTeacher(Teachers teacherToDelete) async {
     final box = await Hive.openBox<Teachers>('teachers');
     final paymentBox = await Hive.openBox<TeacherPayment>('teacher_payments');
-    if (teacherToDelete.termId == globalTermId) {
+    if (teacherToDelete.terms!.contains(globalTermId)) {
       final classNameToDelete = teacherToDelete.name.toLowerCase();
       final classSurnameToDelete = teacherToDelete.surname.toLowerCase();
       final classClassToDelete = teacherToDelete.assignedClass;
@@ -104,7 +105,7 @@ class _DeleteTeacherScreenState extends State<DeleteTeacherScreen> {
     // Filter classes by termId before deleting
     final classesToDelete = box.values
         .cast<Teachers>()
-        .where((c) => c.termId == globalTermId)
+        .where((c) => c.terms!.contains(globalTermId))
         .toList();
 
     for (var classRecord in classesToDelete) {

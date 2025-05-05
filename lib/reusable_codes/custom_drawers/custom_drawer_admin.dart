@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:zitf_system/admin/home_screen.dart';
 import 'package:zitf_system/admin/purpose_home_screen.dart';
 import 'package:zitf_system/all_payments/payments_home.dart';
 import 'package:zitf_system/classes/classes_home.dart';
+import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/registers/registershome.dart';
 import 'package:zitf_system/revenues/accounts_vs_incomes_home.dart';
 import 'package:zitf_system/revenues/expenditures/expenditures_home.dart';
@@ -24,192 +26,165 @@ class CustomDrawerAdmin extends StatelessWidget {
     final isAdmin = loggedInUser?.role.toLowerCase() == 'admin';
     final isSecretary = loggedInUser?.role.toLowerCase() == 'secretary';
     final isTeacher = loggedInUser?.role.toLowerCase() == 'teacher';
-
     final isAccounttant = loggedInUser?.role.toLowerCase() == 'accountant';
     final isSubAdmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final currentTerm = globalTermId;
 
-    const EdgeInsets.only(left: 48.0); // Adjust the left padding
+    return LayoutBuilder(builder: (context, constraints) {
+      bool isLargeScreen = constraints.maxWidth >= 500;
 
-    return Center(
-      child: Drawer(
-        child: Container(
-          color: const Color.fromRGBO(
-              240, 240, 240, 1), // Background color for the entire drawer
-
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 250,
-            ),
-            child: IntrinsicWidth(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  SizedBox(
-                    height: 100,
-                    child: DrawerHeader(
-                      decoration: const BoxDecoration(
-                        color: Color.fromRGBO(1, 120, 131, 1),
-                      ),
-                      child: Center(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${loggedInUser?.username ?? "User"}',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                '${loggedInUser?.role ?? "Role"}',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
+      return Container(
+        width: 50,
+        color: const Color.fromRGBO(240, 240, 240, 1),
+        child: Column(
+          children: [
+            Container(
+              height: 50,
+              color: const Color.fromARGB(255, 218, 218, 218),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FittedBox(
+                      child: Text(
+                        currentTerm?.toUpperCase() ?? "NO SELECTED TERM YET!",
+                        style: GoogleFonts.montserrat(
+                          fontSize: 18,
+                          fontWeight: FontWeight.normal,
+                          color: const Color.fromARGB(255, 0, 0, 0),
                         ),
                       ),
                     ),
-                  ),
-                  // Back Button
-                  ListTile(
-                    leading:
-                        const Icon(Icons.arrow_back, color: Colors.blueAccent),
-                    title: Text(
-                      'Back',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 13.0,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(255, 0, 0, 0),
-                        letterSpacing: 1.2,
+                    FittedBox(
+                      child: Text(
+                        loggedInUser?.role ?? "Role",
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          color: const Color.fromARGB(179, 0, 0, 0),
+                        ),
                       ),
                     ),
-                    onTap: () {
-                      Navigator.pop(context); // Close the drawer and go back
-                    },
-                  ),
-                  const Divider(),
-                  if (isAdmin || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.info,
-                      text: 'School Information',
-                      target: const SchoolHomeScreen(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.date_range,
-                      text: 'School Terms',
-                      target: const ManageTermsScreen(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.class_,
-                      text: 'School Classes',
-                      target: const ClassesHomeScreen(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.school,
-                      text: 'School Students',
-                      target: const CreateStudents(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.payment,
-                      text: 'Student Payment Purposes',
-                      target: const Createpayments(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.attach_money,
-                      text: ' Student Payments',
-                      target: const PurposeHome(),
-                    ),
-                  if (isAdmin || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.work_outline,
-                      text: 'Staff Payment Purposes',
-                      target: const CreateTeacherPaymentsPurposeScreen(),
-                    ),
-                  if (isAdmin || isSubAdmin)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.person,
-                      text: 'School Staff Payments',
-                      target: const CreateTeachersoption(),
-                    ),
-                  if (isAdmin || isSubAdmin || isAccounttant)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.account_balance_wallet,
-                      text: 'Incomes',
-                      target: const AccountsVsIncomesHome(),
-                    ),
-                  if (isAdmin || isSubAdmin || isAccounttant)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.money_off,
-                      text: 'Expenditures',
-                      target: const ExpendituresHome(),
-                    ),
-                  if (isAdmin || isSecretary || isSubAdmin || isTeacher)
-                    _buildDrawerItem(
-                      context,
-                      icon: Icons.fact_check,
-                      text: 'Registers',
-                      target: const RegistersHomeScreen(),
-                    ),
-                  _buildDrawerItem(
-                    context,
-                    icon: Icons.home,
-                    text: 'Home',
-                    target: const HomeScreen(),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      if (isAdmin || isSubAdmin)
+                        _drawerItem(context, Icons.info, 'School Info',
+                            () => _navigate(context, const SchoolHomeScreen())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.date_range,
+                            'School Terms',
+                            () =>
+                                _navigate(context, const ManageTermsScreen())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.class_,
+                            'School Classes',
+                            () =>
+                                _navigate(context, const ClassesHomeScreen())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin)
+                        _drawerItem(context, Icons.school, 'School Students',
+                            () => _navigate(context, const CreateStudents())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin)
+                        _drawerItem(context, Icons.payment, 'Student  Purposes',
+                            () => _navigate(context, const Createpayments())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.attach_money,
+                            'Student Payments',
+                            () => _navigate(context, const PurposeHome())),
+                      const Divider(),
+                      if (isAdmin || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.work_outline,
+                            'Staff  Purposes',
+                            () => _navigate(context,
+                                const CreateTeacherPaymentsPurposeScreen())),
+                      const Divider(),
+                      if (isAdmin || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.person,
+                            'Staff Payments',
+                            () => _navigate(
+                                context, const CreateTeachersoption())),
+                      const Divider(),
+                      if (isAdmin || isSubAdmin || isAccounttant)
+                        _drawerItem(
+                            context,
+                            Icons.account_balance_wallet,
+                            'Incomes',
+                            () => _navigate(
+                                context, const AccountsVsIncomesHome())),
+                      const Divider(),
+                      if (isAdmin || isSubAdmin || isAccounttant)
+                        _drawerItem(context, Icons.money_off, 'Expenditures',
+                            () => _navigate(context, const ExpendituresHome())),
+                      const Divider(),
+                      if (isAdmin || isSecretary || isSubAdmin || isTeacher)
+                        _drawerItem(
+                            context,
+                            Icons.fact_check,
+                            'Registers',
+                            () => _navigate(
+                                context, const RegistersHomeScreen())),
+                      const Divider(),
+                      _drawerItem(context, Icons.home, 'Home',
+                          () => _navigate(context, const HomeScreen())),
+                      const Divider(),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _navigate(BuildContext context, Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => screen));
+  }
+
+  Widget _drawerItem(
+      BuildContext context, IconData icon, String title, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 0.5, horizontal: 8),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
+        leading: Icon(icon, color: Colors.blueAccent, size: 18),
+        title: FittedBox(
+          alignment: Alignment.centerLeft,
+          fit: BoxFit.scaleDown,
+          child: Text(
+            title,
+            style: GoogleFonts.montserrat(
+              fontSize: 12.0,
+              fontWeight: FontWeight.normal,
+              color: const Color.fromARGB(255, 0, 0, 0),
+              letterSpacing: 1.2,
             ),
           ),
         ),
+        onTap: onTap,
       ),
-    );
-  }
-
-  Widget _buildDrawerItem(
-    BuildContext context, {
-    required IconData icon,
-    required String text,
-    required Widget target,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.blueAccent),
-      title: Text(
-        text,
-        style: GoogleFonts.montserrat(
-          fontSize: 13.0, // Adjust font size
-          fontWeight: FontWeight.normal, // Font weight
-          color: const Color.fromARGB(255, 0, 0, 0), // Title color
-          letterSpacing: 1.2, // Slight letter spacing for elegance
-        ),
-      ),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => target),
-        );
-      },
     );
   }
 }

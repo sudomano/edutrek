@@ -26,13 +26,14 @@ class ProjectStudentPaymentAdapter extends TypeAdapter<ProjectStudentPayment> {
       syncStatus: fields[6] as bool?,
       lastModified: fields[7] as DateTime?,
       operationType: fields[8] as String?,
+      modifiedFields: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, ProjectStudentPayment obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.projectStudentPaymentCode)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class ProjectStudentPaymentAdapter extends TypeAdapter<ProjectStudentPayment> {
       ..writeByte(7)
       ..write(obj.lastModified)
       ..writeByte(8)
-      ..write(obj.operationType);
+      ..write(obj.operationType)
+      ..writeByte(9)
+      ..write(obj.modifiedFields);
   }
 
   @override

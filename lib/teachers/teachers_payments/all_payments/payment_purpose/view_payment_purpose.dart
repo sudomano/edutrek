@@ -252,9 +252,6 @@ class _ViewTeacherPaymentPurposesScreenState
                             DataColumn(
                                 label: Text('Must Be Paid To Staff',
                                     style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('mods',
-                                    style: TextStyle(fontSize: fontSize))),
                           ],
                           rows: purposes.map((purposeItem) {
                             return DataRow(cells: [
@@ -296,9 +293,6 @@ class _ViewTeacherPaymentPurposesScreenState
                                     : Text('No Staff selected',
                                         style: TextStyle(fontSize: fontSize)),
                               ),
-                              DataCell(Text(
-                                  purposeItem.modifiedFields.toString(),
-                                  style: TextStyle(fontSize: fontSize))),
                             ]);
                           }).toList(),
                         ),

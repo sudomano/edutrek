@@ -25,13 +25,14 @@ class ProjectItemAdapter extends TypeAdapter<ProjectItem> {
       syncStatus: fields[5] as bool?,
       lastModified: fields[6] as DateTime?,
       operationType: fields[7] as String?,
+      modifiedFields: (fields[8] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, ProjectItem obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.projectItemCode)
       ..writeByte(1)
@@ -47,7 +48,9 @@ class ProjectItemAdapter extends TypeAdapter<ProjectItem> {
       ..writeByte(6)
       ..write(obj.lastModified)
       ..writeByte(7)
-      ..write(obj.operationType);
+      ..write(obj.operationType)
+      ..writeByte(8)
+      ..write(obj.modifiedFields);
   }
 
   @override

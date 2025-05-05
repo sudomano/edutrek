@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 
@@ -42,18 +43,29 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
   List<String> _classes = [];
   List<Student> _matchingStudents = [];
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = [];
 
   @override
   void initState() {
     super.initState();
     _loadClasses();
+    _loadTerms(); // Load terms when the screen initializes
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms =
+          termsBox.values.map((term) => term.termId).toSet().toList();
+    });
   }
 
   Future<void> _loadClasses() async {
     final box = await Hive.openBox<Classes>('classes');
     setState(() {
       _classes = box.values
-          .where((c) => c.termId == globalTermId)
+          .where((c) => c.terms!.contains(globalTermId))
           .map((c) => c.className)
           .toList();
     });
@@ -61,15 +73,13 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
   void _searchStudents() async {
     final box = await Hive.openBox<Student>('students');
-    final students =
-        box.values.where((student) => student.termId == globalTermId).toList();
+    final students = box.values.toList();
     final searchQuery = _surnameController.text.toLowerCase();
 
     setState(() {
       _matchingStudents = students.where((student) {
-        return student.termId == globalTermId &&
-            (student.surname.toLowerCase().startsWith(searchQuery) ||
-                student.surname.toLowerCase().contains(searchQuery));
+        return (student.surname.toLowerCase().startsWith(searchQuery) ||
+            student.surname.toLowerCase().contains(searchQuery));
       }).toList();
     });
 
@@ -80,7 +90,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
     }
   }
 
-  void _selectStudent(Student student) {
+  void _selectStudent(Student student) async {
     setState(() {
       _foundStudent = student;
       _illnessInfoController.text =
@@ -108,8 +118,36 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
           student.emergencyContactName.toString();
       _emergencyContactNumberController.text =
           student.emergencyContactNumber.toString();
+      // Preload the selected terms
+// Ensure _selectedTerms is assigned a valid list (handle null case)
+      _selectedTerms = List<String>.from(student.terms ?? []);
       _matchingStudents = [];
     });
+    // Now, load the class's terms to override student terms
+    await _loadClassTerms(student.class_);
+  }
+
+  Future<void> _loadClassTerms(String className) async {
+    final classBox = await Hive.openBox<Classes>('classes');
+    final selectedClass = classBox.values.firstWhere(
+      (c) => c.className == className,
+      orElse: () => Classes(
+        id: -1,
+        className: '',
+        classCode: '',
+        date: DateTime(1970),
+        termId: globalTermId,
+      ),
+    );
+
+    if (selectedClass.id != -1) {
+      // Update the available terms for this class
+      setState(() {
+        _availableTerms = selectedClass.terms != null
+            ? selectedClass.terms!.toSet().toList() // Remove duplicates
+            : [];
+      });
+    }
   }
 
   @override
@@ -221,6 +259,15 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
               _buildTextField('Illness Information', _illnessInfoController),
               const SizedBox(height: 20),
+              // 🔹 Add Term Selection UI Here 🔹
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Select Terms (Update if necessary)',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTermSelection(),
+              const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => _updateStudent(_foundStudent!),
                 style: ElevatedButton.styleFrom(
@@ -238,6 +285,31 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         ),
       ),
     );
+  }
+
+// UI Section for Term Selection
+  Widget _buildTermSelection() {
+    return _availableTerms.isEmpty
+        ? const Text('No terms available')
+        : Column(
+            children: _availableTerms.map((term) {
+              return CheckboxListTile(
+                title: Text(term),
+                value: _selectedTerms.contains(term),
+                onChanged: (selected) {
+                  setState(() {
+                    if (selected == true) {
+                      _selectedTerms.add(term);
+                    } else {
+                      _selectedTerms.remove(term);
+                    }
+                    // Debug: log the selected terms after each change
+                    print('Selected terms after change: $_selectedTerms');
+                  });
+                },
+              );
+            }).toList(),
+          );
   }
 
   Widget _buildStudentDropdown() {
@@ -319,10 +391,12 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
   Widget _buildDropdownField(String label, String? selectedValue,
       List<String> items, ValueChanged<String?> onChanged) {
+    final uniqueItems = items.toSet().toList(); // Remove duplicates
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: DropdownButtonFormField<String>(
-        value: selectedValue,
+        value: uniqueItems.contains(selectedValue) ? selectedValue : null,
         decoration: InputDecoration(
           labelText: label,
           filled: true,
@@ -332,7 +406,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
             borderSide: BorderSide.none, // No border
           ),
         ),
-        items: items.map((item) {
+        items: uniqueItems.map((item) {
           return DropdownMenuItem(
             value: item,
             child: Text(item),
@@ -395,6 +469,9 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
   void _updateStudent(Student student) async {
     if (_formKey.currentState!.validate()) {
+      // Log the final terms list before updating the student record
+      print('Final selected terms before submitting: $_selectedTerms');
+
       final name = _nameController.text.toLowerCase();
       final surname = _surnameController.text.toLowerCase();
       final reg = _regNumberController.text.toLowerCase();
@@ -405,9 +482,56 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
       final status = _paymentStatusController.text.toLowerCase();
       final studentIdNumber = student.studentIdNumber;
       int? id = student.id;
+      // Fetch the current student record
+      final boxen = await Hive.openBox<Student>('students');
+
+      final currentStudent = boxen.values.firstWhere(
+        (s) => s.id == student.id,
+        orElse: () => Student(
+          id: -1,
+          name: '',
+          surname: '',
+          regNumber: '',
+          class_: '',
+          gender: '',
+          age: DateTime(1970),
+          phoneNumber: '',
+          paymentStatus: '',
+          termId: globalTermId,
+          syncStatus: false,
+          lastModified: DateTime(1970),
+          operationType: 'update',
+          physicalAddress: '',
+          terms: [],
+        ),
+      );
+
+      if (currentStudent.id == -1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: Student not found')),
+        );
+        return;
+      }
+
+      // Ensure the terms list in the student is overridden by the class terms
+      final classBox = await Hive.openBox<Classes>('classes');
+      final selectedClass = classBox.values.firstWhere(
+        (c) => c.className == _selectedClass,
+        orElse: () => Classes(
+          id: -1,
+          className: '',
+          classCode: '',
+          date: DateTime(1970),
+          termId: globalTermId,
+        ),
+      );
 
       List<String> modifiedFields = student.modifiedFields ??
           []; // Initialize with existing modified fields
+
+      if (!modifiedFields.contains('terms')) {
+        modifiedFields.add('terms');
+      }
 
 // Append new modifications without overwriting
       if (student.id != id) {
@@ -467,6 +591,11 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
       if (student.termId != globalTermId) {
         if (!modifiedFields.contains('termId')) {
           modifiedFields.add('termId');
+        }
+      }
+      if (!(student.terms!.contains(globalTermId))) {
+        if (!modifiedFields.contains('terms')) {
+          modifiedFields.add('terms');
         }
       }
       if (_physicalAddressController.text.toLowerCase().isNotEmpty) {
@@ -641,12 +770,12 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
             ? null
             : _illnessInfoController.text, // Set operationType to 'update'
         modifiedFields: modifiedFields,
+        terms: List<String>.from(_selectedTerms), // ✅ Save Updated Terms Here
       );
 
       final box = await Hive.openBox<Student>('students');
       final existingStudent = box.values.cast<Student>().firstWhere(
           (c) =>
-              c.termId == globalTermId && // Ensure termId matches
               c.name.toLowerCase() == name &&
               c.surname.toLowerCase() == surname &&
               c.regNumber.toLowerCase() == reg &&
@@ -764,6 +893,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         _selectedClass = null;
         _selectedGender = null;
         _selectedDateOfBirth = null;
+        _selectedTerms = [];
 
         // Reset form validation state
         _formKey.currentState?.reset();

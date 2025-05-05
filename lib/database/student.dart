@@ -98,6 +98,9 @@ class Student extends HiveObject {
   String? healthDetailedInformation;
   @HiveField(32)
   List<String>? modifiedFields; // Tracks fields that were modified
+  // New field: list of terms associated with the student
+  @HiveField(33)
+  List<String>? terms;
 
   Student({
     required this.name,
@@ -131,8 +134,10 @@ class Student extends HiveObject {
     this.healthStauts,
     this.healthDetailedInformation,
     this.modifiedFields,
+    List<String>? terms,
   })  : presentDates = presentDates ?? [],
-        absentDates = absentDates ?? [];
+        absentDates = absentDates ?? [],
+        terms = terms ?? [];
 
   Student copyWith({
     String? name,
@@ -166,6 +171,7 @@ class Student extends HiveObject {
     String? healthStauts,
     String? healthDetailedInformation,
     List<String>? modifiedFields,
+    List<String>? terms,
   }) {
     return Student(
       name: name ?? this.name,
@@ -202,6 +208,7 @@ class Student extends HiveObject {
       healthDetailedInformation:
           healthDetailedInformation ?? this.healthDetailedInformation,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      terms: terms ?? this.terms,
     );
   }
 }

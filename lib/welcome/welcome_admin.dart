@@ -155,7 +155,10 @@ class WelcomePage extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.lightBlueAccent, Colors.blue],
+                colors: [
+                  Color.fromARGB(255, 255, 255, 255),
+                  Color.fromARGB(255, 255, 255, 255)
+                ],
               ),
             ),
             child: Center(
@@ -224,12 +227,12 @@ class WelcomePage extends StatelessWidget {
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 20.0),
                             child: Text(
-                              '${schoolItem.schoolName} School Management System',
+                              '${schoolItem.schoolName} ',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.normal,
-                                color: Colors.white,
+                                color: Color.fromARGB(255, 0, 0, 0),
                                 shadows: [
                                   Shadow(
                                     color: Colors.black38,
@@ -249,7 +252,7 @@ class WelcomePage extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.normal,
-                                color: Colors.white,
+                                color: Color.fromARGB(255, 0, 0, 0),
                                 shadows: [
                                   Shadow(
                                     color: Colors.black38,
@@ -285,7 +288,8 @@ class WelcomePage extends StatelessWidget {
                                   const EdgeInsets.symmetric(horizontal: 5.0),
                               padding: const EdgeInsets.all(20),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.85),
+                                color: const Color.fromARGB(255, 236, 231, 231)
+                                    .withOpacity(0.85),
                                 borderRadius: BorderRadius.circular(10),
                                 boxShadow: const [
                                   BoxShadow(
@@ -329,14 +333,14 @@ class WelcomePage extends StatelessWidget {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.arrow_back_ios,
-                              color: Colors.white),
+                              color: Color.fromARGB(255, 0, 0, 0)),
                           onPressed: () {
                             // Backward functionality
                           },
                         ),
                         IconButton(
                           icon: const Icon(Icons.arrow_forward_ios,
-                              color: Colors.white),
+                              color: Color.fromARGB(255, 0, 0, 0)),
                           onPressed: () {
                             // Forward functionality
                           },
@@ -351,8 +355,9 @@ class WelcomePage extends StatelessWidget {
                         Navigator.pushNamed(context, '/home');
                       },
                       style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.blue[800],
-                        backgroundColor: Colors.white,
+                        foregroundColor: const Color.fromARGB(255, 0, 37, 79),
+                        backgroundColor:
+                            const Color.fromARGB(255, 185, 169, 169),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 30, vertical: 15),
                         shape: RoundedRectangleBorder(
@@ -365,7 +370,7 @@ class WelcomePage extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
+                          color: const Color.fromARGB(255, 0, 37, 79),
                         ),
                       ),
                     ),

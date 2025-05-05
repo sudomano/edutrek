@@ -82,7 +82,22 @@ class _DeleteTermScreenState extends State<DeleteTermScreen> {
       }).toList();
 
       for (var record in records) {
-        await box.delete((record as dynamic).key); // Adjust key if needed
+        //   await box.delete((record as dynamic).key); // Adjust key if needed
+      }
+    }
+
+    Future<void> removeTermIdFromModel(Box box) async {
+      for (var key in box.keys) {
+        var item = box.get(key);
+
+        if (item != null && item is dynamic) {
+          // Check if the termId is in the terms list and remove it
+          if (item.terms.contains(termToDelete.termId)) {
+            item.terms
+                .remove(termToDelete.termId); // Remove the termId from the list
+            await box.put(key, item); // Save the updated record
+          }
+        }
       }
     }
 
@@ -96,6 +111,13 @@ class _DeleteTermScreenState extends State<DeleteTermScreen> {
       deleteRecordsFromBox(teacherPaymentsPurposesBox),
       deleteRecordsFromBox(paymentPurposesBox),
       deleteRecordsFromBox(withdrawalsBox),
+    ]);
+
+    // Remove the termId from the terms list in all related models
+    await Future.wait([
+      removeTermIdFromModel(teachersBox),
+      removeTermIdFromModel(studentsBox),
+      removeTermIdFromModel(classesBox),
     ]);
     globalTermId == null;
     // Show a confirmation message
@@ -169,7 +191,7 @@ class _DeleteTermScreenState extends State<DeleteTermScreen> {
       }).toList();
 
       for (var record in records) {
-        await box.delete((record as dynamic).key);
+        //  await box.delete((record as dynamic).key);
       }
     }
 

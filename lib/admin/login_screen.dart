@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20.0),
                       child: Text(
-                        '${schoolItem.schoolName} School Management System',
+                        '${schoolItem.schoolName}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 20,
@@ -307,12 +307,12 @@ class _LoginScreenState extends State<LoginScreen> {
               print("Dislogged user: ${u.username}");
             }
             u.isLogged = false;
-            userBox.put(u.id.toString(), u); // Ensure key is a String
+            await u.save(); // Update the object in-place
           }
 
-          // Mark the current user as logged in
+// Mark the current user as logged in
           user.isLogged = true;
-          userBox.put(user.id.toString(), user); // Ensure key is a String
+          await user.save(); // Save changes to this object as well
 
           print("Logged-in user: ${user.username}");
 

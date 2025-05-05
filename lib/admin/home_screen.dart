@@ -9,7 +9,6 @@ import 'package:zitf_system/admin/purpose_home_screen.dart';
 import 'package:zitf_system/auth/crud_auth/crud_auth_home.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/classes/classes_home.dart';
-import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/export_import_backup_data/export_import_home.dart';
 import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_final.dart';
 import 'package:zitf_system/registers/registershome.dart';
@@ -56,13 +55,6 @@ class _MyPageState extends State<HomeScreen> {
 
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
-
-    Future<List<School>> fetchSchools() async {
-      var box = await Hive.openBox<School>('school');
-      return box.values
-          .where((schoolItem) => schoolItem.termId != null)
-          .toList();
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -114,263 +106,272 @@ class _MyPageState extends State<HomeScreen> {
             const Color.fromARGB(255, 38, 140, 191), // AppBar background color
         elevation: 4.0, // Subtle shadow
       ),
+      body: LayoutBuilder(builder: (context, constraints) {
+        return Row(
+          children: [
+            if (constraints.maxWidth >= 500)
+              SizedBox(
+                width: 190,
+                child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+              ),
+            Expanded(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
 
-//************* */
-      // Add the drawer (sidebar)
-      drawer: CustomDrawerAdmin(
-        loggedInUser: loggedInUser,
-      ), // Use the custom drawer here
-
-      body: Column(
-        children: [
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                bool isLargeScreen = constraints.maxWidth >= 600;
-                // Adjust crossAxisCount based on screen width
-                int crossAxisCount = 2; // Default 2 items per row
-                double crossAxisSpacing = 16.0;
-
-                if (constraints.maxWidth >= 1200) {
-                  crossAxisCount = 5;
-                  crossAxisSpacing = 10.0;
-                } else if (constraints.maxWidth >= 800) {
-                  crossAxisCount = 5;
-                  crossAxisSpacing = 1.0;
-                } else if (constraints.maxWidth >= 600) {
-                  crossAxisCount = 3;
-                  crossAxisSpacing = 4.0;
-                } else {
-                  crossAxisCount = 1;
-                  crossAxisSpacing = 2.0;
-                }
-                return Container(
-                  decoration: BoxDecoration(
-                    color: isLargeScreen
-                        ? Color.fromRGBO(0, 233, 254, 1)
-                        : null, // Set white background for large screens
-                    gradient: isLargeScreen
-                        ? const LinearGradient(
-                            colors: [
-                              Color.fromRGBO(0, 233, 254, 1),
-                              Color.fromARGB(255, 1, 80, 71)
-                            ], // Gradient colors for small screens
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          )
-                        : const LinearGradient(
-                            colors: [
-                              Color.fromRGBO(0, 233, 254, 1),
-                              Color.fromARGB(255, 1, 80, 71)
-                            ], // Gradient colors for small screens
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 6;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 5;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
                           ),
-                  ),
-                  child: Center(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(
-                              height: 5), // Space between the icon and text
-                          buildFutureSchoolsWidget(
-                              isLargeScreen: isLargeScreen),
-
-                          isLargeScreen
-                              ? GridView.count(
-                                  crossAxisCount: crossAxisCount,
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  crossAxisSpacing: crossAxisSpacing,
-                                  padding: const EdgeInsets.all(8),
-                                  children: [
-                                    if (admin || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.info,
-                                        text: 'School Information',
-                                        target: SchoolHomeScreen(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.date_range,
-                                        text: 'Manage Terms',
-                                        target: ManageTermsScreen(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.class_,
-                                        text: 'School Classes',
-                                        target: ClassesHomeScreen(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.school,
-                                        text: 'School Students',
-                                        target: CreateStudents(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.payment,
-                                        text: 'Student Payments',
-                                        target: PurposeHome(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || subadmin || secretary)
-                                      const ElevatedCard(
-                                        icon: Icons.work_outline,
-                                        text: 'School Staff',
-                                        target: CreateTeachersoption(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin ||
-                                        secretary ||
-                                        subadmin ||
-                                        accountant)
-                                      const ElevatedCard(
-                                        icon: Icons.account_balance_wallet,
-                                        text: 'Incomes',
-                                        target: AccountsVsIncomesHome(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin ||
-                                        secretary ||
-                                        teacher ||
-                                        subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.fact_check,
-                                        text: 'Registers',
-                                        target: RegistersHomeScreen(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.sync,
-                                        text: 'Data Sync',
-                                        target: ClassesFinal(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                    if (admin || subadmin || secretary)
-                                      const ElevatedCard(
-                                        icon: Icons.sync,
-                                        text: 'Data Backup',
-                                        target: ExportImportHome(),
-                                        isLargeScreen:
-                                            true, // Passing the large screen flag
-                                      ),
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    if (admin || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.info,
-                                        text: 'School Information',
-                                        target: SchoolHomeScreen(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.date_range,
-                                        text: 'Manage Terms',
-                                        target: ManageTermsScreen(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.class_,
-                                        text: 'School Classes',
-                                        target: ClassesHomeScreen(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.school,
-                                        text: 'School Students',
-                                        target: CreateStudents(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.payment,
-                                        text: 'Student Payments',
-                                        target: PurposeHome(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.work_outline,
-                                        text: 'School Staff',
-                                        target: CreateTeachersoption(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin ||
-                                        secretary ||
-                                        subadmin ||
-                                        accountant)
-                                      const ElevatedCard(
-                                        icon: Icons.account_balance_wallet,
-                                        text: 'Incomes',
-                                        target: AccountsVsIncomesHome(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || teacher)
-                                      const ElevatedCard(
-                                        icon: Icons.fact_check,
-                                        text: 'Registers',
-                                        target: RegistersHomeScreen(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || secretary || subadmin)
-                                      const ElevatedCard(
-                                        icon: Icons.sync,
-                                        text: 'Data Synchronization',
-                                        target: ClassesFinal(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                    if (admin || subadmin || secretary)
-                                      const ElevatedCard(
-                                        icon: Icons.sync,
-                                        text: 'Data Backup',
-                                        target: ExportImportHome(),
-                                        isLargeScreen:
-                                            false, // Passing the large screen flag
-                                      ),
-                                  ],
-                                ),
-                        ],
-                      ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  isLargeScreen
+                                      ? GridView.count(
+                                          crossAxisCount: crossAxisCount,
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          crossAxisSpacing: crossAxisSpacing,
+                                          padding: const EdgeInsets.all(8),
+                                          children: [
+                                            if (admin || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.info,
+                                                text: 'School Information',
+                                                target: SchoolHomeScreen(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.date_range,
+                                                text: 'Manage Terms',
+                                                target: ManageTermsScreen(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.class_,
+                                                text: 'School Classes',
+                                                target: ClassesHomeScreen(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.school,
+                                                text: 'School Students',
+                                                target: CreateStudents(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.payment,
+                                                text: 'Student Payments',
+                                                target: PurposeHome(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || subadmin || secretary)
+                                              const ElevatedCard(
+                                                icon: Icons.work_outline,
+                                                text: 'School Staff',
+                                                target: CreateTeachersoption(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .account_balance_wallet,
+                                                text: 'Incomes',
+                                                target: AccountsVsIncomesHome(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin ||
+                                                secretary ||
+                                                teacher ||
+                                                subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.fact_check,
+                                                text: 'Registers',
+                                                target: RegistersHomeScreen(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.sync,
+                                                text: 'Data Sync',
+                                                target: ClassesFinal(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                            if (admin || subadmin || secretary)
+                                              const ElevatedCard(
+                                                icon: Icons.sync,
+                                                text: 'Data Backup',
+                                                target: ExportImportHome(),
+                                                isLargeScreen:
+                                                    true, // Passing the large screen flag
+                                              ),
+                                          ],
+                                        )
+                                      : Column(
+                                          children: [
+                                            if (admin || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.info,
+                                                text: 'School Information',
+                                                target: SchoolHomeScreen(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.date_range,
+                                                text: 'Manage Terms',
+                                                target: ManageTermsScreen(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.class_,
+                                                text: 'School Classes',
+                                                target: ClassesHomeScreen(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.school,
+                                                text: 'School Students',
+                                                target: CreateStudents(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.payment,
+                                                text: 'Student Payments',
+                                                target: PurposeHome(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.work_outline,
+                                                text: 'School Staff',
+                                                target: CreateTeachersoption(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .account_balance_wallet,
+                                                text: 'Incomes',
+                                                target: AccountsVsIncomesHome(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || teacher)
+                                              const ElevatedCard(
+                                                icon: Icons.fact_check,
+                                                text: 'Registers',
+                                                target: RegistersHomeScreen(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.backup,
+                                                text: 'Data Synchronization',
+                                                target: ClassesFinal(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                            if (admin || subadmin || secretary)
+                                              const ElevatedCard(
+                                                icon: Icons.sync_lock_outlined,
+                                                text: 'Data Backup',
+                                                target: ExportImportHome(),
+                                                isLargeScreen:
+                                                    false, // Passing the large screen flag
+                                              ),
+                                          ],
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      }),
       bottomNavigationBar: buildBottomNavigationBar(
         currentIndex: _selectedIndex,
         onItemTapped: _handleItemTapped,

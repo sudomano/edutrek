@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/admin/home_screen.dart';
@@ -47,173 +48,175 @@ class _MyPageState extends State<ManageTermsScreen> {
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
 
     return Scaffold(
-      appBar: const CustomAppBar(title: 'Terms'),
+      appBar: const CustomAppBar(title: 'Terms Management'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 4.0;
-
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 6;
-            crossAxisSpacing = 8.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 6;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    const SizedBox(height: 10),
-                    Text(
-                      'School Terms',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? Center(
-                            child: GridView.count(
-                              crossAxisCount: crossAxisCount,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              crossAxisSpacing: crossAxisSpacing,
-                              padding: const EdgeInsets.all(8),
-                              children: [
-                                if (admin || secretary || subadmin)
-                                  ElevatedCard(
-                                    icon: Icons.swap_horiz,
-                                    text: 'Switch Terms',
-                                    target: TermSwitcher(),
-                                    isLargeScreen: true,
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
+
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 6;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 5;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? null
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(253, 253, 253, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
                                   ),
-                                if (admin || subadmin)
-                                  const ElevatedCard(
-                                    icon: Icons.calendar_today,
-                                    text: 'Create New Term',
-                                    target: TermOptionsScreen(),
-                                    isLargeScreen: true,
-                                  ),
-                                if (admin || secretary || subadmin)
-                                  const ElevatedCard(
-                                    icon: Icons.view_list,
-                                    text: 'View All Terms',
-                                    target: ViewTermsScreen(),
-                                    isLargeScreen: true,
-                                  ),
-                                if (admin || subadmin)
-                                  const ElevatedCard(
-                                    icon: Icons.search,
-                                    text: 'Search Terms',
-                                    target: SearchTermScreen(),
-                                    isLargeScreen: true,
-                                  ),
-                                if (admin || subadmin)
-                                  buildElevatedCardWithDialog(
-                                    context,
-                                    icon: Icons.update,
-                                    text: 'Update Term',
-                                    isLargeScreen: true,
-                                  ),
-                                if (admin || subadmin)
-                                  const ElevatedCard(
-                                    icon: Icons.delete,
-                                    text: 'Delete Term',
-                                    target: DeleteTermScreen(),
-                                    isLargeScreen: true,
-                                  ),
-                              ],
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              const SizedBox(height: 4),
-                              if (admin || secretary || subadmin)
-                                ElevatedCard(
-                                  icon: Icons.swap_horiz,
-                                  text: 'Switch Terms',
-                                  target: TermSwitcher(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.calendar_today,
-                                  text: 'Create New Term',
-                                  target: TermOptionsScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || secretary || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.view_list,
-                                  text: 'View All Terms',
-                                  target: ViewTermsScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.search,
-                                  text: 'Search Terms',
-                                  target: SearchTermScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                buildElevatedCardWithDialog(
-                                  context,
-                                  icon: Icons.update,
-                                  text: 'Update Term',
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.delete,
-                                  text: 'Delete Term',
-                                  target: DeleteTermScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || secretary || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.home,
-                                  text: 'Go to Home Page',
-                                  target: HomeScreen(),
-                                  isLargeScreen: false,
-                                ),
-                            ],
                           ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  isLargeScreen
+                                      ? Center(
+                                          child: GridView.count(
+                                            crossAxisCount: crossAxisCount,
+                                            shrinkWrap: true,
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
+                                            crossAxisSpacing: crossAxisSpacing,
+                                            padding: const EdgeInsets.all(8),
+                                            children: [
+                                              if (admin ||
+                                                  secretary ||
+                                                  subadmin)
+                                                ElevatedCard(
+                                                  icon: Icons.swap_horiz,
+                                                  text: 'Switch Terms',
+                                                  target: TermSwitcher(),
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.calendar_today,
+                                                  text: 'Create New Term',
+                                                  target: TermOptionsScreen(),
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin ||
+                                                  secretary ||
+                                                  subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.view_list,
+                                                  text: 'View All Terms',
+                                                  target: ViewTermsScreen(),
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin || subadmin)
+                                                buildElevatedCardWithDialog(
+                                                  context,
+                                                  icon: Icons.update,
+                                                  text: 'Update Term',
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.delete,
+                                                  text: 'Delete Term',
+                                                  target: DeleteTermScreen(),
+                                                  isLargeScreen: true,
+                                                ),
+                                            ],
+                                          ),
+                                        )
+                                      : Column(
+                                          children: [
+                                            const SizedBox(height: 4),
+                                            if (admin || secretary || subadmin)
+                                              ElevatedCard(
+                                                icon: Icons.swap_horiz,
+                                                text: 'Switch Terms',
+                                                target: TermSwitcher(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.calendar_today,
+                                                text: 'Create New Term',
+                                                target: TermOptionsScreen(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.view_list,
+                                                text: 'View All Terms',
+                                                target: ViewTermsScreen(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || subadmin)
+                                              buildElevatedCardWithDialog(
+                                                context,
+                                                icon: Icons.update,
+                                                text: 'Update Term',
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.delete,
+                                                text: 'Delete Term',
+                                                target: DeleteTermScreen(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || secretary || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.home,
+                                                text: 'Go to Home Page',
+                                                target: HomeScreen(),
+                                                isLargeScreen: false,
+                                              ),
+                                          ],
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -234,7 +237,7 @@ Widget buildElevatedCardWithDialog(
 }) {
   return Center(
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 16.0),
       child: Card(
         elevation: 4,
         color: isLargeScreen ? Colors.white : Colors.blueGrey[50],
@@ -268,7 +271,7 @@ Widget buildElevatedCardWithDialog(
                           title: Text(
                             currentClass!.termId,
                             style: GoogleFonts.montserrat(
-                              fontSize: isLargeScreen ? 14 : 16,
+                              fontSize: isLargeScreen ? 14 : 14,
                               color: Colors.blueGrey[900],
                             ),
                           ),
@@ -309,8 +312,8 @@ Widget buildElevatedCardWithDialog(
                     children: [
                       Icon(
                         icon,
-                        size: 30,
-                        color: Colors.blue.shade800,
+                        size: 20,
+                        color: const Color.fromARGB(255, 0, 43, 92),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -318,7 +321,7 @@ Widget buildElevatedCardWithDialog(
                         style: GoogleFonts.montserrat(
                           fontSize: 12,
                           fontWeight: FontWeight.normal,
-                          color: Colors.black,
+                          color: const Color.fromARGB(255, 0, 0, 0),
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -329,17 +332,17 @@ Widget buildElevatedCardWithDialog(
                     children: [
                       Icon(
                         icon,
-                        size: 30,
-                        color: Colors.blueAccent,
+                        size: 20,
+                        color: const Color.fromARGB(255, 0, 43, 92),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           text,
                           style: GoogleFonts.montserrat(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey[900],
+                            color: const Color.fromARGB(255, 0, 0, 0),
                           ),
                           textAlign: TextAlign.center,
                         ),

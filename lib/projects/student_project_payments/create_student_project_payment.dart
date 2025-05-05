@@ -32,9 +32,9 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
   }
 
   Future<void> _loadDropdownData() async {
-    final studentBox = Hive.box<Student>('students');
-    final projectBox = Hive.box<Project>('projects');
-    final projectItemBox = Hive.box<ProjectItem>('projectItems');
+    final studentBox = await Hive.openBox<Student>('students');
+    final projectBox = await Hive.openBox<Project>('projects');
+    final projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
 
     setState(() {
       _students = studentBox.values.toList();
@@ -47,7 +47,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
   Future<void> _processPayment() async {
     if (_formKey.currentState!.validate()) {
       final paymentBox =
-          Hive.box<ProjectStudentPayment>('projectStudentPayments');
+          await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
       final amountPaid = double.parse(_amountController.text);
 
       // Search for an existing payment record.
@@ -124,7 +124,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                   student.surname
                       .toLowerCase()
                       .contains(query.toLowerCase())) &&
-              student.termId == globalTermId)
+              student.terms!.contains(globalTermId))
           .toList();
     });
   }
@@ -161,7 +161,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                                                 .toLowerCase()
                                                 .contains(
                                                     query.toLowerCase())) &&
-                                        student.termId == globalTermId)
+                                        student.terms!.contains(globalTermId))
                                     .toList();
                               });
                             },

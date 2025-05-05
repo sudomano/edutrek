@@ -29,8 +29,8 @@ class SecretaryScreen extends StatelessWidget {
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.fromRGBO(0, 233, 254, 1),
-                Color.fromRGBO(0, 233, 254, 1),
+                Color.fromRGBO(255, 255, 255, 1),
+                Color.fromRGBO(255, 255, 255, 1),
               ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,

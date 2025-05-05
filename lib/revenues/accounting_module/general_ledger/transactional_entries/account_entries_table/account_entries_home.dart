@@ -41,141 +41,155 @@ class _MyPageState extends State<TransactionalEntriesHome> {
       appBar: const CustomAppBar(title: 'Transactional Accounts'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 16.0;
-
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 10.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const SizedBox(
-                      height: 5,
-                    ),
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    Text(
-                      'Account Entries',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? GridView.count(
-                            crossAxisCount: crossAxisCount,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: crossAxisSpacing,
-                            padding: const EdgeInsets.all(8),
-                            children: [
-                              // Elevated cards with icons
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
 
-                              const ElevatedCard(
-                                icon: Icons.view_agenda,
-                                text: 'View Account Types',
-                                target: ViewAccountsScreen(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.add,
-                                text: 'Add Account Types',
-                                target: AddAccountScreen(),
-                                isLargeScreen: true,
-                              ),
-
-                              _buildElevatedCardWithDialog(
-                                context,
-                                icon: Icons.update,
-                                text: 'Update Account Type',
-                                isLargeScreen: true,
-                              ),
-                              const ElevatedCard(
-                                icon: Icons.delete,
-                                text: 'Delete Account Type',
-                                target: DeleteAccountScreen(),
-                                isLargeScreen: true,
-                              ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              // Elevated cards with icons
-
-                              const ElevatedCard(
-                                icon: Icons.view_agenda,
-                                text: 'View Account Types',
-                                target: ViewAccountsScreen(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.add,
-                                text: 'Add Account Types',
-                                target: AddAccountScreen(),
-                                isLargeScreen: false,
-                              ),
-
-                              _buildElevatedCardWithDialog(
-                                context,
-                                icon: Icons.update,
-                                text: 'Update Account Type',
-                                isLargeScreen: false,
-                              ),
-                              const ElevatedCard(
-                                icon: Icons.delete,
-                                text: 'Delete Account Type',
-                                target: DeleteAccountScreen(),
-                                isLargeScreen: false,
-                              ),
-                              const ElevatedCard(
-                                icon: Icons.home,
-                                text: 'Go to Home Page',
-                                target: HomeScreen(),
-                                isLargeScreen: false,
-                              ),
-                            ],
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
                           ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  isLargeScreen
+                                      ? GridView.count(
+                                          crossAxisCount: crossAxisCount,
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          crossAxisSpacing: crossAxisSpacing,
+                                          padding: const EdgeInsets.all(8),
+                                          children: [
+                                            // Elevated cards with icons
+
+                                            const ElevatedCard(
+                                              icon: Icons.view_agenda,
+                                              text: 'View Account Types',
+                                              target: ViewAccountsScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.add,
+                                              text: 'Add Account Types',
+                                              target: AddAccountScreen(),
+                                              isLargeScreen: true,
+                                            ),
+
+                                            _buildElevatedCardWithDialog(
+                                              context,
+                                              icon: Icons.update,
+                                              text: 'Update Account Type',
+                                              isLargeScreen: true,
+                                            ),
+                                            const ElevatedCard(
+                                              icon: Icons.delete,
+                                              text: 'Delete Account Type',
+                                              target: DeleteAccountScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                          ],
+                                        )
+                                      : Column(
+                                          children: [
+                                            // Elevated cards with icons
+
+                                            const ElevatedCard(
+                                              icon: Icons.view_agenda,
+                                              text: 'View Account Types',
+                                              target: ViewAccountsScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.add,
+                                              text: 'Add Account Types',
+                                              target: AddAccountScreen(),
+                                              isLargeScreen: false,
+                                            ),
+
+                                            _buildElevatedCardWithDialog(
+                                              context,
+                                              icon: Icons.update,
+                                              text: 'Update Account Type',
+                                              isLargeScreen: false,
+                                            ),
+                                            const ElevatedCard(
+                                              icon: Icons.delete,
+                                              text: 'Delete Account Type',
+                                              target: DeleteAccountScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            const ElevatedCard(
+                                              icon: Icons.home,
+                                              text: 'Go to Home Page',
+                                              target: HomeScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                          ],
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       ),

@@ -1,55 +1,83 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/admin/login_screen.dart';
 import 'package:collection/collection.dart';
+import 'package:zitf_system/database/auto_logout_timer/auto_logou_timer.dart';
+import 'package:zitf_system/main.dart';
 
 class AutoLogoutManager with WidgetsBindingObserver {
-  static const inactivityTimeout =
-      Duration(minutes: 60); // Adjust timeout as needed
+  // Foreground inactivity timeout (if needed) remains unchanged.
+  static const inactivityTimeout = Duration(minutes: 720);
+
   Timer? _inactivityTimer;
-
-  /// Call this to start observing app lifecycle and user inactivity.
-  void initialize(BuildContext context) {
-    WidgetsBinding.instance.addObserver(this);
-    _startInactivityTimer(context);
-  }
-
-  /// Call this to stop observing (e.g., on logout or app exit).
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _inactivityTimer?.cancel();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      // App is in the background
-      _logoutUser(context: _currentContext);
-    }
-  }
+  Timer? _backgroundTimer;
 
   late BuildContext _currentContext;
 
-  /// Starts or resets the inactivity timer
-  void resetInactivityTimer(BuildContext context) {
+  /// Initialize the AutoLogoutManager.
+  void initialize(BuildContext context) {
     _currentContext = context;
+    WidgetsBinding.instance.addObserver(this);
+    _startInactivityTimer();
+  }
+
+  /// Dispose and clean up resources.
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _inactivityTimer?.cancel();
-    _startInactivityTimer(context);
+    _backgroundTimer?.cancel();
   }
 
-  void _startInactivityTimer(BuildContext context) {
-    _inactivityTimer = Timer(inactivityTimeout, () {
-      _logoutUser(context: context);
-    });
+  /// Listen for app lifecycle changes.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.paused) {
+      // When app goes to background, start a background timer using the user setting.
+      print("App paused. Starting background timer for logout...");
+      _backgroundTimer?.cancel();
+      int timeoutMinutes = await _getUserLogoutTimeout();
+      _backgroundTimer = Timer(Duration(minutes: timeoutMinutes), () {
+        print(
+            "Background timer elapsed (${timeoutMinutes} minute(s)). Logging out...");
+        _logoutUser();
+      });
+    } else if (state == AppLifecycleState.resumed) {
+      // Cancel background timer if app resumes.
+      print("App resumed. Cancelling background timer...");
+      _backgroundTimer?.cancel();
+      _startInactivityTimer();
+    }
   }
 
-  /// Logs out the user and redirects to the login screen
-  Future<void> _logoutUser({required BuildContext context}) async {
+  /// Resets the inactivity timer whenever user interaction occurs.
+  void resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    _startInactivityTimer();
+  }
+
+  /// Starts the inactivity timer for foreground activity.
+  void _startInactivityTimer() {
+    _inactivityTimer = Timer(inactivityTimeout, _logoutUser);
+  }
+
+  /// Reads the user-defined logout timeout from Hive.
+  Future<int> _getUserLogoutTimeout() async {
+    final settingsBox = Hive.box<AutoLogoutSettings>('auto_logout_settings');
+    final settings = settingsBox.get('settings') ?? AutoLogoutSettings();
+    return settings.logoutTimeoutMinutes;
+  }
+
+  /// Logs out the user and navigates to the login screen.
+  Future<void> _logoutUser() async {
+    _inactivityTimer?.cancel();
+    _backgroundTimer?.cancel();
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', false); // Clear login state
+    await prefs.setBool('isLoggedIn', false);
 
     var userBox = Hive.box<User>('users');
     var loggedInUser =
@@ -66,21 +94,11 @@ class AutoLogoutManager with WidgetsBindingObserver {
       print("No logged-in user found.");
     }
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => LoginScreen()),
-      (Route<dynamic> route) => false, // Remove all previous routes
-    );
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
+    });
   }
 }
-
-
-
-
-
-/*
-  final autoLogoutManager = AutoLogoutManager();
-
-autoLogoutManager.initialize(context);
-
-*/

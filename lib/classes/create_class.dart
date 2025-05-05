@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart'; // Replace 'your_app_name' with your actual app's name
@@ -16,6 +17,25 @@ class CreateClass extends StatefulWidget {
 class _AddClass extends State<CreateClass> {
   final _formKey = GlobalKey<FormState>();
   final _classNameController = TextEditingController();
+  // --- New: Variables for term selection ---
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = []; // Stores user-selected term IDs
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTerms();
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms =
+          termsBox.values.map((term) => term.termId).toSet().toList();
+      _selectedTerms =
+          List.from(_availableTerms); // Select all terms by default
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +47,12 @@ class _AddClass extends State<CreateClass> {
           children: [
             _buildTextField('Class Name (required)', _classNameController),
             const SizedBox(height: 16),
+            const Center(
+              child: Text('Select Terms (optional)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            _buildTermSelection(),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _submit,
               child: const Text('Create Class'),
@@ -35,6 +61,28 @@ class _AddClass extends State<CreateClass> {
         ),
       ),
     );
+  }
+
+  Widget _buildTermSelection() {
+    return _availableTerms.isEmpty
+        ? const Text('No terms available')
+        : Column(
+            children: _availableTerms.map((term) {
+              return CheckboxListTile(
+                title: Text(term),
+                value: _selectedTerms.contains(term),
+                onChanged: (selected) {
+                  setState(() {
+                    if (selected == true) {
+                      _selectedTerms.add(term);
+                    } else {
+                      _selectedTerms.remove(term);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          );
   }
 
   Widget _buildTextField(String label, TextEditingController controller) {
@@ -73,12 +121,8 @@ class _AddClass extends State<CreateClass> {
 
         final box = await Hive.openBox<Classes>('classes');
         final existingClass = box.values.cast<Classes>().firstWhere(
-              (c) =>
-                  (c.className.trim().toLowerCase() ==
-                          className.trim().toLowerCase() ||
-                      (c.classCode?.trim().toLowerCase() ==
-                          classCode.trim().toLowerCase())) &&
-                  c.termId == globalTermId,
+              (c) => (c.className.toLowerCase() == className.toLowerCase() ||
+                  (c.classCode?.toLowerCase() == classCode.toLowerCase())),
               orElse: () =>
                   Classes(id: -1, className: '', date: DateTime(1970)),
             );
@@ -96,6 +140,12 @@ class _AddClass extends State<CreateClass> {
         modifiedFields.add('classCode');
         modifiedFields.add('date');
         modifiedFields.add('termId');
+        modifiedFields.add('terms');
+
+        // Determine the terms to use: either the selected ones or default to globalTermId.
+        final List<String> termsToSave =
+            _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!];
+
         // Ensure the termId is set from globalTermId
         final newClass = Classes(
           id: newId, // Generate a unique ID
@@ -108,6 +158,7 @@ class _AddClass extends State<CreateClass> {
           lastModified: DateTime.now(), // Set lastModified to current datetime
           operationType: 'create', // Set operationType to 'create'
           modifiedFields: modifiedFields,
+          terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
         );
 
         box.add(newClass); // Add the new class to the Hive box

@@ -46,7 +46,7 @@ class _UpdateTeacherPaymentPurposeScreenState
     final box = await Hive.box<Teachers>('teachers');
     final classes = box.values
         .where((classItem) =>
-            classItem.termId != null && classItem.termId == globalTermId)
+            classItem.termId != null && classItem.terms!.contains(globalTermId))
         .map((e) => '${e.IdNumber} (${e.surname} ${e.name})')
         .toList();
 

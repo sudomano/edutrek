@@ -7,6 +7,7 @@ import 'package:zitf_system/database/projects/project_daily_activity_model.dart'
 import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
 import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 
@@ -21,9 +22,14 @@ import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
+import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_timer.dart';
+import 'package:zitf_system/reusable_codes/bluetooth_helper_codes/bluetooth_tips_helper.dart';
 
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
+import 'package:zitf_system/settings/developer_options/assign_missing_terms.dart';
+import 'package:zitf_system/settings/developer_options/domainConfigs.dart';
+import 'package:zitf_system/settings/developer_options/remove_duplicates.dart';
 
 class DeveloperHome extends StatefulWidget {
   const DeveloperHome({super.key});
@@ -45,110 +51,259 @@ class _SyncClassesPageState extends State<DeveloperHome> {
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Developer Options'),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color.fromRGBO(0, 233, 254, 1),
-              Color.fromARGB(0, 233, 254, 1),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      body: SingleChildScrollView(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color.fromRGBO(0, 233, 254, 1),
+                Color.fromARGB(0, 233, 254, 1),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
           ),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Sync All Records Button
-                  const SizedBox(
-                    height: 5,
-                  ),
-                  buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                  const SizedBox(
-                    height: 10,
-                  ),
-                  Text(
-                    'Reset Operations',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 20,
-                      fontWeight: FontWeight.normal,
-                      color: const Color.fromARGB(
-                          255, 0, 0, 0), // White text on gradient
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Sync All Records Button
+                    const SizedBox(
+                      height: 5,
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(
-                    height: 20,
-                  ),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
+                    const SizedBox(height: 20),
+                    const SizedBox(
+                      height: 10,
                     ),
-                    onPressed: () async {
-                      await setOperationTypeToCreateForAllModels();
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text(
-                          'Operation Type Reset was successfully.',
-                          style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black,
-                              fontWeight: FontWeight.w600),
+                    const SizedBox(
+                      height: 20,
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        behavior: SnackBarBehavior.floating,
-                        backgroundColor: Color.fromARGB(255, 255, 255, 255),
-                      ));
-                    },
-                    icon: const Icon(Icons.restart_alt, size: 24),
-                    label: const Text(
-                      'Reset Operation Type',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                      ),
+                      onPressed: () async {
+                        // Navigate to the AutoLogoutSettingsScreen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AutoLogoutSettingsScreen(),
+                          ),
+                        );
 
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        // Optionally, show a SnackBar indicating the action.
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Auto Logout Timer',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.timer, size: 24),
+                      label: const Text(
+                        'Auto Logout Timer',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
                       ),
                     ),
-                    onPressed: () async {
-                      await assignPrimaryKeysToModels();
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text(
-                          'All primary keys assigned successfully.',
-                          style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black,
-                              fontWeight: FontWeight.w600),
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                        backgroundColor: Color.fromARGB(255, 255, 255, 255),
-                      ));
-                    },
-                    icon: const Icon(Icons.key, size: 24),
-                    label: const Text(
-                      'Assign Primary Keys',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+
+                    const SizedBox(height: 20),
+                    const SizedBox(
+                      height: 10,
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Retrieve and Save Records Button
-                ],
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await setOperationTypeToCreateForAllModels();
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            'Operation Type Reset was successfully.',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                        ));
+                      },
+                      icon: const Icon(Icons.restart_alt, size: 24),
+                      label: const Text(
+                        'Reset Operation Type',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await assignPrimaryKeysToModels();
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            'All primary keys assigned successfully.',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                        ));
+                      },
+                      icon: const Icon(Icons.key, size: 24),
+                      label: const Text(
+                        'Assign Primary Keys',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await BluetoothHelper().resetBluetooth();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text(
+                                  "Bluetooth has been reset. Restarting...")),
+                        );
+                      },
+                      style:
+                          ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: const Text("Reset Bluetooth",
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                    const SizedBox(height: 20),
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Navigate to SettingsScreen when clicked
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const SettingsScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.key, size: 24, color: Colors.blue),
+                      label: const Text(
+                        'Assign Associated Terms',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Navigate to SettingsScreen when clicked
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const SettingsScreens()),
+                        );
+                      },
+                      icon: const Icon(Icons.key, size: 24, color: Colors.blue),
+                      label: const Text(
+                        'Remove Duplicates',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await developerLogin(context);
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            'Redirect To Developer Login',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                        ));
+                      },
+                      icon: const Icon(Icons.restart_alt, size: 24),
+                      label: const Text(
+                        'School Domain Configs',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Retrieve and Save Records Button
+                  ],
+                ),
               ),
             ),
           ),
@@ -166,6 +321,7 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = teacherPaymentsPurposesBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
         await teacherPaymentsPurposesBox.put(key, item);
       }
     }
@@ -177,6 +333,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = paymentPurposeBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await paymentPurposeBox.put(key, item);
       }
     }
@@ -187,6 +345,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = classesBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await classesBox.put(key, item);
       }
     }
@@ -198,6 +358,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = studentPaymentBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await studentPaymentBox.put(key, item);
       }
     }
@@ -209,6 +371,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = teacherPaymentBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await teacherPaymentBox.put(key, item);
       }
     }
@@ -219,6 +383,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = studentBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await studentBox.put(key, item);
       }
     }
@@ -229,6 +395,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = withdrawalBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await withdrawalBox.put(key, item);
       }
     }
@@ -239,6 +407,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = userBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await userBox.put(key, item);
       }
     }
@@ -249,6 +419,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = teachersBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await teachersBox.put(key, item);
       }
     }
@@ -259,6 +431,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = schoolBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await schoolBox.put(key, item);
       }
     }
@@ -269,6 +443,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = termsBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await termsBox.put(key, item);
       }
     }
@@ -279,6 +455,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = accountBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await accountBox.put(key, item);
       }
     }
@@ -289,6 +467,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = assetBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await assetBox.put(key, item);
       }
     }
@@ -299,6 +479,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = projectBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await projectBox.put(key, item);
       }
     }
@@ -309,6 +491,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = projectItemBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await projectItemBox.put(key, item);
       }
     }
@@ -320,6 +504,8 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = dailyActivityBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await dailyActivityBox.put(key, item);
       }
     }
@@ -331,7 +517,21 @@ class _SyncClassesPageState extends State<DeveloperHome> {
       final item = projectStudentPaymentBox.get(key);
       if (item != null) {
         item.operationType = 'create';
+        item.syncStatus = false;
+
         await projectStudentPaymentBox.put(key, item);
+      }
+    }
+
+    // Set operationType for _domainRecordBox
+    final domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
+    for (var key in domainRecordBox.keys) {
+      final item = domainRecordBox.get(key);
+      if (item != null) {
+        item.operationType = 'create';
+        item.syncStatus = false;
+
+        await domainRecordBox.put(key, item);
       }
     }
 

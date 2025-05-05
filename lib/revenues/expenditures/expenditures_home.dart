@@ -42,130 +42,148 @@ class _MyPageState extends State<ExpendituresHome> {
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
 
     return Scaffold(
-      appBar: const CustomAppBar(title: 'Withdrawals'),
+      appBar: const CustomAppBar(title: 'Withdrawal Expenditures'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 16.0;
-
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 10.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const SizedBox(
-                      height: 5,
-                    ),
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    Text(
-                      'Expenditure Home',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? GridView.count(
-                            crossAxisCount: crossAxisCount,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: crossAxisSpacing,
-                            padding: const EdgeInsets.all(8),
-                            children: [
-                              // Elevated cards with icons
-                              ElevatedCard(
-                                icon: Icons.attach_money,
-                                text: 'Make A Withdrawals',
-                                target: WithdrawalScreen(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.attach_money,
-                                text: 'Update Withdrawals',
-                                target: ViewWithdrawalsScreen(),
-                                isLargeScreen: true,
-                              ),
-                              if (admin || accountant)
-                                ElevatedCard(
-                                  icon: Icons.attach_money,
-                                  text: 'View Income and Expenditure Details',
-                                  target: ViewWithdrawalsScreen1(),
-                                  isLargeScreen: true,
-                                ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              // Elevated cards with icons
-                              ElevatedCard(
-                                icon: Icons.attach_money,
-                                text: 'Make A Withdrawals',
-                                target: WithdrawalScreen(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.attach_money,
-                                text: 'Update Withdrawals',
-                                target: ViewWithdrawalsScreen(),
-                                isLargeScreen: false,
-                              ),
-                              if (admin || accountant)
-                                ElevatedCard(
-                                  icon: Icons.attach_money,
-                                  text: 'View Income and Expenditure Details',
-                                  target: ViewWithdrawalsScreen1(),
-                                  isLargeScreen: false,
-                                ),
-                              const ElevatedCard(
-                                icon: Icons.home,
-                                text: 'Go to Home Page',
-                                target: HomeScreen(),
-                                isLargeScreen: false,
-                              ),
-                            ],
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
+
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
                           ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  isLargeScreen
+                                      ? GridView.count(
+                                          crossAxisCount: crossAxisCount,
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          crossAxisSpacing: crossAxisSpacing,
+                                          padding: const EdgeInsets.all(8),
+                                          children: [
+                                            // Elevated cards with icons
+                                            ElevatedCard(
+                                              icon: Icons.attach_money,
+                                              text: 'Make A Withdrawals',
+                                              target: WithdrawalScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.attach_money,
+                                              text: 'Update Withdrawals',
+                                              target: ViewWithdrawalsScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            if (admin || accountant)
+                                              ElevatedCard(
+                                                icon: Icons.attach_money,
+                                                text:
+                                                    'View Income and Expenditure Details',
+                                                target:
+                                                    ViewWithdrawalsScreen1(),
+                                                isLargeScreen: true,
+                                              ),
+                                          ],
+                                        )
+                                      : Column(
+                                          children: [
+                                            // Elevated cards with icons
+                                            ElevatedCard(
+                                              icon: Icons.attach_money,
+                                              text: 'Make A Withdrawals',
+                                              target: WithdrawalScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.attach_money,
+                                              text: 'Update Withdrawals',
+                                              target: ViewWithdrawalsScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            if (admin || accountant)
+                                              ElevatedCard(
+                                                icon: Icons.attach_money,
+                                                text:
+                                                    'View Income and Expenditure Details',
+                                                target:
+                                                    ViewWithdrawalsScreen1(),
+                                                isLargeScreen: false,
+                                              ),
+                                            const ElevatedCard(
+                                              icon: Icons.home,
+                                              text: 'Go to Home Page',
+                                              target: HomeScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                          ],
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       ),

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart'; // Custom fonts
 
 import 'package:zitf_system/admin/home_screen.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
@@ -40,150 +41,200 @@ class _MyPageState extends State<CreateTeacherPaymentsPurposeScreen> {
       appBar: const CustomAppBar(title: 'Staff Paymet Purposes'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 16.0;
-
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 5;
-            crossAxisSpacing = 10.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 5;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const SizedBox(
-                      height: 5,
-                    ),
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    Text(
-                      'Staff Payment Purposes',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? GridView.count(
-                            crossAxisCount: crossAxisCount,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: crossAxisSpacing,
-                            padding: const EdgeInsets.all(8),
-                            children: const [
-                              // Elevated cards with icons
-                              ElevatedCard(
-                                icon: Icons.person_add,
-                                text: 'Create New Staff Payment Purpose',
-                                target: AddTeacherPaymentPurposeScreen(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.people,
-                                text: 'View All Staff Payment Purposes',
-                                target: ViewTeacherPaymentPurposesScreen(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.people,
-                                text: 'Search Staff Payment Purpose',
-                                target: SearchTeacherPaymentPurposeScreen(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.update,
-                                text: 'Update Staff Payment Purpose',
-                                target: SelectTeacherPaymentPurposeToUpdate(),
-                                isLargeScreen: true,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.delete,
-                                text: 'Delete Staff Payment Purpose',
-                                target: DeleteTeacherPaymentPurposeScreens(),
-                                isLargeScreen: true,
-                              ),
-                            ],
-                          )
-                        : const Column(
-                            children: [
-                              // Elevated cards with icons
-                              ElevatedCard(
-                                icon: Icons.person_add,
-                                text: 'Create New Staff Payment Purpose',
-                                target: AddTeacherPaymentPurposeScreen(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.people,
-                                text: 'View All Staff Payment Purposes',
-                                target: ViewTeacherPaymentPurposesScreen(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.people,
-                                text: 'Search Staff Payment Purpose',
-                                target: SearchTeacherPaymentPurposeScreen(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.update,
-                                text: 'Update Staff Payment Purpose',
-                                target: SelectTeacherPaymentPurposeToUpdate(),
-                                isLargeScreen: false,
-                              ),
-                              ElevatedCard(
-                                icon: Icons.delete,
-                                text: 'Delete Staff Payment Purpose',
-                                target: SelectTeacherPaymentPurposeToDelete(),
-                                isLargeScreen: false,
-                              ),
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
 
-                              ElevatedCard(
-                                icon: Icons.payment,
-                                text: 'Go to Home Page',
-                                target: HomeScreen(),
-                                isLargeScreen: false,
-                              ),
-                            ],
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 6;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 5;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
                           ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  const SizedBox(
+                                    height: 5,
+                                  ),
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  const SizedBox(
+                                    height: 10,
+                                  ),
+                                  Text(
+                                    'Staff Payment Purposes',
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.normal,
+                                      color: const Color.fromARGB(255, 0, 0,
+                                          0), // White text on gradient
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  isLargeScreen
+                                      ? GridView.count(
+                                          crossAxisCount: crossAxisCount,
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          crossAxisSpacing: crossAxisSpacing,
+                                          padding: const EdgeInsets.all(8),
+                                          children: const [
+                                            // Elevated cards with icons
+                                            ElevatedCard(
+                                              icon: Icons.person_add,
+                                              text:
+                                                  'Create New Staff Payment Purpose',
+                                              target:
+                                                  AddTeacherPaymentPurposeScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.people,
+                                              text:
+                                                  'View All Staff Payment Purposes',
+                                              target:
+                                                  ViewTeacherPaymentPurposesScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.people,
+                                              text:
+                                                  'Search Staff Payment Purpose',
+                                              target:
+                                                  SearchTeacherPaymentPurposeScreen(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.update,
+                                              text:
+                                                  'Update Staff Payment Purpose',
+                                              target:
+                                                  SelectTeacherPaymentPurposeToUpdate(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.delete,
+                                              text:
+                                                  'Delete Staff Payment Purpose',
+                                              target:
+                                                  DeleteTeacherPaymentPurposeScreens(),
+                                              isLargeScreen: true,
+                                            ),
+                                          ],
+                                        )
+                                      : const Column(
+                                          children: [
+                                            // Elevated cards with icons
+                                            ElevatedCard(
+                                              icon: Icons.person_add,
+                                              text:
+                                                  'Create New Staff Payment Purpose',
+                                              target:
+                                                  AddTeacherPaymentPurposeScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.people,
+                                              text:
+                                                  'View All Staff Payment Purposes',
+                                              target:
+                                                  ViewTeacherPaymentPurposesScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.people,
+                                              text:
+                                                  'Search Staff Payment Purpose',
+                                              target:
+                                                  SearchTeacherPaymentPurposeScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.update,
+                                              text:
+                                                  'Update Staff Payment Purpose',
+                                              target:
+                                                  SelectTeacherPaymentPurposeToUpdate(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.delete,
+                                              text:
+                                                  'Delete Staff Payment Purpose',
+                                              target:
+                                                  SelectTeacherPaymentPurposeToDelete(),
+                                              isLargeScreen: false,
+                                            ),
+
+                                            ElevatedCard(
+                                              icon: Icons.payment,
+                                              text: 'Go to Home Page',
+                                              target: HomeScreen(),
+                                              isLargeScreen: false,
+                                            ),
+                                          ],
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       ),

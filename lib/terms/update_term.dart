@@ -103,7 +103,7 @@ class _UpdateTermScreenState extends State<UpdateTermScreen> {
                 setState(() {
                   _isActive = value;
                   _statusController.text =
-                      _isActive ? 'opened' : 'closed'; // Update status
+                      _isActive ? 'Opened' : 'Closed'; // Update status
                 });
               },
             ),

@@ -28,13 +28,14 @@ class SchoolAdapter extends TypeAdapter<School> {
       id: fields[8] as int?,
       schoolLogoPath: fields[9] as String?,
       schoolCode: fields[10] as String?,
+      modifiedFields: (fields[11] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, School obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.schoolName)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class SchoolAdapter extends TypeAdapter<School> {
       ..writeByte(9)
       ..write(obj.schoolLogoPath)
       ..writeByte(10)
-      ..write(obj.schoolCode);
+      ..write(obj.schoolCode)
+      ..writeByte(11)
+      ..write(obj.modifiedFields);
   }
 
   @override

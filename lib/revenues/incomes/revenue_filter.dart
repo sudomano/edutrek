@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'dart:io';
 import 'dart:typed_data';
@@ -15,6 +17,7 @@ import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart'; // For PDF preview and printing
 import 'package:path/path.dart' as path;
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
+import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/student_management/create_students/multi_class_selection.dart'; // To handle file name extensions
 
 class ViewAllRevenuesFilter extends StatefulWidget {
@@ -46,6 +49,7 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
   List<String> _classes = [];
   List<String> _purposes = [];
   List<String> _purposesOnly = [];
+  List<String> _terms = []; // Declare without 'final'
 
   // Maps for holding payment data
   Map<String, Map<String, double>> groupedPayments = {};
@@ -55,6 +59,54 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
   void initState() {
     super.initState();
     _initializeData();
+    fetchTerms();
+  }
+
+  String? selectedTermId; // This will store the term ID selected by the user.
+
+  String? getCurrentTermId(String? selectedTermId) {
+    return selectedTermId ??
+        globalTermId; // Fallback to globalTermId if none selected.
+  }
+
+  Future<void> fetchTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+
+    // Populate the terms list with unique term IDs
+    if (termsBox.isNotEmpty) {
+      _terms = termsBox.values.map((term) => term.termId).toSet().toList();
+    } else {
+      _terms = [];
+      print('no terms were found '); // No terms available
+    }
+
+    // Set fallback to globalTermId if no term is selected or terms list is empty
+    selectedTermId = _terms.isNotEmpty ? globalTermId : _terms.first;
+
+    setState(() {}); // Refresh the UI
+  }
+
+  void selectTerm(String? termId) {
+    setState(() {
+      // If termId is null or empty, fall back to globalTermId
+      selectedTermId = termId ?? globalTermId;
+    });
+
+    // Update currentTermId dynamically
+    final currentTermId = getCurrentTermId(selectedTermId);
+    print('Current Term ID: $currentTermId');
+  }
+
+// Example of using currentTermId in a method
+  void filterByTerm() {
+    final currentTermId = getCurrentTermId(selectedTermId);
+
+    // Perform filtering logic based on currentTermId
+    _filteredPayments = _filteredPayments.where((payment) {
+      return payment.termId == currentTermId;
+    }).toList();
+
+    setState(() {});
   }
 
   Future<void> _initializeData() async {
@@ -66,12 +118,14 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
     final paymentPurposeBox =
         await Hive.openBox<PaymentPurpose>('payment_purposes');
 
+    final currentTermId = selectedTermId ?? globalTermId;
+
     final filteredPayments = paymentBox.values
-        .where((payment) => payment.termId == globalTermId)
+        .where((payment) => payment.termId == currentTermId)
         .toList();
 
     final filteredPaymentPurposesOnly = paymentPurposeBox.values
-        .where((payment) => payment.termId == globalTermId)
+        .where((payment) => payment.termId == currentTermId)
         .toList();
 
     // Fetch unique classes from filtered payments
@@ -101,16 +155,18 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
 
     // Fetch unique payment purposes only from the purposes db
     _paymentPurposesOnly.addAll(paymentPurposeBox.values
-        .where((purposeOnly) => purposeOnly.termId == globalTermId)
+        .where((purposeOnly) => purposeOnly.termId == currentTermId)
         .map((purposeOnly) => purposeOnly.paymentPurpose)
         .toSet()
         .toList());
 
     // Fetch payment purpose only amounts
-    for (var purposeOnly in paymentPurposeBox.values) {
+    for (var purposeOnly in paymentPurposeBox.values
+        .where((purposeOnly) => purposeOnly.termId == currentTermId)) {
       _paymentPurposeAmounts[purposeOnly.paymentPurpose] =
           purposeOnly.purposeAmount;
     }
+    print("Payment Purpose Amounts: $_paymentPurposeAmounts");
 
     setState(() {});
   }
@@ -124,12 +180,13 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
 
   Future<void> _fetchStudentsForClass(String studentClass) async {
     final paymentBox = Hive.box<StudentPayment>('student_payments');
+    final currentTermId = selectedTermId ?? globalTermId;
 
     // Fetch unique students for the selected class
     _students = paymentBox.values
         .where((payment) =>
             payment.studentClass == studentClass &&
-            payment.termId == globalTermId)
+            payment.termId == currentTermId)
         .map((payment) => '${payment.studentName} ${payment.studentSurname}')
         .toSet()
         .toList();
@@ -137,10 +194,42 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
     setState(() {});
   }
 
-  void _filterPayments() {
+  Future<int> getNextId() async {
+    final box = await Hive.openBox<StudentPayment>('student_payments');
+    if (box.isEmpty) return 1; // Start with ID 1 if no records exist
+
+    int currentMaxId = box.values
+        .map((e) => e.id ?? 0)
+        .reduce((curr, next) => curr > next ? curr : next);
+    return currentMaxId + 1;
+  }
+
+  Future<void> _filterPayments() async {
     final paymentBox = Hive.box<StudentPayment>('student_payments');
+    final studentBox =
+        Hive.box<Student>('students'); // Import your Student model
+
+    // Use selectedTermId with default fallback to globalTermId
+    final currentTermId = selectedTermId ?? globalTermId;
+
+    // Get all payment records for the current term
+    List<StudentPayment> paymentRecords = paymentBox.values
+        .where((payment) => payment.termId == currentTermId)
+        .toList();
+
+    // Get all student records (apply class filter if not 'All')
+    List<Student> studentRecords = studentBox.values
+        .where((student) => student.terms!.contains(currentTermId))
+        .toList();
+
+    if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
+      studentRecords = studentRecords
+          .where((student) => _selectedClasses.contains(student.class_))
+          .toList();
+    }
+
     _filteredPayments = paymentBox.values
-        .where((purposeOnly) => purposeOnly.termId == globalTermId)
+        .where((purposeOnly) => purposeOnly.termId == currentTermId)
         .toList();
 
     if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
@@ -148,6 +237,68 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
         return _selectedClasses.contains(payment.studentClass);
       }).toList();
     }
+
+    // Merge data: for each student, check if they have any payment record.
+    List<StudentPayment> combinedRecords = [];
+
+    for (var student in studentRecords) {
+      // Option 1: if you have a student ID or unique identifier to join records, use it.
+      // Here we assume each payment has a studentId and each student has an id.
+      final studentPayments = paymentRecords
+          .where((payment) =>
+              payment.studentName.toLowerCase() == student.name.toLowerCase() &&
+              payment.studentSurname.toLowerCase() ==
+                  student.surname.toLowerCase() &&
+              payment.studentClass.toLowerCase() ==
+                  student.class_.toLowerCase() &&
+              (payment.termId?.toLowerCase() == currentTermId?.toLowerCase() ||
+                  student.terms!.contains(currentTermId)))
+          .toList();
+
+      if (studentPayments.isEmpty) {
+        // Create a dummy record for a student with no payments
+        int newId = await getNextId();
+        String receiptNumber = uuid.v4();
+        List<String> modifiedFields = [];
+        modifiedFields.add('id');
+        modifiedFields.add('receiptNumber');
+        modifiedFields.add('studentName');
+        modifiedFields.add('studentSurname');
+        modifiedFields.add('studentClass');
+        modifiedFields.add('phoneNumber');
+        modifiedFields.add('paymentPurpose');
+        modifiedFields.add('amountToPay');
+        modifiedFields.add('paymentDate');
+        modifiedFields.add('termId');
+        combinedRecords.add(
+          StudentPayment(
+            id: newId,
+            receiptNumber: receiptNumber,
+            studentName: student.name,
+            studentSurname: student.surname,
+            studentClass: student.class_,
+            termId: currentTermId,
+            phoneNumber: student.phoneNumber,
+            paymentPurpose: '',
+            amountToPay: 0.0,
+            paymentDate: DateTime.now(),
+            syncStatus: false, // Set syncStatus to false
+            lastModified:
+                DateTime.now(), // Set lastModified to current datetime
+            operationType: 'create', // Set operationType to 'create'
+            modifiedFields: modifiedFields,
+            // Set default or empty payment purpose if needed.
+          ),
+        );
+      } else {
+        // If there are multiple records per student, you can either combine them
+        // or add them all. In many cases, you may want to combine payment purposes.
+        combinedRecords.addAll(studentPayments);
+      }
+    }
+
+    // Now, _filteredPayments contains students even if they have no payment.
+    _filteredPayments = combinedRecords;
 
     if (_selectedStudent != null && _selectedStudent!.isNotEmpty) {
       _filteredPayments = _filteredPayments
@@ -293,23 +444,55 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
 
       // Second Section: Arrears Information
       final secondSectionCells = _paymentPurposesOnly.map((purposeOnly) {
+        final purpose = Hive.box<PaymentPurpose>('payment_purposes')
+            .values
+            .firstWhere(
+              (p) =>
+                  p.paymentPurpose.toLowerCase() == purposeOnly.toLowerCase(),
+              orElse: () => PaymentPurpose(
+                paymentPurpose: 'N/A',
+                associatedClasses: [], id: 0,
+                purposeAmount: 0.0,
+                // Add any other required fields for your `PaymentPurpose` model
+              ),
+            );
+// Handle the default case if necessary
+        if (purpose.paymentPurpose == 'N/A') {
+          return '';
+        }
+        // Get the student's class
+        final studentClass = _filteredPayments
+            .firstWhere((payment) =>
+                '${payment.studentName} ${payment.studentSurname}' ==
+                studentName)
+            .studentClass;
+
+        // Check if the student's class is associated with the payment purpose
+        if (!(purpose.associatedClasses?.contains(studentClass) ?? false)) {
+          return 0.0; // Default arrear value
+        }
+
+        // Calculate arrears only if the class is associated
         final purposeAmount = _paymentPurposeAmounts[purposeOnly] ?? 0.0;
         final matchingAmount = entry.value.entries
                 .firstWhere(
-                    (e) => e.key.toLowerCase() == purposeOnly.toLowerCase(),
-                    orElse: () => const MapEntry('', 0.0))
+                  (e) => e.key.toLowerCase() == purposeOnly.toLowerCase(),
+                  orElse: () => const MapEntry('', 0.0),
+                )
                 .value ??
             0.0;
-        final result = matchingAmount - purposeAmount;
-        // Update grand total for this purpose
+
+        final arrears = matchingAmount - purposeAmount;
+
         grandTotalPurposeArrears[purposeOnly] =
-            grandTotalPurposeArrears[purposeOnly]! + result;
-        return result.toStringAsFixed(2);
+            (grandTotalPurposeArrears[purposeOnly] ?? 0.0) + arrears;
+
+        return arrears.toStringAsFixed(2);
       }).toList();
 
       // Total Arrears
       final totalArrears = secondSectionCells.fold(0.0, (sum, item) {
-        return sum + (double.tryParse(item) ?? 0.0);
+        return sum + (double.tryParse(item.toString()) ?? 0.0);
       });
 
       return [
@@ -512,6 +695,10 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildCard(
+                    title: 'View By Term',
+                    child: _buildTermDropdown(),
+                  ),
+                  _buildCard(
                     title: 'View by Class',
                     child: _buildClassDropdown(),
                   ),
@@ -601,6 +788,40 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
         setState(() {
           _selectedPaymentPurposesArrears = selectedPurposesOnly;
         });
+      },
+    );
+  }
+
+  Widget _buildTermDropdown() {
+    if (_terms.isEmpty) {
+      return const Text("Loading terms...");
+    }
+
+    return DropdownButton<String>(
+      value: selectedTermId,
+      isExpanded: true,
+      hint: const Text(
+        "Select Term", // Placeholder if no term is selected
+        style: TextStyle(fontSize: 16),
+      ),
+      items: _terms.map((term) {
+        return DropdownMenuItem<String>(
+          value: term,
+          child: Text(
+            term,
+            style: const TextStyle(fontSize: 16),
+          ),
+        );
+      }).toList(),
+      onChanged: (value) {
+        setState(() {
+          selectedTermId = value!;
+        });
+
+        // Call _fetchInitialData to reload data based on the selected term
+        _fetchInitialData();
+
+        print("Selected term ID: $selectedTermId");
       },
     );
   }
@@ -824,6 +1045,7 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
     }
 
     double grandTotalPaid = 0.0;
+
     Map<String, double> grandTotalPurposePaid = {};
     double grandTotalArrears = 0.0;
     Map<String, double> grandTotalPurposeArrears = {};
@@ -871,13 +1093,8 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
                       )
                       .value ??
                   0.0;
-              print(studentClass);
-              print(purpose.associatedClasses);
 
               final arrears = matchingAmount - purposeAmount;
-              grandTotalArrears += arrears;
-              grandTotalPurposeArrears[purposeOnly] =
-                  (grandTotalPurposeArrears[purposeOnly] ?? 0.0) + arrears;
             }
           }
         }
@@ -954,6 +1171,14 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
                   rows: [
                     ...groupedPayments.entries.map((entry) {
                       final studentName = entry.key;
+                      final studentClass = _filteredPayments
+                          .firstWhere(
+                            (payment) =>
+                                '${payment.studentName} ${payment.studentSurname}' ==
+                                studentName,
+                          )
+                          .studentClass;
+
                       final totalPaidAmount = totalPaid[studentName]
                               ?.values
                               .reduce((a, b) => a + b) ??
@@ -1010,6 +1235,10 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
 
                         final arrears = matchingAmount - purposeAmount;
                         totalArrears += arrears;
+                        grandTotalArrears += arrears;
+                        grandTotalPurposeArrears[purposeOnly] =
+                            (grandTotalPurposeArrears[purposeOnly] ?? 0.0) +
+                                arrears;
                         return DataCell(Text('$arrears'));
                       }).toList();
 
@@ -1068,8 +1297,9 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
                           return DataCell(Container(
                             color: const Color.fromARGB(255, 246, 55, 2),
                             padding: const EdgeInsets.all(8.0),
-                            child: const Text(
-                              '*',
+                            child: Text(
+                              (grandTotalPurposeArrears[purposeOnly] ?? 0.0)
+                                  .toStringAsFixed(2),
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ));
@@ -1077,8 +1307,8 @@ class _ViewByScreenState extends State<ViewAllRevenuesFilter> {
                         DataCell(Container(
                           padding: const EdgeInsets.all(8.0),
                           color: const Color.fromARGB(255, 248, 151, 4),
-                          child: const Text(
-                            '*',
+                          child: Text(
+                            '$grandTotalArrears.',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         )),

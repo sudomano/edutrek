@@ -1,11 +1,21 @@
+// ignore_for_file: non_constant_identifier_names
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:hive/hive.dart';
+import 'package:zitf_system/database/accounting_module_models/account_type.dart';
+import 'package:zitf_system/database/accounting_module_models/assets.dart';
 
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_model.dart';
+import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/school_info.dart';
+import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/database/student.dart';
@@ -15,9 +25,9 @@ import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
-import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
@@ -50,14 +60,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Box<Teachers>? _teachersBox;
   Box<TeacherPaymentsPurposes>? _teacher_payments_purposesBox;
   Box<TeacherPayment>? _teacher_paymentsBox;
+
+  Box<DomainRecord>? _domainRecordBox;
+  Box<Account>? _accountBox;
+  Box<Asset>? _assetBox;
+  Box<Project>? _projectBox;
+  Box<ProjectItem>? _projectItemBox;
+  Box<DailyActivity>? _dailyActivityBox;
+  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+
   bool _isSyncing = false;
   bool _isSyncings = false;
   bool areDomainsActive = false;
+  String _domainName = ""; // Local variable to store domain name
 
   @override
   void initState() {
     super.initState();
     _openHiveBox();
+    _loadExistingConfig(); // Load domain name from Hive
   }
 
   Future<void> _openHiveBox() async {
@@ -77,100 +98,99 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     _teacher_paymentsBox =
         await Hive.openBox<TeacherPayment>('teacher_payments');
 
-    print('All Hive boxes opened successfully.');
+    _domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
+    _accountBox = await Hive.openBox<Account>('account');
+    _assetBox = await Hive.openBox<Asset>('asset');
+    _projectBox = await Hive.openBox<Project>('projects');
+    _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
+    _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
+    _projectStudentPaymentBox =
+        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+  }
+
+  Future<void> _loadExistingConfig() async {
+    final box = await Hive.openBox<DomainRecord>('domainBox');
+    if (box.isNotEmpty) {
+      final record = box.getAt(0);
+      if (record != null) {
+        setState(() {
+          _domainName = record.domainName ?? "null"; // Default value
+          if (_domainName != "null") {
+            areDomainsActive = record.areDomainsActive ?? false;
+          } else {
+            areDomainsActive = false;
+          }
+          debugPrint(_domainName);
+          debugPrint(areDomainsActive.toString());
+        });
+      }
+    }
   }
 
   Future<List<Classes>> _fetchClassesForCreate() async {
-    print('Fetching classes for creation...');
     List<Classes> createClasses = _classesBox!.values
         .where((cls) => cls.syncStatus == false && cls.classCode != null)
         .toList();
-    print('${createClasses.length} classes found for creation.');
 
     return createClasses;
   }
 
   Future<List<School>> _fetch_schoolForCreate() async {
-    print('Fetching School for creation...');
     List<School> createSchools = _schoolBox!.values
         .where((cls) => cls.syncStatus == false && cls.schoolCode != null)
         .toList();
-    print('${createSchools.length} Schools found for creation.');
 
     return createSchools;
   }
 
   Future<List<Terms>> _fetch_termsForCreate() async {
-    print('Fetching Terms for creation...');
     List<Terms> createTerms = _termsBox!.values
         .where((cls) => cls.syncStatus == false && cls.termId != null)
         .toList();
-    print('${createTerms.length} terms found for creation.');
 
     return createTerms;
   }
 
   Future<List<Withdrawal>> _fetch_withdrawalsForCreate() async {
-    print('Fetching Withdrawal for creation...');
     List<Withdrawal> createWithdrawal = _withdrawalsBox!.values
         .where((cls) => cls.syncStatus == false && cls.withdrawalCode != null)
         .toList();
-    print('${createWithdrawal.length} Withdrawal found for creation.');
     return createWithdrawal;
   }
 
   Future<List<Student>> _fetch_studentsForCreate() async {
-    print('Fetching students for creation...');
     List<Student> createStudent = _studentsBox!.values
         .where((cls) => cls.syncStatus == false && cls.studentIdNumber != null)
         .toList();
-    print('${createStudent.length} Student found for creation.');
     return createStudent;
   }
 
   Future<List<User>> _fetch_usersForCreate() async {
-    print('Fetching User for creation...');
     List<User> createUser = _usersBox!.values
         .where((cls) => cls.syncStatus == false && cls.userCode != null)
         .toList();
-    print('${createUser.length} User found for creation.');
     return createUser;
   }
 
   Future<List<PaymentPurpose>> _fetch_paymentPurposesForCreate() async {
-    print('Fetching PaymentPurpose for creation...');
     List<PaymentPurpose> createPaymentPurpose = _payment_purposesBox!.values
         .where((cls) => cls.syncStatus == false && cls.purposeCode != null)
         .toList();
-    print('${createPaymentPurpose.length} PaymentPurpose found for creation.');
     return createPaymentPurpose;
   }
 
   Future<List<StudentPayment>> _fetch_studentPaymentsForCreate() async {
-    print('Fetching StudentPayment for creation...');
     List<StudentPayment> createStudentPayment = _student_paymentsBox!.values
         .where((cls) => cls.syncStatus == false && cls.receiptNumber != null)
         .toList();
-    print('${createStudentPayment.length} StudentPayment found for creation.');
     return createStudentPayment;
   }
 
   Future<List<Teachers>> _fetch_teachersForCreate() async {
-    print('Fetching Teachers for creation...');
     List<Teachers> createTeachers = _teachersBox!.values
         .where((cls) => cls.syncStatus == false && cls.IdNumber != null)
         .toList();
-    print('${createTeachers.length} Teachers found for creation.');
     return createTeachers;
-  }
-
-  Future<List<TeacherPayment>> _fetch_teacher_paymentsForCreate() async {
-    print('Fetching TeacherPayment for creation...');
-    List<TeacherPayment> createTeacherPayment = _teacher_paymentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.receiptNumber != null)
-        .toList();
-    print('${createTeacherPayment.length} TeacherPayment found for creation.');
-    return createTeacherPayment;
   }
 
   // Sync models to MySQL
@@ -291,8 +311,87 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _updateTeacherPaymentInMySQL(cls);
         }
       }
+      // Sync DomainRecords
+      List<DomainRecord> createDomains = _domainRecordBox!.values
+          .where((dom) => dom.syncStatus == false)
+          .toList();
+      for (DomainRecord dom in createDomains) {
+        if (dom.operationType == 'create') {
+          await _createDomainInMySQL(dom);
+        } else if (dom.operationType == 'update') {
+          await _updateDomainInMySQL(dom);
+        }
+      }
 
-      print('All models have been synced.');
+      // Sync Accounts
+      List<Account> createAccounts =
+          _accountBox!.values.where((acc) => acc.syncStatus == false).toList();
+      for (Account acc in createAccounts) {
+        if (acc.operationType == 'create') {
+          await _createAccountInMySQL(acc);
+        } else if (acc.operationType == 'update') {
+          await _updateAccountInMySQL(acc);
+        }
+      }
+
+      // Sync Assets
+      List<Asset> createAssets =
+          _assetBox!.values.where((a) => a.syncStatus == false).toList();
+      for (Asset a in createAssets) {
+        if (a.operationType == 'create') {
+          await _createAssetInMySQL(a);
+        } else if (a.operationType == 'update') {
+          await _updateAssetInMySQL(a);
+        }
+      }
+
+      // Sync Projects
+      List<Project> createProjects =
+          _projectBox!.values.where((p) => p.syncStatus == false).toList();
+      for (Project p in createProjects) {
+        if (p.operationType == 'create') {
+          await _createProjectInMySQL(p);
+        } else if (p.operationType == 'update') {
+          await _updateProjectInMySQL(p);
+        }
+      }
+
+      // Sync ProjectItems
+      List<ProjectItem> createProjectItems = _projectItemBox!.values
+          .where((pi) => pi.syncStatus == false)
+          .toList();
+      for (ProjectItem pi in createProjectItems) {
+        if (pi.operationType == 'create') {
+          await _createProjectItemInMySQL(pi);
+        } else if (pi.operationType == 'update') {
+          await _updateProjectItemInMySQL(pi);
+        }
+      }
+
+      // Sync DailyActivities
+      List<DailyActivity> createDailyActivities = _dailyActivityBox!.values
+          .where((d) => d.syncStatus == false)
+          .toList();
+      for (DailyActivity d in createDailyActivities) {
+        if (d.operationType == 'create') {
+          await _createDailyActivityInMySQL(d);
+        } else if (d.operationType == 'update') {
+          await _updateDailyActivityInMySQL(d);
+        }
+      }
+
+      // Sync ProjectStudentPayments
+      List<ProjectStudentPayment> createProjectPayments =
+          _projectStudentPaymentBox!.values
+              .where((p) => p.syncStatus == false)
+              .toList();
+      for (ProjectStudentPayment p in createProjectPayments) {
+        if (p.operationType == 'create') {
+          await _createProjectStudentPaymentInMySQL(p);
+        } else if (p.operationType == 'update') {
+          await _updateProjectStudentPaymentInMySQL(p);
+        }
+      }
     } catch (e) {
       print('Error syncing models: $e');
     }
@@ -305,6 +404,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'className': cls.className,
       'date': cls.date.toIso8601String(),
       'termId': cls.termId,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
     };
   }
 
@@ -372,6 +474,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'enrollmentStatus': cls.enrollmentStatus,
       'emergencyContactName': cls.emergencyContactName,
       'emergencyContactNumber': cls.emergencyContactNumber,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
     };
   }
 
@@ -439,6 +544,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'qualifications': cls.qualifications,
       'employmentStatus': cls.employmentStatus,
       'termId': cls.termId,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
     };
   }
 
@@ -475,6 +583,124 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     };
   }
 
+  Map<String, dynamic> _domainsToJson(DomainRecord domain) => {
+        'domainName': domain.domainName,
+        'areDomainsActive': domain.areDomainsActive,
+        'syncStatus': domain.syncStatus,
+        'operationType': domain.operationType,
+        'lastModified': domain.lastModified?.toIso8601String(),
+      };
+  Map<String, dynamic> _accountsToJson(Account acc) => {
+        'id': acc.id,
+        'accountType': acc.accountType,
+        'accountSubType': acc.accountSubType,
+        'accountName': acc.accountName,
+        'accountCode': acc.accountCode,
+        'operationType': acc.operationType,
+        'syncStatus': acc.syncStatus,
+        'lastModified': acc.lastModified?.toIso8601String(),
+        'isALiquidAccount': acc.isALiquidAccount,
+        'modifiedFields': acc.modifiedFields,
+      };
+  Map<String, dynamic> _assetsToJson(Asset asset) {
+    return {
+      'id': asset.id,
+      'assetName': asset.assetName,
+      'assetType': asset.assetType,
+      'assetSubType': asset.assetSubType,
+      'assetCode': asset.assetCode,
+      'assetSerialNo': asset.assetSerialNo,
+      'acquisitionDate': asset.acquisitionDate?.toIso8601String(),
+      'acquisitionCost': asset.acquisitionCost,
+      'acquisitionMethod': asset.acquisitionMethod,
+      'department': asset.department,
+      'location': asset.location,
+      'depreciationRate': asset.depreciationRate,
+      'depreciationMethod': asset.depreciationMethod,
+      'lastDepreciationDate': asset.lastDepreciationDate?.toIso8601String(),
+      'accumulatedDepreciation': asset.accumulatedDepreciation,
+      'bookValue': asset.bookValue,
+      'isImpaired': asset.isImpaired,
+      'impairmentLoss': asset.impairmentLoss,
+      'revaluationDate': asset.revaluationDate?.toIso8601String(),
+      'revaluationAmount': asset.revaluationAmount,
+      'lastMaintenanceDate': asset.lastMaintenanceDate?.toIso8601String(),
+      'maintenanceCost': asset.maintenanceCost,
+      'maintenanceDescription': asset.maintenanceDescription,
+      'capitalImprovementCost': asset.capitalImprovementCost,
+      'capitalImprovementDescription': asset.capitalImprovementDescription,
+      'disposalDate': asset.disposalDate?.toIso8601String(),
+      'disposalProceeds': asset.disposalProceeds,
+      'disposalReason': asset.disposalReason,
+      'gainOrLossOnDisposal': asset.gainOrLossOnDisposal,
+      'isLeased': asset.isLeased,
+      'leaseType': asset.leaseType,
+      'leaseStartDate': asset.leaseStartDate?.toIso8601String(),
+      'leaseEndDate': asset.leaseEndDate?.toIso8601String(),
+      'leasePaymentAmount': asset.leasePaymentAmount,
+      'lastAuditDate': asset.lastAuditDate?.toIso8601String(),
+      'syncStatus': asset.syncStatus,
+      'notes': asset.notes,
+      'createdAt': asset.createdAt?.toIso8601String(),
+      'lastModified': asset.lastModified?.toIso8601String(),
+      'operationType': asset.operationType,
+      'usefulLife': asset.usefulLife,
+      'hasDebitBalance': asset.hasDebitBalance,
+      'hasCreditBalance': asset.hasCreditBalance,
+      'option': asset.option,
+      'modifiedFields': asset.modifiedFields,
+    };
+  }
+
+  Map<String, dynamic> _projectsToJson(Project p) => {
+        'projectCode': p.projectCode,
+        'name': p.name,
+        'description': p.description,
+        'status': p.status,
+        'createdAt': p.createdAt.toIso8601String(),
+        'updatedAt': p.updatedAt.toIso8601String(),
+        'syncStatus': p.syncStatus,
+        'lastModified': p.lastModified?.toIso8601String(),
+        'operationType': p.operationType,
+        'modifiedFields': p.modifiedFields,
+      };
+  Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
+        'projectItemCode': i.projectItemCode,
+        'projectCode': i.projectCode,
+        'name': i.name,
+        'amount': i.amount,
+        'isStudentFee': i.isStudentFee,
+        'syncStatus': i.syncStatus,
+        'lastModified': i.lastModified?.toIso8601String(),
+        'operationType': i.operationType,
+        'modifiedFields': i.modifiedFields,
+      };
+  Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
+        'projectDailyActiviyCode': a.projectDailyActiviyCode,
+        'projectCode': a.projectCode,
+        'date': a.date.toIso8601String(),
+        'type': a.type,
+        'description': a.description,
+        'amount': a.amount,
+        'syncStatus': a.syncStatus,
+        'lastModified': a.lastModified?.toIso8601String(),
+        'operationType': a.operationType,
+        'modifiedFields': a.modifiedFields,
+      };
+  Map<String, dynamic> _project_student_paymentsToJson(
+          ProjectStudentPayment p) =>
+      {
+        'projectStudentPaymentCode': p.projectStudentPaymentCode,
+        'studentId': p.studentId,
+        'projectCode': p.projectCode,
+        'itemId': p.itemId,
+        'amountPaid': p.amountPaid,
+        'balance': p.balance,
+        'syncStatus': p.syncStatus,
+        'lastModified': p.lastModified?.toIso8601String(),
+        'operationType': p.operationType,
+        'modifiedFields': p.modifiedFields,
+      };
   //=================== techers payment  sync =========================
 
   Future<void> _createTeacherPaymentInMySQL(TeacherPayment newClass) async {
@@ -485,7 +711,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -565,7 +791,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -611,7 +837,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -682,7 +908,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -726,7 +952,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -837,7 +1063,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -881,7 +1107,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -961,7 +1187,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1004,7 +1230,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1071,7 +1297,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1116,7 +1342,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1195,7 +1421,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1239,7 +1465,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1364,7 +1590,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1400,7 +1626,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1458,7 +1684,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1493,7 +1719,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1555,7 +1781,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1591,7 +1817,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${newClass.classCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${newClass.classCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1599,8 +1825,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print(
-            'classes_information ${newClass.classCode} created successfully.');
         // Update syncStatus and operationType in Hive
         newClass.syncStatus = true;
         newClass.operationType = 'none';
@@ -1644,7 +1868,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${updatedClass.classCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${updatedClass.classCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1681,7 +1905,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${newClass.schoolCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${newClass.schoolCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1735,14 +1959,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
     // Add the unique identifier to the payload
     modifiedFieldsJson['schoolCode'] = updatedClass.schoolCode;
-    print('Updating School in MySQL: ${updatedClass.schoolCode}');
     setState(() {
       _isSyncings = true;
     });
     try {
       final response = await http.put(
         Uri.parse(
-            'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${updatedClass.schoolCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${updatedClass.schoolCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1769,149 +1992,901 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+  //============================== domains ==========================
+
+  Future<void> _createDomainInMySQL(DomainRecord domain) async {
+    final Map<String, dynamic> jsonData = _domainsToJson(domain);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php?domainName=${domain.domainName}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        domain.syncStatus = true;
+        domain.operationType = 'none';
+        domain.modifiedFields = [];
+        await domain.save();
+      } else {
+        throw Exception('Failed to create domain.');
+      }
+    } catch (e) {
+      print('Error creating domain: \$e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateDomainInMySQL(DomainRecord domain) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in domain.modifiedFields ?? []) {
+      switch (field) {
+        case 'areDomainsActive':
+          modifiedFieldsJson['areDomainsActive'] = domain.areDomainsActive;
+          break;
+      }
+    }
+    // Add the unique identifier to the payload
+    modifiedFieldsJson['domainName'] = domain.domainName;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php?domainName=${domain.domainName}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        domain.syncStatus = true;
+        domain.operationType = 'none';
+        domain.modifiedFields = [];
+        await domain.save();
+      } else {
+        throw Exception('Failed to update domain.');
+      }
+    } catch (e) {
+      print('Error updating domain: \$e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+  //============================== accounts type ==========================
+
+  Future<void> _createAccountInMySQL(Account acc) async {
+    final Map<String, dynamic> jsonData = _accountsToJson(acc);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        acc.syncStatus = true;
+        acc.operationType = 'none';
+        acc.modifiedFields = [];
+        await acc.save();
+      } else {
+        throw Exception('Failed to create account.');
+      }
+    } catch (e) {
+      print('Error creating account: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateAccountInMySQL(Account acc) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in acc.modifiedFields ?? []) {
+      switch (field) {
+        case 'accountType':
+          modifiedFieldsJson['accountType'] = acc.accountType;
+          break;
+        case 'accountSubType':
+          modifiedFieldsJson['accountSubType'] = acc.accountSubType;
+          break;
+        case 'accountName':
+          modifiedFieldsJson['accountName'] = acc.accountName;
+          break;
+
+        case 'lastModified':
+          modifiedFieldsJson['lastModified'] =
+              acc.lastModified?.toIso8601String();
+          break;
+        case 'isALiquidAccount':
+          modifiedFieldsJson['isALiquidAccount'] = acc.isALiquidAccount;
+          break;
+      }
+    }
+
+    // Always include the unique identifier
+    modifiedFieldsJson['accountCode'] = acc.accountCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        acc.syncStatus = true;
+        acc.operationType = 'none';
+        acc.modifiedFields = [];
+        await acc.save();
+      } else {
+        throw Exception('Failed to update account.');
+      }
+    } catch (e) {
+      print('Error updating account: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+//============================== assets ==========================
+
+  Future<void> _createAssetInMySQL(Asset asset) async {
+    final Map<String, dynamic> jsonData = _assetsToJson(asset);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php?assetCode=${asset.assetCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        asset.syncStatus = true;
+        asset.operationType = 'none';
+        asset.modifiedFields = [];
+        await asset.save();
+      } else {
+        throw Exception('Failed to create asset.');
+      }
+    } catch (e) {
+      print('Error creating asset: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateAssetInMySQL(Asset asset) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in asset.modifiedFields ?? []) {
+      switch (field) {
+        case 'assetName':
+          modifiedFieldsJson['assetName'] = asset.assetName;
+          break;
+        case 'assetType':
+          modifiedFieldsJson['assetType'] = asset.assetType;
+          break;
+        case 'assetSubType':
+          modifiedFieldsJson['assetSubType'] = asset.assetSubType;
+          break;
+
+        case 'assetSerialNo':
+          modifiedFieldsJson['assetSerialNo'] = asset.assetSerialNo;
+          break;
+        case 'acquisitionDate':
+          modifiedFieldsJson['acquisitionDate'] =
+              asset.acquisitionDate?.toIso8601String();
+          break;
+        case 'acquisitionCost':
+          modifiedFieldsJson['acquisitionCost'] = asset.acquisitionCost;
+          break;
+        case 'acquisitionMethod':
+          modifiedFieldsJson['acquisitionMethod'] = asset.acquisitionMethod;
+          break;
+        case 'department':
+          modifiedFieldsJson['department'] = asset.department;
+          break;
+        case 'location':
+          modifiedFieldsJson['location'] = asset.location;
+          break;
+        case 'depreciationRate':
+          modifiedFieldsJson['depreciationRate'] = asset.depreciationRate;
+          break;
+        case 'depreciationMethod':
+          modifiedFieldsJson['depreciationMethod'] = asset.depreciationMethod;
+          break;
+        case 'lastDepreciationDate':
+          modifiedFieldsJson['lastDepreciationDate'] =
+              asset.lastDepreciationDate?.toIso8601String();
+          break;
+        case 'accumulatedDepreciation':
+          modifiedFieldsJson['accumulatedDepreciation'] =
+              asset.accumulatedDepreciation;
+          break;
+        case 'bookValue':
+          modifiedFieldsJson['bookValue'] = asset.bookValue;
+          break;
+        case 'isImpaired':
+          modifiedFieldsJson['isImpaired'] = asset.isImpaired;
+          break;
+        case 'impairmentLoss':
+          modifiedFieldsJson['impairmentLoss'] = asset.impairmentLoss;
+          break;
+        case 'revaluationDate':
+          modifiedFieldsJson['revaluationDate'] =
+              asset.revaluationDate?.toIso8601String();
+          break;
+        case 'revaluationAmount':
+          modifiedFieldsJson['revaluationAmount'] = asset.revaluationAmount;
+          break;
+        case 'lastMaintenanceDate':
+          modifiedFieldsJson['lastMaintenanceDate'] =
+              asset.lastMaintenanceDate?.toIso8601String();
+          break;
+        case 'maintenanceCost':
+          modifiedFieldsJson['maintenanceCost'] = asset.maintenanceCost;
+          break;
+        case 'maintenanceDescription':
+          modifiedFieldsJson['maintenanceDescription'] =
+              asset.maintenanceDescription;
+          break;
+        case 'capitalImprovementCost':
+          modifiedFieldsJson['capitalImprovementCost'] =
+              asset.capitalImprovementCost;
+          break;
+        case 'capitalImprovementDescription':
+          modifiedFieldsJson['capitalImprovementDescription'] =
+              asset.capitalImprovementDescription;
+          break;
+        case 'disposalDate':
+          modifiedFieldsJson['disposalDate'] =
+              asset.disposalDate?.toIso8601String();
+          break;
+        case 'disposalProceeds':
+          modifiedFieldsJson['disposalProceeds'] = asset.disposalProceeds;
+          break;
+        case 'disposalReason':
+          modifiedFieldsJson['disposalReason'] = asset.disposalReason;
+          break;
+        case 'gainOrLossOnDisposal':
+          modifiedFieldsJson['gainOrLossOnDisposal'] =
+              asset.gainOrLossOnDisposal;
+          break;
+        case 'isLeased':
+          modifiedFieldsJson['isLeased'] = asset.isLeased;
+          break;
+        case 'leaseType':
+          modifiedFieldsJson['leaseType'] = asset.leaseType;
+          break;
+        case 'leaseStartDate':
+          modifiedFieldsJson['leaseStartDate'] =
+              asset.leaseStartDate?.toIso8601String();
+          break;
+        case 'leaseEndDate':
+          modifiedFieldsJson['leaseEndDate'] =
+              asset.leaseEndDate?.toIso8601String();
+          break;
+        case 'leasePaymentAmount':
+          modifiedFieldsJson['leasePaymentAmount'] = asset.leasePaymentAmount;
+          break;
+        case 'lastAuditDate':
+          modifiedFieldsJson['lastAuditDate'] =
+              asset.lastAuditDate?.toIso8601String();
+          break;
+        case 'notes':
+          modifiedFieldsJson['notes'] = asset.notes;
+          break;
+        case 'lastModified':
+          modifiedFieldsJson['lastModified'] =
+              asset.lastModified?.toIso8601String();
+          break;
+        case 'usefulLife':
+          modifiedFieldsJson['usefulLife'] = asset.usefulLife;
+          break;
+        case 'hasDebitBalance':
+          modifiedFieldsJson['hasDebitBalance'] = asset.hasDebitBalance;
+          break;
+        case 'hasCreditBalance':
+          modifiedFieldsJson['hasCreditBalance'] = asset.hasCreditBalance;
+          break;
+        case 'option':
+          modifiedFieldsJson['option'] = asset.option;
+          break;
+      }
+    }
+
+    modifiedFieldsJson['assetCode'] = asset.assetCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php?assetCode=${asset.assetCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        asset.syncStatus = true;
+        asset.operationType = 'none';
+        asset.modifiedFields = [];
+        await asset.save();
+      } else {
+        throw Exception('Failed to update asset.');
+      }
+    } catch (e) {
+      print('Error updating asset: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+//============================== projects ==========================
+
+  Future<void> _createProjectInMySQL(Project p) async {
+    final Map<String, dynamic> jsonData = _projectsToJson(p);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        p.syncStatus = true;
+        p.operationType = 'none';
+        p.modifiedFields = [];
+        await p.save();
+      } else {
+        throw Exception('Failed to create project.');
+      }
+    } catch (e) {
+      print('Error creating project: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateProjectInMySQL(Project p) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in p.modifiedFields ?? []) {
+      switch (field) {
+        case 'name':
+          modifiedFieldsJson['name'] = p.name;
+          break;
+        case 'description':
+          modifiedFieldsJson['description'] = p.description;
+          break;
+        case 'status':
+          modifiedFieldsJson['status'] = p.status;
+          break;
+        case 'createdAt':
+          modifiedFieldsJson['createdAt'] = p.createdAt.toIso8601String();
+          break;
+      }
+    }
+
+    modifiedFieldsJson['projectCode'] = p.projectCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        p.syncStatus = true;
+        p.operationType = 'none';
+        p.modifiedFields = [];
+        await p.save();
+      } else {
+        throw Exception('Failed to update project.');
+      }
+    } catch (e) {
+      print('Error updating project: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+//============================== dailyActivities ==========================
+
+  Future<void> _createDailyActivityInMySQL(DailyActivity a) async {
+    final Map<String, dynamic> jsonData = _daily_activitiesToJson(a);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php?projectDailyActiviyCode=${a.projectDailyActiviyCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        a.syncStatus = true;
+        a.operationType = 'none';
+        a.modifiedFields = [];
+        await a.save();
+      } else {
+        throw Exception('Failed to create daily activity.');
+      }
+    } catch (e) {
+      print('Error creating daily activity: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateDailyActivityInMySQL(DailyActivity a) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in a.modifiedFields ?? []) {
+      switch (field) {
+        case 'projectCode':
+          modifiedFieldsJson['projectCode'] = a.projectCode;
+          break;
+        case 'date':
+          modifiedFieldsJson['date'] = a.date.toIso8601String();
+          break;
+        case 'type':
+          modifiedFieldsJson['type'] = a.type;
+          break;
+        case 'description':
+          modifiedFieldsJson['description'] = a.description;
+          break;
+        case 'amount':
+          modifiedFieldsJson['amount'] = a.amount;
+          break;
+      }
+    }
+
+    modifiedFieldsJson['projectDailyActiviyCode'] = a.projectDailyActiviyCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php?projectDailyActiviyCode=${a.projectDailyActiviyCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        a.syncStatus = true;
+        a.operationType = 'none';
+        a.modifiedFields = [];
+        await a.save();
+      } else {
+        throw Exception('Failed to update daily activity.');
+      }
+    } catch (e) {
+      print('Error updating daily activity: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+//============================== projectStudentPayments ==========================
+
+  Future<void> _createProjectStudentPaymentInMySQL(
+      ProjectStudentPayment p) async {
+    final Map<String, dynamic> jsonData = _project_student_paymentsToJson(p);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        p.syncStatus = true;
+        p.operationType = 'none';
+        p.modifiedFields = [];
+        await p.save();
+      } else {
+        throw Exception('Failed to create project student payment.');
+      }
+    } catch (e) {
+      print('Error creating project student payment: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateProjectStudentPaymentInMySQL(
+      ProjectStudentPayment p) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in p.modifiedFields ?? []) {
+      switch (field) {
+        case 'studentId':
+          modifiedFieldsJson['studentId'] = p.studentId;
+          break;
+        case 'projectCode':
+          modifiedFieldsJson['projectCode'] = p.projectCode;
+          break;
+        case 'itemId':
+          modifiedFieldsJson['itemId'] = p.itemId;
+          break;
+        case 'amountPaid':
+          modifiedFieldsJson['amountPaid'] = p.amountPaid;
+          break;
+        case 'balance':
+          modifiedFieldsJson['balance'] = p.balance;
+          break;
+      }
+    }
+
+    modifiedFieldsJson['projectStudentPaymentCode'] =
+        p.projectStudentPaymentCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        p.syncStatus = true;
+        p.operationType = 'none';
+        p.modifiedFields = [];
+        await p.save();
+      } else {
+        throw Exception('Failed to update project student payment.');
+      }
+    } catch (e) {
+      print('Error updating project student payment: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+//============================== projectItems ==========================
+
+  Future<void> _createProjectItemInMySQL(ProjectItem i) async {
+    final Map<String, dynamic> jsonData = _project_itemsToJson(i);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        i.syncStatus = true;
+        i.operationType = 'none';
+        i.modifiedFields = [];
+        await i.save();
+      } else {
+        throw Exception('Failed to create project item.');
+      }
+    } catch (e) {
+      print('Error creating project item: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateProjectItemInMySQL(ProjectItem i) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in i.modifiedFields ?? []) {
+      switch (field) {
+        case 'projectCode':
+          modifiedFieldsJson['projectCode'] = i.projectCode;
+          break;
+        case 'name':
+          modifiedFieldsJson['name'] = i.name;
+          break;
+        case 'amount':
+          modifiedFieldsJson['amount'] = i.amount;
+          break;
+        case 'isStudentFee':
+          modifiedFieldsJson['isStudentFee'] = i.isStudentFee;
+          break;
+      }
+    }
+
+    modifiedFieldsJson['projectItemCode'] = i.projectItemCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        i.syncStatus = true;
+        i.operationType = 'none';
+        i.modifiedFields = [];
+        await i.save();
+      } else {
+        throw Exception('Failed to update project item.');
+      }
+    } catch (e) {
+      print('Error updating project item: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final loggedInUser = getLoggedInUser();
+
     final isLargeScreen =
-        MediaQuery.of(context).size.width > 600; // Example threshold
+        MediaQuery.of(context).size.width > 800; // Example threshold
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Synchronization'),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color.fromRGBO(0, 233, 254, 1),
-              Color.fromARGB(0, 233, 254, 1),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 600),
+      body: LayoutBuilder(builder: (context, constraints) {
+        return Row(
+          children: [
+            if (constraints.maxWidth >= 540)
+              SizedBox(
+                width: 250,
+                child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+              ),
+            Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Sync All Records Button
-                  const SizedBox(
-                    height: 5,
-                  ),
-                  buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                  const SizedBox(
-                    height: 10,
-                  ),
-                  Text(
-                    'Synchronization',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 20,
-                      fontWeight: FontWeight.normal,
-                      color: const Color.fromARGB(
-                          255, 0, 0, 0), // White text on gradient
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(
-                    height: 20,
-                  ),
-                  _isSyncings
-                      ? const Center(
-                          child: SizedBox(
-                            height:
-                                50, // Specify the size of the CircularProgressIndicator
-                            width: 50,
-                            child: CircularProgressIndicator(
-                              strokeWidth:
-                                  5, // Adjust the thickness of the progress indicator
-                            ),
+                  Expanded(
+                    child: LayoutBuilder(builder: (context, constraints) {
+                      return Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color.fromRGBO(0, 233, 254, 1),
+                              Color.fromARGB(0, 233, 254, 1),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
                           ),
-                        )
-                      : ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color.fromARGB(255, 255, 255, 255),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () async {
-                            if (areDomainsActive) {
-                              await _syncModels();
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(const SnackBar(
-                                content: Text(
-                                  'All records have been synchronized successfully.',
-                                  style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.w600),
+                        ),
+                        child: Center(
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Container(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 600),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Sync All Records Button
+
+                                    buildFutureSchoolsWidget(
+                                        isLargeScreen: isLargeScreen),
+
+                                    _isSyncings
+                                        ? const Center(
+                                            child: SizedBox(
+                                              height:
+                                                  50, // Specify the size of the CircularProgressIndicator
+                                              width: 50,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth:
+                                                    5, // Adjust the thickness of the progress indicator
+                                              ),
+                                            ),
+                                          )
+                                        : ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  const Color.fromARGB(
+                                                      255, 255, 255, 255),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              if (areDomainsActive) {
+                                                await _syncModels();
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                        const SnackBar(
+                                                  content: Text(
+                                                    'All records have been synchronized successfully.',
+                                                    style: TextStyle(
+                                                        fontSize: 16,
+                                                        color: Colors.black,
+                                                        fontWeight:
+                                                            FontWeight.w600),
+                                                  ),
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  backgroundColor:
+                                                      Color.fromARGB(
+                                                          255, 255, 255, 255),
+                                                ));
+                                              } else {
+                                                _showDomainsInactiveMessage(
+                                                    context);
+                                              }
+                                            },
+                                            icon: const Icon(Icons.cloud_upload,
+                                                size: 24),
+                                            label: const Text(
+                                              'Push Records To The Cloud',
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+
+                                    const SizedBox(height: 20),
+
+                                    _isSyncing
+                                        ? const Center(
+                                            child: SizedBox(
+                                              height:
+                                                  50, // Specify the size of the CircularProgressIndicator
+                                              width: 50,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth:
+                                                    5, // Adjust the thickness of the progress indicator
+                                              ),
+                                            ),
+                                          )
+                                        : ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  const Color.fromARGB(
+                                                      255, 255, 255, 255),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              if (areDomainsActive) {
+                                                await _showModelSelectionDialog(
+                                                    context);
+                                              } else {
+                                                _showDomainsInactiveMessage(
+                                                    context);
+                                              }
+                                            },
+                                            icon: const Icon(
+                                                Icons.cloud_download,
+                                                size: 24),
+                                            label: const Text(
+                                              'Pull  Records From The Cloud',
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                    const SizedBox(height: 20),
+
+                                    // Retrieve and Save Records Button
+                                  ],
                                 ),
-                                behavior: SnackBarBehavior.floating,
-                                backgroundColor:
-                                    Color.fromARGB(255, 255, 255, 255),
-                              ));
-                            } else {
-                              _showDomainsInactiveMessage(context);
-                            }
-                          },
-                          icon: const Icon(Icons.cloud_upload, size: 24),
-                          label: const Text(
-                            'Push Records To The Cloud',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-
-                  const SizedBox(height: 20),
-
-                  _isSyncing
-                      ? const Center(
-                          child: SizedBox(
-                            height:
-                                50, // Specify the size of the CircularProgressIndicator
-                            width: 50,
-                            child: CircularProgressIndicator(
-                              strokeWidth:
-                                  5, // Adjust the thickness of the progress indicator
+                              ),
                             ),
                           ),
-                        )
-                      : ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color.fromARGB(255, 255, 255, 255),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () async {
-                            if (areDomainsActive) {
-                              await _showModelSelectionDialog(context);
-                            } else {
-                              _showDomainsInactiveMessage(context);
-                            }
-                          },
-                          icon: const Icon(Icons.cloud_download, size: 24),
-                          label: const Text(
-                            'Pull  Records From The Cloud',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.w600),
-                          ),
                         ),
-                  const SizedBox(height: 20),
-
-                  // Retrieve and Save Records Button
+                      );
+                    }),
+                  ),
                 ],
               ),
             ),
-          ),
-        ),
-      ),
+          ],
+        );
+      }),
       bottomNavigationBar: buildBottomNavigationBar(
         currentIndex: _selectedIndex,
         onItemTapped: _handleItemTapped,
@@ -1997,6 +2972,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Schools',
         'Student Payment Purposes',
         'Classes',
+        'DomainRecord',
+        'Account',
+        'Asset',
+        'Project',
+        'ProjectItem',
+        'DailyActivity',
+        'ProjectStudentPayment',
       ],
       'secretary': [
         'Students',
@@ -2007,6 +2989,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Teachers',
         'Student Payments',
         'Student Payment Purposes',
+        'Account',
+        'Asset',
+        'Project',
+        'ProjectItem',
+        'DailyActivity',
+        'ProjectStudentPayment',
       ],
       'teacher': [
         'Students',
@@ -2023,6 +3011,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Schools',
         'Classes',
         'Student Payment Purposes',
+        'Account',
+        'Asset',
+        'Project',
+        'ProjectItem',
+        'DailyActivity',
+        'ProjectStudentPayment',
       ],
       'sub-admin': [
         'Teacher Payments',
@@ -2036,6 +3030,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Schools',
         'Student Payment Purposes',
         'Classes',
+        'DomainRecord',
+        'Account',
+        'Asset',
+        'Project',
+        'ProjectItem',
+        'DailyActivity',
+        'ProjectStudentPayment',
       ],
     };
 
@@ -2115,6 +3116,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'Schools': _fetchAndSyncSchools,
       'Student Payment Purposes': _fetchAndSyncPurposes,
       'Classes': _fetchAndSyncClasses,
+      'DomainRecord': _fetchAndSyncDomainRecord,
+      'Account': _fetchAndSyncAccount,
+      'Asset': _fetchAndSyncAsset,
+      'Project': _fetchAndSyncProject,
+      'ProjectItem': _fetchAndSyncProjectItem,
+      'DailyActivity': _fetchAndSyncDailyActivity,
+      'ProjectStudentPayment': _fetchAndSyncProjectStudentPayment,
     };
 
     try {
@@ -2160,10 +3168,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================================pull _fetchAndSyncClasses =======================================================================//
+  List<String> _decodeClassToList(dynamic value) {
+    try {
+      if (value == null) return [];
+      if (value is List) return List<String>.from(value);
+      if (value is String) {
+        final decoded = jsonDecode(value);
+        if (decoded is List) return List<String>.from(decoded);
+      }
+    } catch (e) {
+      print('Error decoding string to List: $e');
+    }
+    return [];
+  }
 
   Future<void> _fetchAndSyncClasses() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/classes.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2171,7 +3192,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> classes = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+        final List<dynamic> classes = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded response: $decoded');
 
         for (var classData in classes) {
           DateTime parsedDate =
@@ -2183,6 +3212,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             className: classData['className'],
             date: parsedDate, // Assign the parsed DateTime
             termId: classData['termId'],
+            terms: _decodeClassToList(classData['terms']),
           );
 
           // Check if the record exists in Hive using schoolCode
@@ -2195,7 +3225,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           Classes? existingClasses =
               existingClassList.isNotEmpty ? existingClassList.first : null;
 
-          if (existingClasses?.classCode != null) {
+          if (fetchedClass.classCode != null) {
             if (existingClasses != null) {
               // Update existing record
               existingClasses
@@ -2206,7 +3236,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..termId = fetchedClass.termId
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..terms = fetchedClass.terms;
+
               await existingClasses.save();
               print(
                   'Classes ${fetchedClass.classCode} updated successfully in Hive.');
@@ -2239,8 +3271,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncPurposes =======================================================================//
 
   Future<void> _fetchAndSyncPurposes() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2318,8 +3350,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncSchools =======================================================================//
 
   Future<void> _fetchAndSyncSchools() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2395,8 +3427,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncStudentPayments =======================================================================//
 
   Future<void> _fetchAndSyncStudentPayments() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2484,8 +3516,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncStudents =======================================================================//
 
   Future<void> _fetchAndSyncStudents() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2524,6 +3556,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             emergencyContactName: studentsData['emergencyContactName'] ?? '',
             emergencyContactNumber:
                 studentsData['emergencyContactNumber'] ?? '',
+            terms: _decodeToList(studentsData['terms']),
           );
 
           // Check if the record exists in Hive using termId
@@ -2573,7 +3606,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                     fetchedStudents.emergencyContactNumber
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..terms = fetchedStudents.terms;
 
               await existingStudents.save();
               print(
@@ -2615,8 +3649,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull teacherPayments =======================================================================//
 
   Future<void> _fetchAndSyncTeacherPayments() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2703,8 +3737,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncTeacherPurposes =======================================================================//
 
   Future<void> _fetchAndSyncTeacherPurposes() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2788,8 +3822,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncTeachers =======================================================================//
 
   Future<void> _fetchAndSyncTeachers() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -2804,33 +3838,33 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             print('Key: $key, Value: $value, Type: ${value?.runtimeType}');
           });*/
           Teachers fetchedTeachers = Teachers(
-            id: int.tryParse(teachersData['fid'] ?? '0') ?? 0,
-            name: teachersData['name'] ?? '',
-            surname: teachersData['surname'] ?? '',
-            IdNumber: teachersData['IdNumber'],
-            assignedClass: teachersData['assignedClass'] ?? '',
-            assignedClasses: _decodeToList(teachersData['assignedClasses']),
-            gender: teachersData['gender'] ?? '',
-            dateOfBirth: DateTime.tryParse(teachersData['dateOfBirth']) ??
-                DateTime.now(),
-            phoneNumber: teachersData['phoneNumber'] ?? '',
-            paymentPurpose: teachersData['paymentPurpose'] ?? '',
-            isPaid: teachersData['isPaid'],
-            paymentAmount: teachersData['paymentAmount'] != null
-                ? double.tryParse(teachersData['paymentAmount'].toString()) ??
-                    0.0
-                : 0.0,
-            paymentDate: teachersData['paymentDate'] != null
-                ? DateTime.tryParse(teachersData['paymentDate'])
-                : null,
-            email: teachersData['email'] ?? '',
-            address: teachersData['address'] ?? '',
-            hireDate:
-                DateTime.tryParse(teachersData['hireDate']) ?? DateTime(1900),
-            qualifications: teachersData['qualifications'] ?? '',
-            employmentStatus: teachersData['employmentStatus'] ?? '',
-            termId: teachersData['termId'],
-          );
+              id: int.tryParse(teachersData['fid'] ?? '0') ?? 0,
+              name: teachersData['name'] ?? '',
+              surname: teachersData['surname'] ?? '',
+              IdNumber: teachersData['IdNumber'],
+              assignedClass: teachersData['assignedClass'] ?? '',
+              assignedClasses: _decodeToList(teachersData['assignedClasses']),
+              gender: teachersData['gender'] ?? '',
+              dateOfBirth: DateTime.tryParse(teachersData['dateOfBirth']) ??
+                  DateTime.now(),
+              phoneNumber: teachersData['phoneNumber'] ?? '',
+              paymentPurpose: teachersData['paymentPurpose'] ?? '',
+              isPaid: teachersData['isPaid'],
+              paymentAmount: teachersData['paymentAmount'] != null
+                  ? double.tryParse(teachersData['paymentAmount'].toString()) ??
+                      0.0
+                  : 0.0,
+              paymentDate: teachersData['paymentDate'] != null
+                  ? DateTime.tryParse(teachersData['paymentDate'])
+                  : null,
+              email: teachersData['email'] ?? '',
+              address: teachersData['address'] ?? '',
+              hireDate:
+                  DateTime.tryParse(teachersData['hireDate']) ?? DateTime(1900),
+              qualifications: teachersData['qualifications'] ?? '',
+              employmentStatus: teachersData['employmentStatus'] ?? '',
+              termId: teachersData['termId'],
+              terms: _decodeToList(teachersData['terms']));
 
           // Check if the record exists in Hive using schoolCode
           var existingTeachersList = _teachersBox!.values
@@ -2866,7 +3900,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..termId = fetchedTeachers.termId
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..terms = fetchedTeachers.terms;
               await existingTeachers.save();
               print(
                   'Teachers ${fetchedTeachers.IdNumber} updated successfully in Hive.');
@@ -2899,8 +3934,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncTerms =======================================================================//
 
   Future<void> _fetchAndSyncTerms() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php';
 
     setState(() {
       _isSyncing = true;
@@ -2992,8 +4027,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncUsers =======================================================================//
 
   Future<void> _fetchAndSyncUsers() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php';
     setState(() {
       _isSyncing = true;
     });
@@ -3072,8 +4107,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncwithdrawals =======================================================================//
 
   Future<void> _fetchAndSyncwithdrawals() async {
-    const String apiUrl =
-        'http://thando.co.zw/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php';
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php';
     setState(() {
       _isSyncing = true;
     });
@@ -3146,6 +4181,627 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       }
     } catch (e) {
       print('Error fetching or syncing withdrawals: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncDomainRecord =======================================================================//
+
+  Future<void> _fetchAndSyncDomainRecord() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> domainList = jsonDecode(response.body);
+        bool _intToBool(dynamic value) {
+          if (value is bool) return value;
+          if (value is int) return value == 1;
+          return false;
+        }
+
+        for (var domainData in domainList) {
+          DomainRecord fetchedDomain = DomainRecord(
+            domainName: domainData['domainName'] ?? '',
+            areDomainsActive: _intToBool(domainData['areDomainsActive']),
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(domainData['lastModified'] ?? ''),
+          );
+
+          var existingDomainList = _domainRecordBox!.values
+              .where((d) => d.domainName == fetchedDomain.domainName)
+              .toList();
+
+          DomainRecord? existingDomain =
+              existingDomainList.isNotEmpty ? existingDomainList.first : null;
+
+          if (fetchedDomain.domainName!.isNotEmpty) {
+            if (existingDomain != null) {
+              existingDomain
+                ..areDomainsActive = fetchedDomain.areDomainsActive
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existingDomain.save();
+              print(
+                  'DomainRecord ${fetchedDomain.domainName} updated successfully in Hive.');
+            } else {
+              await _domainRecordBox!.add(fetchedDomain);
+              print(
+                  'DomainRecord ${fetchedDomain.domainName} added successfully to Hive.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'A Domain record was found with no domain name and was skipped.'),
+            ));
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch DomainRecords from server. Status Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching or syncing DomainRecords: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncAccount =======================================================================//
+
+  Future<void> _fetchAndSyncAccount() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> accounts = jsonDecode(response.body);
+        bool _intToBool(dynamic value) {
+          if (value is bool) return value;
+          if (value is int) return value == 1;
+          return false;
+        }
+
+        for (var accData in accounts) {
+          Account fetchedAcc = Account(
+            id: accData['id'],
+            accountType: accData['accountType'],
+            accountSubType: accData['accountSubType'],
+            accountName: accData['accountName'],
+            accountCode: accData['accountCode'],
+            isALiquidAccount: _intToBool(accData['isALiquidAccount']),
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(accData['lastModified'] ?? ''),
+          );
+
+          var existingList =
+              _accountBox!.values.where((a) => a.id == fetchedAcc.id).toList();
+
+          Account? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          if (fetchedAcc.id != null) {
+            if (existing != null) {
+              existing
+                ..accountType = fetchedAcc.accountType
+                ..accountSubType = fetchedAcc.accountSubType
+                ..accountName = fetchedAcc.accountName
+                ..accountCode = fetchedAcc.accountCode
+                ..isALiquidAccount = fetchedAcc.isALiquidAccount
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existing.save();
+              print('Account ${fetchedAcc.id} updated successfully.');
+            } else {
+              await _accountBox!.add(fetchedAcc);
+              print('Account ${fetchedAcc.id} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Account with no ID was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch Accounts. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing Accounts: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncAsset =======================================================================//
+
+  Future<void> _fetchAndSyncAsset() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> assets = jsonDecode(response.body);
+        double? _toDouble(dynamic value) {
+          if (value == null) return null;
+          if (value is double) return value;
+          if (value is int) return value.toDouble();
+          if (value is String) return double.tryParse(value);
+          return null;
+        }
+
+        bool _intToBool(dynamic value) {
+          if (value is bool) return value;
+          if (value is int) return value == 1;
+          return false;
+        }
+
+        for (var assetData in assets) {
+          Asset fetchedAsset = Asset(
+            id: assetData['id'],
+            assetName: assetData['assetName'],
+            assetType: assetData['assetType'],
+            assetSubType: assetData['assetSubType'],
+            assetCode: assetData['assetCode'],
+            assetSerialNo: assetData['assetSerialNo'],
+            acquisitionDate:
+                DateTime.tryParse(assetData['acquisitionDate'] ?? ''),
+            acquisitionCost: _toDouble(assetData['acquisitionCost']),
+            acquisitionMethod: assetData['acquisitionMethod'],
+            department: assetData['department'],
+            location: assetData['location'],
+            depreciationRate: _toDouble(assetData['depreciationRate']),
+            depreciationMethod: assetData['depreciationMethod'],
+            lastDepreciationDate:
+                DateTime.tryParse(assetData['lastDepreciationDate'] ?? ''),
+            accumulatedDepreciation:
+                _toDouble(assetData['accumulatedDepreciation']),
+            bookValue: _toDouble(assetData['bookValue']),
+            isImpaired: _intToBool(assetData['isImpaired']),
+            impairmentLoss: _toDouble(assetData['impairmentLoss']),
+            revaluationDate:
+                DateTime.tryParse(assetData['revaluationDate'] ?? ''),
+            revaluationAmount: _toDouble(assetData['revaluationAmount']),
+            lastMaintenanceDate:
+                DateTime.tryParse(assetData['lastMaintenanceDate'] ?? ''),
+            maintenanceCost: _toDouble(assetData['maintenanceCost']),
+            maintenanceDescription: assetData['maintenanceDescription'],
+            capitalImprovementCost:
+                _toDouble(assetData['capitalImprovementCost']),
+            capitalImprovementDescription:
+                assetData['capitalImprovementDescription'],
+            disposalDate: DateTime.tryParse(assetData['disposalDate'] ?? ''),
+            disposalProceeds: _toDouble(assetData['disposalProceeds']),
+            disposalReason: assetData['disposalReason'],
+            gainOrLossOnDisposal: _toDouble(assetData['gainOrLossOnDisposal']),
+            isLeased: _intToBool(assetData['isLeased']),
+            leaseType: assetData['leaseType'],
+            leaseStartDate:
+                DateTime.tryParse(assetData['leaseStartDate'] ?? ''),
+            leaseEndDate: DateTime.tryParse(assetData['leaseEndDate'] ?? ''),
+            leasePaymentAmount: _toDouble(assetData['leasePaymentAmount']),
+            lastAuditDate: DateTime.tryParse(assetData['lastAuditDate'] ?? ''),
+            notes: assetData['notes'],
+            createdAt: DateTime.tryParse(assetData['createdAt'] ?? ''),
+            lastModified: DateTime.tryParse(assetData['lastModified'] ?? ''),
+            operationType: 'none',
+            syncStatus: true,
+            usefulLife: assetData['usefulLife'],
+            hasDebitBalance: _intToBool(assetData['hasDebitBalance']),
+            hasCreditBalance: _intToBool(assetData['hasCreditBalance']),
+            option: assetData['option'],
+          );
+
+          var existingAssetList =
+              _assetBox!.values.where((a) => a.id == fetchedAsset.id).toList();
+
+          Asset? existingAsset =
+              existingAssetList.isNotEmpty ? existingAssetList.first : null;
+
+          if (fetchedAsset.id != null) {
+            if (existingAsset != null) {
+              existingAsset
+                ..assetName = fetchedAsset.assetName
+                ..assetType = fetchedAsset.assetType
+                ..assetSubType = fetchedAsset.assetSubType
+                ..assetCode = fetchedAsset.assetCode
+                ..assetSerialNo = fetchedAsset.assetSerialNo
+                ..acquisitionDate = fetchedAsset.acquisitionDate
+                ..acquisitionCost = fetchedAsset.acquisitionCost
+                ..acquisitionMethod = fetchedAsset.acquisitionMethod
+                ..department = fetchedAsset.department
+                ..location = fetchedAsset.location
+                ..depreciationRate = fetchedAsset.depreciationRate
+                ..depreciationMethod = fetchedAsset.depreciationMethod
+                ..lastDepreciationDate = fetchedAsset.lastDepreciationDate
+                ..accumulatedDepreciation = fetchedAsset.accumulatedDepreciation
+                ..bookValue = fetchedAsset.bookValue
+                ..isImpaired = fetchedAsset.isImpaired
+                ..impairmentLoss = fetchedAsset.impairmentLoss
+                ..revaluationDate = fetchedAsset.revaluationDate
+                ..revaluationAmount = fetchedAsset.revaluationAmount
+                ..lastMaintenanceDate = fetchedAsset.lastMaintenanceDate
+                ..maintenanceCost = fetchedAsset.maintenanceCost
+                ..maintenanceDescription = fetchedAsset.maintenanceDescription
+                ..capitalImprovementCost = fetchedAsset.capitalImprovementCost
+                ..capitalImprovementDescription =
+                    fetchedAsset.capitalImprovementDescription
+                ..disposalDate = fetchedAsset.disposalDate
+                ..disposalProceeds = fetchedAsset.disposalProceeds
+                ..disposalReason = fetchedAsset.disposalReason
+                ..gainOrLossOnDisposal = fetchedAsset.gainOrLossOnDisposal
+                ..isLeased = fetchedAsset.isLeased
+                ..leaseType = fetchedAsset.leaseType
+                ..leaseStartDate = fetchedAsset.leaseStartDate
+                ..leaseEndDate = fetchedAsset.leaseEndDate
+                ..leasePaymentAmount = fetchedAsset.leasePaymentAmount
+                ..lastAuditDate = fetchedAsset.lastAuditDate
+                ..notes = fetchedAsset.notes
+                ..createdAt = fetchedAsset.createdAt
+                ..lastModified = DateTime.now()
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..usefulLife = fetchedAsset.usefulLife
+                ..hasDebitBalance = fetchedAsset.hasDebitBalance
+                ..hasCreditBalance = fetchedAsset.hasCreditBalance
+                ..option = fetchedAsset.option;
+              await existingAsset.save();
+              print('Asset ${fetchedAsset.id} updated successfully.');
+            } else {
+              await _assetBox!.add(fetchedAsset);
+              print('Asset ${fetchedAsset.id} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Asset with no ID was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception('Failed to fetch Assets. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing Assets: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncProject =======================================================================//
+
+  Future<void> _fetchAndSyncProject() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> projects = jsonDecode(response.body);
+
+        for (var projectData in projects) {
+          Project fetchedProject = Project(
+            projectCode: projectData['projectCode'],
+            name: projectData['name'],
+            description: projectData['description'],
+            status: projectData['status'],
+            createdAt: DateTime.tryParse(projectData['createdAt'] ?? '') ??
+                DateTime.now(),
+            updatedAt: DateTime.tryParse(projectData['updatedAt'] ?? '') ??
+                DateTime.now(),
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(projectData['lastModified'] ?? ''),
+          );
+
+          var existingProjectList = _projectBox!.values
+              .where((p) => p.projectCode == fetchedProject.projectCode)
+              .toList();
+
+          Project? existingProject =
+              existingProjectList.isNotEmpty ? existingProjectList.first : null;
+
+          if (fetchedProject.projectCode.isNotEmpty) {
+            if (existingProject != null) {
+              existingProject
+                ..name = fetchedProject.name
+                ..description = fetchedProject.description
+                ..status = fetchedProject.status
+                ..createdAt = fetchedProject.createdAt
+                ..updatedAt = fetchedProject.updatedAt
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existingProject.save();
+              print(
+                  'Project ${fetchedProject.projectCode} updated successfully.');
+            } else {
+              await _projectBox!.add(fetchedProject);
+              print(
+                  'Project ${fetchedProject.projectCode} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Project with no code was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch Projects. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing Projects: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+//================================pull _fetchAndSyncProjectItem =======================================================================//
+
+  Future<void> _fetchAndSyncProjectItem() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> items = jsonDecode(response.body);
+        double? _toDouble(dynamic value) {
+          if (value == null) return null;
+          if (value is double) return value;
+          if (value is int) return value.toDouble();
+          if (value is String) return double.tryParse(value);
+          return null;
+        }
+
+        bool _intToBool(dynamic value) {
+          if (value is bool) return value;
+          if (value is int) return value == 1;
+          return false;
+        }
+
+        for (var itemData in items) {
+          ProjectItem fetchedItem = ProjectItem(
+            projectItemCode: itemData['projectItemCode'],
+            projectCode: itemData['projectCode'],
+            name: itemData['name'],
+            amount: _toDouble(itemData['amount'])!.toDouble(),
+            isStudentFee: _intToBool(itemData['isStudentFee']),
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(itemData['lastModified'] ?? ''),
+          );
+
+          var existingItemList = _projectItemBox!.values
+              .where((i) => i.projectItemCode == fetchedItem.projectItemCode)
+              .toList();
+
+          ProjectItem? existingItem =
+              existingItemList.isNotEmpty ? existingItemList.first : null;
+
+          if (fetchedItem.projectItemCode.isNotEmpty) {
+            if (existingItem != null) {
+              existingItem
+                ..projectCode = fetchedItem.projectCode
+                ..name = fetchedItem.name
+                ..amount = fetchedItem.amount
+                ..isStudentFee = fetchedItem.isStudentFee
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existingItem.save();
+              print(
+                  'ProjectItem ${fetchedItem.projectItemCode} updated successfully.');
+            } else {
+              await _projectItemBox!.add(fetchedItem);
+              print(
+                  'ProjectItem ${fetchedItem.projectItemCode} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('ProjectItem with no code was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch ProjectItems. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing ProjectItems: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncDailyActivity =======================================================================//
+
+  Future<void> _fetchAndSyncDailyActivity() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> activities = jsonDecode(response.body);
+
+        for (var activityData in activities) {
+          DailyActivity fetchedActivity = DailyActivity(
+            projectDailyActiviyCode: activityData['projectDailyActiviyCode'],
+            projectCode: activityData['projectCode'],
+            date:
+                DateTime.tryParse(activityData['date'] ?? '') ?? DateTime.now(),
+            type: activityData['type'],
+            description: activityData['description'],
+            amount: activityData['amount'],
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(activityData['lastModified'] ?? ''),
+          );
+
+          var existingActivityList = _dailyActivityBox!.values
+              .where((d) =>
+                  d.projectDailyActiviyCode ==
+                  fetchedActivity.projectDailyActiviyCode)
+              .toList();
+
+          DailyActivity? existingActivity = existingActivityList.isNotEmpty
+              ? existingActivityList.first
+              : null;
+
+          if (fetchedActivity.projectDailyActiviyCode.isNotEmpty) {
+            if (existingActivity != null) {
+              existingActivity
+                ..projectCode = fetchedActivity.projectCode
+                ..date = fetchedActivity.date
+                ..type = fetchedActivity.type
+                ..description = fetchedActivity.description
+                ..amount = fetchedActivity.amount
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existingActivity.save();
+              print(
+                  'DailyActivity ${fetchedActivity.projectDailyActiviyCode} updated successfully.');
+            } else {
+              await _dailyActivityBox!.add(fetchedActivity);
+              print(
+                  'DailyActivity ${fetchedActivity.projectDailyActiviyCode} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('DailyActivity with no code was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch DailyActivities. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing DailyActivities: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncProjectStudentPayment =======================================================================//
+
+  Future<void> _fetchAndSyncProjectStudentPayment() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php';
+    setState(() {
+      _isSyncing = true;
+    });
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> payments = jsonDecode(response.body);
+        double? _toDouble(dynamic value) {
+          if (value == null) return null;
+          if (value is double) return value;
+          if (value is int) return value.toDouble();
+          if (value is String) return double.tryParse(value);
+          return null;
+        }
+
+        bool _intToBool(dynamic value) {
+          if (value is bool) return value;
+          if (value is int) return value == 1;
+          return false;
+        }
+
+        for (var paymentData in payments) {
+          ProjectStudentPayment fetchedPayment = ProjectStudentPayment(
+            projectStudentPaymentCode: paymentData['projectStudentPaymentCode'],
+            studentId: paymentData['studentId'],
+            projectCode: paymentData['projectCode'],
+            itemId: paymentData['itemId'],
+            amountPaid: _toDouble(paymentData['amountPaid'])!.toDouble(),
+            balance: _toDouble(paymentData['balance'])!.toDouble(),
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(paymentData['lastModified'] ?? ''),
+          );
+
+          var existingPaymentList = _projectStudentPaymentBox!.values
+              .where((p) =>
+                  p.projectStudentPaymentCode ==
+                  fetchedPayment.projectStudentPaymentCode)
+              .toList();
+
+          ProjectStudentPayment? existingPayment =
+              existingPaymentList.isNotEmpty ? existingPaymentList.first : null;
+
+          if (fetchedPayment.projectStudentPaymentCode.isNotEmpty) {
+            if (existingPayment != null) {
+              existingPayment
+                ..studentId = fetchedPayment.studentId
+                ..projectCode = fetchedPayment.projectCode
+                ..itemId = fetchedPayment.itemId
+                ..amountPaid = fetchedPayment.amountPaid
+                ..balance = fetchedPayment.balance
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+              await existingPayment.save();
+              print(
+                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} updated successfully.');
+            } else {
+              await _projectStudentPaymentBox!.add(fetchedPayment);
+              print(
+                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content:
+                      Text('ProjectStudentPayment with no code was skipped.')),
+            );
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch ProjectStudentPayments. Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error syncing ProjectStudentPayments: $e');
     } finally {
       setState(() {
         _isSyncing = false;

@@ -61,13 +61,14 @@ class AssetAdapter extends TypeAdapter<Asset> {
       hasDebitBalance: fields[41] as bool?,
       hasCreditBalance: fields[42] as bool?,
       option: fields[43] as String?,
+      modifiedFields: (fields[44] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Asset obj) {
     writer
-      ..writeByte(44)
+      ..writeByte(45)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -155,7 +156,9 @@ class AssetAdapter extends TypeAdapter<Asset> {
       ..writeByte(42)
       ..write(obj.hasCreditBalance)
       ..writeByte(43)
-      ..write(obj.option);
+      ..write(obj.option)
+      ..writeByte(44)
+      ..write(obj.modifiedFields);
   }
 
   @override

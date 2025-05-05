@@ -25,7 +25,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
 
   void _loadClasses() {
     final classes = _studentBox.values
-        .where((student) => student.termId == globalTermId) // Filter by termId
+        .where((student) =>
+            student.terms!.contains(globalTermId)) // Filter by termId
         .map((student) => student.class_)
         .toSet()
         .toList();
@@ -39,7 +40,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     final students = _studentBox.values
         .where((student) =>
             student.class_ == class_ &&
-            student.termId == globalTermId) // Filter by class and termId
+            student.terms!.contains(globalTermId)) // Filter by class and termId
         .toList();
 
     setState(() {

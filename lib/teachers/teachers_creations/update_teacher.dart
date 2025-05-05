@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/teachers.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 
@@ -33,9 +34,27 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
 
   List<String> _classes = [];
 
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = [];
+
   @override
   void initState() {
     super.initState();
+    _initializeFields();
+
+    _loadClasses();
+    _loadTerms(); // Load terms when the screen initializes
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms =
+          termsBox.values.map((term) => term.termId).toSet().toList();
+    });
+  }
+
+  void _initializeFields() {
     _nameController = TextEditingController(text: widget.existingPurpose.name);
     _surnameController =
         TextEditingController(text: widget.existingPurpose.surname);
@@ -53,18 +72,18 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
     _selectedHireDate = widget.existingPurpose.hireDate;
     _qualificationsController =
         TextEditingController(text: widget.existingPurpose.qualifications);
-    // Ensure _selectedClasses is never null.
+
     _selectedClasses = widget.existingPurpose.assignedClasses != null
         ? List.from(widget.existingPurpose.assignedClasses as Iterable)
         : <String>[];
-    _loadClasses();
+
+    _selectedTerms = List<String>.from(widget.existingPurpose.terms ?? []);
   }
 
   Future<void> _loadClasses() async {
     final box = await Hive.box<Classes>('classes');
     final classes = box.values
-        .where((classItem) =>
-            classItem.termId != null && classItem.termId == globalTermId)
+        .where((classItem) => classItem.terms!.contains(globalTermId))
         .map((e) => e.className)
         .toList();
 
@@ -135,6 +154,8 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
                   const SizedBox(height: 16),
                   _buildClassesList(),
                   const SizedBox(height: 20),
+                  _buildTermSelection(),
+                  const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: () => _updateStudent(),
                     style: ElevatedButton.styleFrom(
@@ -154,6 +175,28 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTermSelection() {
+    return _availableTerms.isEmpty
+        ? const Text('No terms available')
+        : Column(
+            children: _availableTerms.map((term) {
+              return CheckboxListTile(
+                title: Text(term),
+                value: _selectedTerms.contains(term),
+                onChanged: (selected) {
+                  setState(() {
+                    if (selected == true) {
+                      _selectedTerms.add(term);
+                    } else {
+                      _selectedTerms.remove(term);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          );
   }
 
   Widget _buildClassesList() {
@@ -306,7 +349,9 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
           []; // Initialize with existing modified fields
 
 // Append new modifications without overwriting
-
+      if (!modifiedFields.contains('terms')) {
+        modifiedFields.add('terms');
+      }
       if (widget.existingPurpose.name.toLowerCase() !=
           _nameController.text.toLowerCase()) {
         if (!modifiedFields.contains('name')) {
@@ -406,6 +451,7 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
         syncStatus: false, // Mark for syncing
         lastModified: DateTime.now(), // Update last modified time
         operationType: 'update', // Mark operation as update
+        terms: List<String>.from(_selectedTerms), // ✅ Update terms
       );
 
       final box = await Hive.openBox<Teachers>('teachers');
@@ -441,6 +487,7 @@ class _UpdateTeacherScreenState extends State<UpdateTeacherScreen> {
     }
   }
 
+  @override
   @override
   void dispose() {
     _nameController.dispose();

@@ -1,3 +1,5 @@
+// ignore_for_file: unused_local_variable
+
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -8,19 +10,42 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
-// ignore: unused_import
-import 'package:flutter_pdfview/flutter_pdfview.dart'; // For PDF preview
-// ignore: unused_import
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:printing/printing.dart';
-import 'package:zitf_system/global%20files/global_term_id.dart'; // Import for global term ID
+import 'package:zitf_system/classes/delete_class.dart';
+import 'package:zitf_system/classes/update_class.dart';
+import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
-import '../database/classes.dart'; // Import the Classes model
-import 'package:path/path.dart' as path; // To handle file name extensions
+import 'package:zitf_system/student_management/student_filter.dart';
+import '../database/classes.dart';
+import 'package:path/path.dart' as path;
 
-class ViewClassesScreen extends StatelessWidget {
+class ViewClassesScreen extends StatefulWidget {
   const ViewClassesScreen({super.key});
 
-  // Helper function to capitalize the first letter of each word
+  @override
+  State<ViewClassesScreen> createState() => _ViewClassesScreenState();
+}
+
+class _ViewClassesScreenState extends State<ViewClassesScreen> {
+  late Future<List<Classes>> _classesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClasses(); // load classes on start
+  }
+
+  void _loadClasses() {
+    _classesFuture = Hive.openBox<Classes>('classes').then((box) {
+      var classes = box.values
+          .where((classItem) => classItem.terms!.contains(globalTermId))
+          .toList();
+      classes.sort((a, b) => a.className.compareTo(b.className));
+      return classes;
+    });
+  }
+
   String capitalize(String value) {
     var result = value[0].toUpperCase();
     for (int i = 1; i < value.length; i++) {
@@ -36,55 +61,53 @@ class ViewClassesScreen extends StatelessWidget {
   Future<Uint8List> generateClassesPDF(
       List<Classes> classes, bool isLandscape) async {
     final pdf = pw.Document();
-    // Determine page format based on orientation
     final pageFormat =
         isLandscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
-    // Headers for the table
-    final headers = ['Class Name', 'Created On', 'Current Term'];
+    final headers = [
+      'Class Name',
+      'Created On',
+      'Current Term',
+      'Terms Associated'
+    ];
 
-    // Map the data from your classes list to table rows
     final data = classes.map((classItem) {
       return [
-        classItem.className, // Class name or empty string
-        DateFormat.yMMMd().format(classItem.date), // Format date
-        classItem.termId?.toString() ??
-            '', // Convert term ID to string or empty
+        classItem.className,
+        DateFormat.yMMMd().format(classItem.date),
+        classItem.termId?.toString() ?? '',
+        classItem.terms?.join(", ") ?? (''),
       ];
     }).toList();
 
-    // Adding the page to the document using MultiPage
     pdf.addPage(
       pw.MultiPage(
         pageFormat: pageFormat,
-        margin: const pw.EdgeInsets.all(32), // Add margins for layout
+        margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
           return [
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // Title of the page
                 pw.Text('Classes Information',
                     style: const pw.TextStyle(fontSize: 24)),
                 pw.SizedBox(height: 20),
               ],
             ),
-            // The table should now automatically split across multiple pages
             pw.Table.fromTextArray(
               headers: headers,
               data: data,
               cellStyle: const pw.TextStyle(fontSize: 10),
-              headerStyle: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              headerStyle:
+                  pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
               headerDecoration:
                   const pw.BoxDecoration(color: PdfColors.grey300),
               border: pw.TableBorder.all(color: PdfColors.black),
               columnWidths: {
-                0: const pw.FlexColumnWidth(), // Class Name column
-                1: const pw.FlexColumnWidth(), // Created On column
-                2: const pw.FlexColumnWidth(), // Current Term column
+                0: const pw.FlexColumnWidth(),
+                1: const pw.FlexColumnWidth(),
+                2: const pw.FlexColumnWidth(),
+                3: const pw.FlexColumnWidth(),
               },
             ),
           ];
@@ -98,51 +121,40 @@ class ViewClassesScreen extends StatelessWidget {
   Future<void> savePDFToFile(
       BuildContext context, Uint8List pdfBytes, String fileName) async {
     try {
-      // Request storage permission
       if (await Permission.storage.request().isGranted) {
-        // Get external storage directory
         Directory? directory = await getExternalStorageDirectory();
 
         if (directory != null) {
-          // Define the path to the Download folder
           final downloadDir = Directory('/storage/emulated/0/Download');
 
-          // Create the directory if it doesn't exist
           if (!await downloadDir.exists()) {
             await downloadDir.create(recursive: true);
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Download directory created.")));
           }
 
-          // Define the initial file path
           String filePath = path.join(downloadDir.path, '$fileName.pdf');
           int fileIndex = 1;
 
-          // Check if a file with the same name exists and add an index if necessary
           while (await File(filePath).exists()) {
             filePath = path.join(downloadDir.path, '$fileName-$fileIndex.pdf');
             fileIndex++;
           }
 
-          // Save the PDF file
           final file = File(filePath);
           await file.writeAsBytes(pdfBytes);
 
-          // Show success notification
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
         } else {
-          // Show error notification
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text("Error: External storage directory not found.")));
         }
       } else {
-        // Show permission denied notification
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("Permission denied for storage access.")));
       }
     } catch (e) {
-      // Show error notification
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text("Error saving PDF: $e")));
     }
@@ -152,7 +164,6 @@ class ViewClassesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return OrientationBuilder(
       builder: (context, orientation) {
-        // Determine if the orientation is landscape
         final isLandscape = orientation == Orientation.landscape;
 
         return Scaffold(
@@ -160,21 +171,29 @@ class ViewClassesScreen extends StatelessWidget {
             title: const Center(
                 child: Text(
               'View Classes',
-              style: const TextStyle(
-                fontSize: 14.0, // Adjust font size
-                fontWeight: FontWeight.normal, // Font weight
-                color: Colors.white, // Title color
-                letterSpacing: 1.2, // Slight letter spacing for elegance
+              style: TextStyle(
+                fontSize: 14.0,
+                fontWeight: FontWeight.normal,
+                color: Colors.white,
+                letterSpacing: 1.2,
               ),
             )),
             actions: [
-              // Action button to generate the PDF
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                tooltip: 'Refresh Classes',
+                onPressed: () {
+                  _loadClasses(); // reload the future
+                  setState(() {}); // refresh the screen
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
                 onPressed: () async {
                   final box = await Hive.openBox<Classes>('classes');
                   List<Classes> classes = box.values
-                      .where((classItem) => classItem.termId == globalTermId)
+                      .where((classItem) =>
+                          classItem.terms!.contains(globalTermId))
                       .toList();
                   Uint8List pdfBytes =
                       await generateClassesPDF(classes, isLandscape);
@@ -188,11 +207,9 @@ class ViewClassesScreen extends StatelessWidget {
                 },
               ),
             ],
-            backgroundColor: const Color.fromARGB(255, 38, 140,
-                191), // Optional: Customize AppBar background color
-            elevation: 4.0, // Optional: Add a subtle shadow
+            backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+            elevation: 4.0,
           ),
-          // Body to display the list of classes
           body: Container(
             padding: const EdgeInsets.all(16.0),
             decoration: const BoxDecoration(
@@ -206,14 +223,7 @@ class ViewClassesScreen extends StatelessWidget {
               ),
             ),
             child: FutureBuilder<List<Classes>>(
-              future: Hive.openBox<Classes>('classes').then((box) {
-                var classes = box.values
-                    .where((classItem) => classItem.termId == globalTermId)
-                    .toList();
-                classes.sort((a, b) =>
-                    a.className.compareTo(b.className)); // Sort alphabetically
-                return classes;
-              }),
+              future: _classesFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -224,9 +234,7 @@ class ViewClassesScreen extends StatelessWidget {
                   return LayoutBuilder(
                     builder: (context, constraints) {
                       final maxWidth = constraints.maxWidth;
-                      final fontSize = maxWidth < 600
-                          ? 12.0
-                          : 14.0; // Adjust font size based on device width
+                      final fontSize = maxWidth < 600 ? 12.0 : 14.0;
 
                       return SingleChildScrollView(
                         scrollDirection: Axis.vertical,
@@ -237,32 +245,100 @@ class ViewClassesScreen extends StatelessWidget {
                               child: DataTable(
                                 headingRowHeight: 40,
                                 dataRowHeight: 60,
-                                columns: [
-                                  DataColumn(
-                                      label: Text('Class Name',
-                                          style:
-                                              TextStyle(fontSize: fontSize))),
-                                  DataColumn(
-                                      label: Text('Created On',
-                                          style:
-                                              TextStyle(fontSize: fontSize))),
-                                  DataColumn(
-                                      label: Text('Current Term',
-                                          style:
-                                              TextStyle(fontSize: fontSize))),
+                                columns: const [
+                                  DataColumn(label: Text('Class Name')),
+                                  DataColumn(label: Text('Actions')),
                                 ],
                                 rows: classes.map((classItem) {
                                   return DataRow(cells: [
                                     DataCell(Text(
                                         capitalize(classItem.className),
                                         style: TextStyle(fontSize: fontSize))),
-                                    DataCell(Text(
-                                        DateFormat.yMMMd()
-                                            .format(classItem.date),
-                                        style: TextStyle(fontSize: fontSize))),
-                                    DataCell(Text(
-                                        classItem.termId?.toString() ?? '',
-                                        style: TextStyle(fontSize: fontSize))),
+                                    DataCell(
+                                      SizedBox(
+                                        width:
+                                            150, // Fixed width so Actions column stays pinned
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceEvenly,
+                                            children: [
+                                              Tooltip(
+                                                message: 'View Students',
+                                                child: IconButton(
+                                                  icon: const Icon(
+                                                      Icons.visibility,
+                                                      color: Colors.blue),
+                                                  iconSize:
+                                                      24, // Small but consistent size
+                                                  onPressed: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            ViewStudentsScreenfilter(
+                                                          selectedClassName:
+                                                              classItem
+                                                                  .className,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              Tooltip(
+                                                message: 'Edit Class',
+                                                child: IconButton(
+                                                  icon: const Icon(Icons.edit,
+                                                      color: Colors.green),
+                                                  iconSize: 24,
+                                                  onPressed: () async {
+                                                    final result =
+                                                        await Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            UpdateClassScreen(
+                                                          classCode: classItem
+                                                              .classCode!, // ✅ PASS CLASSCODE HERE
+                                                        ),
+                                                      ),
+                                                    );
+                                                    if (result == true) {
+                                                      // 👇 Rebuild by calling setState
+                                                      setState(() {});
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              Tooltip(
+                                                message: 'Delete Class',
+                                                child: IconButton(
+                                                  icon: const Icon(Icons.delete,
+                                                      color: Colors.red),
+                                                  iconSize: 24,
+                                                  onPressed: () async {
+                                                    await Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            DeleteClassScreen(
+                                                          classToDelete:
+                                                              classItem, // 👈 pass the class you clicked
+                                                        ),
+                                                      ),
+                                                    );
+                                                    _loadClasses(); // refresh list
+                                                    setState(() {});
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ]);
                                 }).toList(),
                               ),

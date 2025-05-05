@@ -27,13 +27,14 @@ class TermsAdapter extends TypeAdapter<Terms> {
       lastModified: fields[7] as DateTime?,
       operationType: fields[8] as String?,
       id: fields[9] as int?,
+      modifiedFields: (fields[10] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Terms obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.termId)
       ..writeByte(1)
@@ -53,7 +54,9 @@ class TermsAdapter extends TypeAdapter<Terms> {
       ..writeByte(8)
       ..write(obj.operationType)
       ..writeByte(9)
-      ..write(obj.id);
+      ..write(obj.id)
+      ..writeByte(10)
+      ..write(obj.modifiedFields);
   }
 
   @override

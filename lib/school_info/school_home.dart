@@ -1,11 +1,13 @@
 // ignore_for_file: unused_local_variable
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/admin/home_screen.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
@@ -51,144 +53,166 @@ class _MyPageState extends State<SchoolHomeScreen> {
       appBar: const CustomAppBar(title: 'School Information'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 16.0;
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
+                child: Container(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: LayoutBuilder(builder: (context, constraints) {
+                          bool isLargeScreen = constraints.maxWidth >= 500;
+                          // Adjust crossAxisCount based on screen width
+                          int crossAxisCount = 2; // Default 2 items per row
+                          double crossAxisSpacing = 16.0;
 
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 10.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? const Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    Text(
-                      'School Information',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
+                          if (constraints.maxWidth >= 1200) {
+                            crossAxisCount = 4;
+                          } else if (constraints.maxWidth >= 1000) {
+                            crossAxisCount = 4;
+                          } else if (constraints.maxWidth >= 800) {
+                            crossAxisCount = 4;
+                          } else if (constraints.maxWidth >= 600) {
+                            crossAxisCount = 4;
+                          } else if (constraints.maxWidth >= 400) {
+                            crossAxisCount = 3;
+                          } else if (constraints.maxWidth >= 300) {
+                            crossAxisCount = 2;
+                          } else {
+                            crossAxisCount = 1;
+                          }
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isLargeScreen
+                                  ? const Color.fromARGB(255, 255, 255, 255)
+                                  : null, // Set white background for large screens
+                              gradient: isLargeScreen
+                                  ? null
+                                  : const LinearGradient(
+                                      colors: [
+                                        Color.fromRGBO(255, 255, 255, 1),
+                                        Color.fromARGB(255, 255, 255, 255)
+                                      ], // Gradient colors for small screens
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                    ),
+                            ),
+                            child: Center(
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    buildFutureSchoolsWidget(
+                                        isLargeScreen: isLargeScreen),
+                                    isLargeScreen
+                                        ? GridView.count(
+                                            crossAxisCount: crossAxisCount,
+                                            shrinkWrap: true,
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
+                                            crossAxisSpacing: crossAxisSpacing,
+                                            padding: const EdgeInsets.all(8),
+                                            children: [
+                                              if (admin || subadmin)
+
+                                                // Elevated cards with icons
+                                                const ElevatedCard(
+                                                  icon: Icons.people,
+                                                  text:
+                                                      'Create School Information',
+                                                  target: CreateSchool(),
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.view_list,
+                                                  text:
+                                                      'View School Information',
+                                                  target: ViewSchoolsScreen(),
+                                                  isLargeScreen: true,
+                                                ),
+                                              if (admin || subadmin)
+                                                _buildElevatedCardWithDialog(
+                                                  context,
+                                                  icon: Icons.update,
+                                                  text:
+                                                      'Update School Information',
+                                                  isLargeScreen:
+                                                      true, // Flag to check screen size
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.delete,
+                                                  text:
+                                                      'Delete School Information',
+                                                  target: DeleteSchoolScreen(),
+                                                  isLargeScreen: true,
+                                                ),
+                                            ],
+                                          )
+                                        : Column(
+                                            children: [
+                                              if (admin || subadmin)
+
+                                                // Elevated cards with icons
+                                                const ElevatedCard(
+                                                  icon: Icons.people,
+                                                  text: 'Create School Info',
+                                                  target: CreateSchool(),
+                                                  isLargeScreen: false,
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.view_list,
+                                                  text:
+                                                      'View School Information',
+                                                  target: ViewSchoolsScreen(),
+                                                  isLargeScreen: false,
+                                                ),
+                                              if (admin || subadmin)
+                                                _buildElevatedCardWithDialog(
+                                                  context,
+                                                  icon: Icons.update,
+                                                  text:
+                                                      'Update School Information',
+                                                  isLargeScreen:
+                                                      false, // Flag to check screen size
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.delete,
+                                                  text:
+                                                      'Delete School Information',
+                                                  target: DeleteSchoolScreen(),
+                                                  isLargeScreen: false,
+                                                ),
+                                              if (admin || subadmin)
+                                                const ElevatedCard(
+                                                  icon: Icons.home,
+                                                  text: 'Go to Home Page',
+                                                  target: HomeScreen(),
+                                                  isLargeScreen: false,
+                                                ),
+                                            ],
+                                          ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? GridView.count(
-                            crossAxisCount: crossAxisCount,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: crossAxisSpacing,
-                            padding: const EdgeInsets.all(8),
-                            children: [
-                              if (admin || subadmin)
-
-                                // Elevated cards with icons
-                                const ElevatedCard(
-                                  icon: Icons.people,
-                                  text: 'Create School Information',
-                                  target: CreateSchool(),
-                                  isLargeScreen: true,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.view_headline,
-                                  text: 'View School Information',
-                                  target: ViewSchoolsScreen(),
-                                  isLargeScreen: true,
-                                ),
-                              if (admin || subadmin)
-                                _buildElevatedCardWithDialog(
-                                  context,
-                                  icon: Icons.update,
-                                  text: 'Update School Information',
-                                  isLargeScreen:
-                                      true, // Flag to check screen size
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.delete,
-                                  text: 'Delete School Information',
-                                  target: DeleteSchoolScreen(),
-                                  isLargeScreen: true,
-                                ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              if (admin || subadmin)
-
-                                // Elevated cards with icons
-                                const ElevatedCard(
-                                  icon: Icons.people,
-                                  text: 'Create School Info',
-                                  target: CreateSchool(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.people,
-                                  text: 'View School Information',
-                                  target: ViewSchoolsScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                _buildElevatedCardWithDialog(
-                                  context,
-                                  icon: Icons.update,
-                                  text: 'Update School Information',
-                                  isLargeScreen:
-                                      false, // Flag to check screen size
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.delete,
-                                  text: 'Delete School Information',
-                                  target: DeleteSchoolScreen(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.home,
-                                  text: 'Go to Home Page',
-                                  target: HomeScreen(),
-                                  isLargeScreen: false,
-                                ),
-                            ],
-                          ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -242,7 +266,7 @@ Widget _buildElevatedCardWithDialog(
                             currentClass!.schoolName.toString(),
                             style: GoogleFonts.montserrat(
                               fontSize: isLargeScreen ? 14 : 16,
-                              color: Colors.blueGrey[900],
+                              color: const Color.fromARGB(255, 0, 0, 0),
                             ),
                           ),
                           onTap: () {
@@ -275,8 +299,8 @@ Widget _buildElevatedCardWithDialog(
                     children: [
                       Icon(
                         icon,
-                        size: 30, // Larger icon size for large screens
-                        color: Colors.blue.shade800,
+                        size: 20, // Larger icon size for large screens
+                        color: const Color.fromARGB(255, 0, 43, 92),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -284,7 +308,7 @@ Widget _buildElevatedCardWithDialog(
                         style: GoogleFonts.montserrat(
                           fontSize: 12,
                           fontWeight: FontWeight.normal,
-                          color: Colors.black,
+                          color: const Color.fromARGB(255, 0, 0, 0),
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -296,17 +320,17 @@ Widget _buildElevatedCardWithDialog(
                     children: [
                       Icon(
                         icon,
-                        size: 30,
-                        color: Colors.blueAccent,
+                        size: 20,
+                        color: const Color.fromARGB(255, 0, 43, 92),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           text,
                           style: GoogleFonts.montserrat(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey[900],
+                            color: const Color.fromARGB(255, 0, 0, 0),
                           ),
                           textAlign: TextAlign.center,
                         ),

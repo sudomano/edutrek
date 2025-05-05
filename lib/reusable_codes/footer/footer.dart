@@ -12,10 +12,6 @@ Widget buildBottomNavigationBar({
         label: 'Home',
       ),
       BottomNavigationBarItem(
-        icon: Icon(Icons.menu),
-        label: 'Drawer',
-      ),
-      BottomNavigationBarItem(
         icon: Icon(Icons.work_history),
         label: 'Projects',
       ),
@@ -25,6 +21,10 @@ Widget buildBottomNavigationBar({
       ),
       BottomNavigationBarItem(
         icon: Icon(Icons.sync_lock_outlined),
+        label: 'Backup',
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.backup),
         label: 'Data Sync',
       ),
       BottomNavigationBarItem(
@@ -43,14 +43,15 @@ void onItemTapped(BuildContext context, int index) {
     case 0:
       Navigator.pushNamed(context, '/home');
       break;
+
     case 1:
-      Navigator.pushNamed(context, '/drawer');
-      break;
-    case 2:
       Navigator.pushNamed(context, '/projects');
       break;
-    case 3:
+    case 2:
       Navigator.pushNamed(context, '/profile');
+      break;
+    case 3:
+      Navigator.pushNamed(context, '/backup');
       break;
     case 4:
       Navigator.pushNamed(context, '/sync');

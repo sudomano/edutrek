@@ -38,7 +38,7 @@ class _UpdatePaymentScreenState extends State<UpdatestaffPaymentScreen> {
     final matchingStudents = studentBox.values
         .where((student) =>
             student.surname.toLowerCase().contains(query.toLowerCase()) &&
-            student.termId == globalTermId)
+            student.terms!.contains(globalTermId))
         .toList();
 
     if (matchingStudents.isEmpty) {

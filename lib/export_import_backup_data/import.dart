@@ -5,11 +5,19 @@ import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart'; // Import the file_picker package
+import 'package:zitf_system/auth/userdb.dart';
+import 'package:zitf_system/database/accounting_module_models/account_type.dart';
+import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_model.dart';
+import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
 import 'package:zitf_system/database/teachers.dart';
@@ -44,6 +52,15 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
   Box<Teachers>? _teachersBox;
   Box<School>? _schoolBox;
   Box<Terms>? _termsBox;
+
+  Box<DomainRecord>? _domainRecordBox;
+  Box<User>? _userBox;
+  Box<Account>? _accountBox;
+  Box<Asset>? _assetBox;
+  Box<Project>? _projectBox;
+  Box<ProjectItem>? _projectItemBox;
+  Box<DailyActivity>? _dailyActivityBox;
+  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
   bool _isImporting = false; // To track import status
 
   @override
@@ -67,7 +84,16 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     _teachersBox = await Hive.openBox<Teachers>('teachers');
     _schoolBox = await Hive.openBox<School>('school');
     _termsBox = await Hive.openBox<Terms>('terms');
-    print('All Hive boxes opened successfully.');
+
+    _domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
+    _userBox = await Hive.openBox<User>('users'); // Open the box for users
+    _accountBox = await Hive.openBox<Account>('account');
+    _assetBox = await Hive.openBox<Asset>('asset');
+    _projectBox = await Hive.openBox<Project>('projects');
+    _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
+    _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
+    _projectStudentPaymentBox =
+        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
   }
 
   Future<void> importHiveData() async {
@@ -76,8 +102,6 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     });
 
     try {
-      print('Starting data import...');
-
       // Pick a JSON file
       FilePickerResult? result = await FilePicker.platform
           .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
@@ -111,8 +135,25 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         await _deserializeAndSave(
             importData['terms'], _termsFromJson, _termsBox);
 
-        print('Data imported successfully.');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        await _deserializeAndSave(
+            importData['domains'], _domainsFromJson, _domainRecordBox);
+        await _deserializeAndSave(
+            importData['users'], _usersFromJson, _userBox);
+        await _deserializeAndSave(
+            importData['accounts'], _accountsFromJson, _accountBox);
+        await _deserializeAndSave(
+            importData['assets'], _assetsFromJson, _assetBox);
+        await _deserializeAndSave(
+            importData['projects'], _projectsFromJson, _projectBox);
+        await _deserializeAndSave(importData['project_items'],
+            _project_itemsFromJson, _projectItemBox);
+        await _deserializeAndSave(importData['daily_activities'],
+            _daily_activitiesFromJson, _dailyActivityBox);
+
+        await _deserializeAndSave(importData['project_student_payments'],
+            _project_student_paymentsFromJson, _projectStudentPaymentBox);
+
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Data imported successfully.'),
         ));
       } else {
@@ -125,7 +166,6 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       setState(() {
         _isImporting = false; // Reset importing status
       });
-      print('Data import process completed.');
     }
   }
 
@@ -140,6 +180,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     await _teachersBox?.clear();
     await _schoolBox?.clear();
     await _termsBox?.clear();
+    await _domainRecordBox?.clear();
+    await _userBox?.clear();
+    await _accountBox?.clear();
+    await _assetBox?.clear();
+    await _projectBox?.clear();
+    await _projectItemBox?.clear();
+    await _dailyActivityBox?.clear();
+    await _projectStudentPaymentBox?.clear();
   }
 
   Future<void> _deserializeAndSave<T>(List<dynamic>? data,
@@ -182,6 +230,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
+      terms: json['terms'] != null
+          ? List<String>.from(jsonDecode(json['terms']))
+          : null,
     );
   }
 
@@ -243,6 +294,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
+      terms: json['terms'] != null
+          ? List<String>.from(jsonDecode(json['terms']))
+          : null,
     );
   }
 
@@ -298,7 +352,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
       operationType: json['operationType'],
       purposeCode: json['purposeCode'],
-      associatedClasses: _decodeToList(['associatedClasses']),
+      associatedClasses: _decodeToList(json['associatedClasses']),
     );
   }
 
@@ -308,7 +362,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       id: json['id'] ?? '', // Provide a default empty string if null
       paymentPurpose: json['purpose'] ?? '',
       purposeCode: json['purposeCode'] ?? '', // Default empty string
-      purposeAmount: json['amount'] ?? 0.0, // Default value for numeric fields
+      purposeAmount:
+          json['purposeAmount'] ?? 0.0, // Default value for numeric fields
       termId: json['termId'], // Allow nullable if the field itself is nullable
       syncStatus:
           json['syncStatus'], // Allow nullable if the field itself is nullable
@@ -316,7 +371,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null, // Handle nullable dates
       operationType: json['operationType'] ?? '',
-      associatedStaff: _decodeToList(['associatedStaff']),
+      associatedStaff: _decodeToList(json['associatedStaff']),
 // Default empty string
     );
   }
@@ -361,7 +416,10 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
 
       operationType: json['operationType'],
-      assignedClasses: _decodeToList(['assignedClasses']),
+      assignedClasses: _decodeToList(json['assignedClasses']),
+      terms: json['terms'] != null
+          ? List<String>.from(jsonDecode(json['terms']))
+          : null,
     );
   }
 
@@ -417,6 +475,189 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     );
   }
 
+  DomainRecord _domainsFromJson(Map<String, dynamic> json) => DomainRecord(
+        domainName: json['domainName'],
+        areDomainsActive: json['areDomainsActive'],
+        syncStatus: json['syncStatus'],
+        operationType: json['operationType'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+      );
+
+  User _usersFromJson(Map<String, dynamic> json) => User(
+        username: json['username'],
+        password: json['password'],
+        role: json['role'],
+        securityQuestions: List<String>.from(json['securityQuestions']),
+        securityAnswers: List<String>.from(json['securityAnswers']),
+        phone: json['phone'],
+        termId: json['termId'],
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        id: json['id'],
+        isLogged: json['isLogged'],
+        userCode: json['userCode'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
+  Account _accountsFromJson(Map<String, dynamic> json) => Account(
+        id: json['id'],
+        accountType: json['accountType'],
+        accountSubType: json['accountSubType'],
+        accountName: json['accountName'],
+        accountCode: json['accountCode'],
+        operationType: json['operationType'],
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        isALiquidAccount: json['isALiquidAccount'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
+  Asset _assetsFromJson(Map<String, dynamic> json) {
+    return Asset(
+      id: json['id'],
+      assetName: json['assetName'],
+      assetType: json['assetType'],
+      assetSubType: json['assetSubType'],
+      assetCode: json['assetCode'],
+      assetSerialNo: json['assetSerialNo'],
+      acquisitionDate: json['acquisitionDate'] != null
+          ? DateTime.parse(json['acquisitionDate'])
+          : null,
+      acquisitionCost: (json['acquisitionCost'] as num?)?.toDouble(),
+      acquisitionMethod: json['acquisitionMethod'],
+      department: json['department'],
+      location: json['location'],
+      depreciationRate: (json['depreciationRate'] as num?)?.toDouble(),
+      depreciationMethod: json['depreciationMethod'],
+      lastDepreciationDate: json['lastDepreciationDate'] != null
+          ? DateTime.parse(json['lastDepreciationDate'])
+          : null,
+      accumulatedDepreciation:
+          (json['accumulatedDepreciation'] as num?)?.toDouble(),
+      bookValue: (json['bookValue'] as num?)?.toDouble(),
+      isImpaired: json['isImpaired'],
+      impairmentLoss: (json['impairmentLoss'] as num?)?.toDouble(),
+      revaluationDate: json['revaluationDate'] != null
+          ? DateTime.parse(json['revaluationDate'])
+          : null,
+      revaluationAmount: (json['revaluationAmount'] as num?)?.toDouble(),
+      lastMaintenanceDate: json['lastMaintenanceDate'] != null
+          ? DateTime.parse(json['lastMaintenanceDate'])
+          : null,
+      maintenanceCost: (json['maintenanceCost'] as num?)?.toDouble(),
+      maintenanceDescription: json['maintenanceDescription'],
+      capitalImprovementCost:
+          (json['capitalImprovementCost'] as num?)?.toDouble(),
+      capitalImprovementDescription: json['capitalImprovementDescription'],
+      disposalDate: json['disposalDate'] != null
+          ? DateTime.parse(json['disposalDate'])
+          : null,
+      disposalProceeds: (json['disposalProceeds'] as num?)?.toDouble(),
+      disposalReason: json['disposalReason'],
+      gainOrLossOnDisposal: (json['gainOrLossOnDisposal'] as num?)?.toDouble(),
+      isLeased: json['isLeased'],
+      leaseType: json['leaseType'],
+      leaseStartDate: json['leaseStartDate'] != null
+          ? DateTime.parse(json['leaseStartDate'])
+          : null,
+      leaseEndDate: json['leaseEndDate'] != null
+          ? DateTime.parse(json['leaseEndDate'])
+          : null,
+      leasePaymentAmount: (json['leasePaymentAmount'] as num?)?.toDouble(),
+      lastAuditDate: json['lastAuditDate'] != null
+          ? DateTime.parse(json['lastAuditDate'])
+          : null,
+      syncStatus: json['syncStatus'],
+      notes: json['notes'],
+      createdAt:
+          json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+      usefulLife: json['usefulLife'],
+      hasDebitBalance: json['hasDebitBalance'],
+      hasCreditBalance: json['hasCreditBalance'],
+      option: json['option'],
+      modifiedFields: List<String>.from(json['modifiedFields'] ?? []),
+    );
+  }
+
+  Project _projectsFromJson(Map<String, dynamic> json) => Project(
+        projectCode: json['projectCode'],
+        name: json['name'],
+        description: json['description'],
+        status: json['status'],
+        createdAt: DateTime.parse(json['createdAt']),
+        updatedAt: DateTime.parse(json['updatedAt']),
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
+  ProjectItem _project_itemsFromJson(Map<String, dynamic> json) => ProjectItem(
+        projectItemCode: json['projectItemCode'],
+        projectCode: json['projectCode'],
+        name: json['name'],
+        amount: json['amount'],
+        isStudentFee: json['isStudentFee'],
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
+  DailyActivity _daily_activitiesFromJson(Map<String, dynamic> json) =>
+      DailyActivity(
+        projectDailyActiviyCode: json['projectDailyActiviyCode'],
+        projectCode: json['projectCode'],
+        date: DateTime.parse(json['date']),
+        type: json['type'],
+        description: json['description'],
+        amount: json['amount'],
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
+  ProjectStudentPayment _project_student_paymentsFromJson(
+          Map<String, dynamic> json) =>
+      ProjectStudentPayment(
+        projectStudentPaymentCode: json['projectStudentPaymentCode'],
+        studentId: json['studentId'],
+        projectCode: json['projectCode'],
+        itemId: json['itemId'],
+        amountPaid: json['amountPaid'],
+        balance: json['balance'],
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: json['modifiedFields'] != null
+            ? List<String>.from(json['modifiedFields'])
+            : null,
+      );
   @override
   Widget build(BuildContext context) {
     final isLargeScreen =
@@ -424,46 +665,49 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Import Records'),
-      body: Column(
-        children: [
-          const SizedBox(
-            height: 15,
-          ),
-          buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-          const SizedBox(
-            height: 10,
-          ),
-          Text(
-            'Local Data Backup',
-            style: GoogleFonts.montserrat(
-              fontSize: 20,
-              fontWeight: FontWeight.normal,
-              color:
-                  const Color.fromARGB(255, 0, 0, 0), // White text on gradient
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(
+              height: 15,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(
-            height: 40,
-          ),
-          Center(
-            child: ElevatedButton(
-              onPressed: _isImporting
-                  ? null
-                  : () async {
-                      print('import button clicked.');
-                      await importHiveData();
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            'All records have been imported successfully.'),
-                      ));
-                    },
-              child: _isImporting
-                  ? CircularProgressIndicator(color: Colors.white)
-                  : Text('Import All Database Records'),
+            buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
+            const SizedBox(
+              height: 10,
             ),
-          ),
-        ],
+            Text(
+              'Local Data Backup',
+              style: GoogleFonts.montserrat(
+                fontSize: 20,
+                fontWeight: FontWeight.normal,
+                color: const Color.fromARGB(
+                    255, 0, 0, 0), // White text on gradient
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(
+              height: 40,
+            ),
+            Center(
+              child: ElevatedButton(
+                onPressed: _isImporting
+                    ? null
+                    : () async {
+                        print('import button clicked.');
+                        await importHiveData();
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                              'All records have been imported successfully.'),
+                        ));
+                      },
+                child: _isImporting
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Import All Database Records'),
+              ),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: buildBottomNavigationBar(
         currentIndex: _selectedIndex,

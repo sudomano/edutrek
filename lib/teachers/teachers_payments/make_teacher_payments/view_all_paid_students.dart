@@ -514,27 +514,23 @@ class _ViewByScreenState extends State<ViewAllTeacherPayments> {
           child: DataTable(
             columns: const [
               DataColumn(label: Text('Id')),
-              DataColumn(label: Text('Receipt Number')),
               DataColumn(label: Text('Staff Name')),
               DataColumn(label: Text('Staff Surname')),
               DataColumn(label: Text('Payment Purpose')),
               DataColumn(label: Text('Amount')),
               DataColumn(label: Text('Payment Date')),
               DataColumn(label: Text('term ')),
-              DataColumn(label: Text('mods ')),
             ],
             rows: _filteredPayments.map((payment) {
               return DataRow(
                 cells: [
                   DataCell(Text(payment.id.toString())),
-                  DataCell(Text(payment.receiptNumber.toString())),
                   DataCell(Text(payment.studentName)),
                   DataCell(Text(payment.studentSurname)),
                   DataCell(Text(payment.paymentPurpose)),
                   DataCell(Text(payment.amountToPay.toString())),
                   DataCell(Text(payment.paymentDate.toString())),
                   DataCell(Text(payment.termId.toString())),
-                  DataCell(Text(payment.modifiedFields.toString())),
                 ],
               );
             }).toList(),

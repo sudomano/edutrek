@@ -55,9 +55,8 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
     // Fetch unique employment statuses for the current term and add "All" option
     _status.add('All');
     _status.addAll(studentBox.values
-        .where((student) =>
-            student.termId ==
-            globalTermId) // Only include records for the current term
+        .where((student) => student.terms!.contains(
+            globalTermId)) // Only include records for the current term
         .map((student) => student.employmentStatus)
         .toSet()
         .toList());
@@ -68,8 +67,8 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
   void _filterStudents() {
     final studentBox = Hive.box<Teachers>('teachers');
     _filteredStudents = studentBox.values
-        .where((student) =>
-            student.termId == globalTermId) // Filter by the current term ID
+        .where((student) => student.terms!
+            .contains(globalTermId)) // Filter by the current term ID
         .toList();
 
     if (_selectedStatus != null && _selectedStatus != "All") {
@@ -145,6 +144,7 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
       pw.Text('Staff Hire Date', style: headerTextStyle),
       pw.Text('Staff Employment Status', style: headerTextStyle),
       pw.Text('Staff School Term', style: headerTextStyle),
+      pw.Text('Terms Associated', style: headerTextStyle),
     ];
 
     final data = teachers.map((teacher) {
@@ -161,6 +161,7 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
         pw.Text(teacher.hireDate.toString(), style: cellTextStyle),
         pw.Text(teacher.employmentStatus, style: cellTextStyle),
         pw.Text(teacher.termId ?? 'None', style: cellTextStyle),
+        pw.Text(teacher.terms?.join(", ") ?? (''), style: cellTextStyle),
       ];
     }).toList();
 
@@ -548,8 +549,13 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
                             style: TextStyle(fontSize: 11))),
                     DataColumn(
                         label: Text("Term", style: TextStyle(fontSize: 11))),
+
                     DataColumn(
-                        label: Text("Mods", style: TextStyle(fontSize: 11))),
+                        label: Text('Terms Associated',
+                            style: TextStyle(fontSize: 11))), // New column
+
+                    // DataColumn(
+                    //     label: Text("Mods", style: TextStyle(fontSize: 11))),
                   ],
                   rows: _filteredStudents.map((teacher) {
                     return DataRow(cells: [
@@ -606,8 +612,12 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
                       DataCell(Text(capitalize(teacher.termId),
                           style: const TextStyle(fontSize: 11))),
                       DataCell(Text(
-                          capitalize(teacher.modifiedFields.toString()),
+                          capitalize(teacher.terms?.join(", ") ?? ('')),
                           style: const TextStyle(fontSize: 11))),
+
+                      // DataCell(Text(
+                      //     capitalize(teacher.modifiedFields.toString()),
+                      //     style: const TextStyle(fontSize: 11))),
                     ]);
                   }).toList(),
                 ),
@@ -665,6 +675,7 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
       TextCellValue('Qualifocations'),
       TextCellValue('Employment Status'),
       TextCellValue('Assigned Classes'),
+      TextCellValue('Terms Associated'), // New column
     ]);
 
     // Add the data rows (wrap each value accordingly)
@@ -684,6 +695,8 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
         TextCellValue(student.qualifications),
         TextCellValue(student.employmentStatus),
         TextCellValue(student.assignedClasses.toString()),
+        TextCellValue(
+            student.terms?.join(", ") ?? ('')), // New field to display terms
       ]);
     }
 

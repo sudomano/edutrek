@@ -44,7 +44,7 @@ class _ViewAttendanceScreenFilterState
     setState(() {
       // Load only students from the current term
       _students = _studentBox.values
-          .where((student) => student.termId == globalTermId)
+          .where((student) => student.terms!.contains(globalTermId))
           .toList();
 
       _studentsByClass = {};
@@ -94,7 +94,7 @@ class _ViewAttendanceScreenFilterState
               '${student.name} ${student.surname}'
                   .toLowerCase()
                   .contains(_selectedStudentName!.toLowerCase()) &&
-              student.termId == globalTermId)
+              student.terms!.contains(globalTermId))
           .toList();
     }
 

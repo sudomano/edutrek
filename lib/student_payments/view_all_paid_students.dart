@@ -29,6 +29,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   DateTime? _selectedStartDate;
   DateTime? _selectedEndDate;
   bool _isSortAscending = true;
+  bool _isLoading = false; // Loading state
 
   List<String> _selectedClasses = [];
   List<String> _selectedPaymentPurposes = [];
@@ -48,6 +49,9 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   }
 
   Future<void> _fetchInitialData() async {
+    setState(() {
+      _isLoading = true; // Start loading
+    });
     final paymentBox = await Hive.openBox<StudentPayment>('student_payments');
 
     // Filter payments by globalTermId
@@ -77,7 +81,9 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         ? a.studentSurname.compareTo(b.studentSurname)
         : b.studentSurname.compareTo(a.studentSurname));
 
-    setState(() {});
+    setState(() {
+      _isLoading = false; // Stop loading
+    });
   }
 
   void _toggleSortOrder() {
@@ -88,6 +94,9 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   }
 
   Future<void> _fetchStudentsForClass(String studentClass) async {
+    setState(() {
+      _isLoading = true; // Start loading
+    });
     final paymentBox = Hive.box<StudentPayment>('student_payments');
 
     // Fetch unique students for the selected class
@@ -99,10 +108,16 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         .toSet()
         .toList();
 
-    setState(() {});
+    setState(() {
+      _isLoading = false; // Stop loading
+    });
   }
 
   void _filterPayments() {
+    setState(() {
+      _isLoading = true; // Start loading
+    });
+
     final paymentBox = Hive.box<StudentPayment>('student_payments');
     _filteredPayments = paymentBox.values
         .where((payment) => payment.termId == globalTermId)
@@ -147,7 +162,9 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         ? a.studentSurname.compareTo(b.studentSurname)
         : b.studentSurname.compareTo(a.studentSurname));
 
-    setState(() {});
+    setState(() {
+      _isLoading = false; // Stop loading
+    });
   }
 
   Future<Uint8List> generateStudentsPDF(
@@ -321,88 +338,96 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
             const Color.fromARGB(255, 38, 140, 191), // AppBar background color
         elevation: 4.0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: Column(
-            children: [
-              Container(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildCard(
-                      title: 'View by Class',
-                      child: _buildClassDropdown(),
-                    ),
-                    const SizedBox(height: 20),
-                    _buildCard(
-                      title: 'Search by Student Name',
-                      child: _buildSearchStudentField(),
-                    ),
-                    const SizedBox(height: 20),
-                    _buildCard(
-                      title: 'Filter by Payment Purpose',
-                      child: _buildPaymentPurposeDropdown(),
-                    ),
-                    const SizedBox(height: 20),
-                    _buildCard(
-                      title: 'Filter by Payment Period',
-                      child: _buildSearchPaymentPeriod(),
-                    ),
-                    const SizedBox(height: 20),
-                    Center(
-                      child: ElevatedButton(
-                        onPressed: _filterPayments,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 16),
-                          backgroundColor:
-                              const Color.fromARGB(255, 238, 246, 248),
-                          textStyle: const TextStyle(
-                              fontSize: 18), // Button background color
-                        ),
-                        child: const Text('Apply Filters'),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Column(
+                children: [
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Sort by Surname: ',
-                            style: TextStyle(fontSize: 16)),
-                        IconButton(
-                          icon: Icon(_isSortAscending
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward),
-                          onPressed: _toggleSortOrder,
+                        _buildCard(
+                          title: 'View by Class',
+                          child: _buildClassDropdown(),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildCard(
+                          title: 'Search by Student Name',
+                          child: _buildSearchStudentField(),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildCard(
+                          title: 'Filter by Payment Purpose',
+                          child: _buildPaymentPurposeDropdown(),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildCard(
+                          title: 'Filter by Payment Period',
+                          child: _buildSearchPaymentPeriod(),
+                        ),
+                        const SizedBox(height: 20),
+                        Center(
+                          child: ElevatedButton(
+                            onPressed: _filterPayments,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 32, vertical: 16),
+                              backgroundColor:
+                                  const Color.fromARGB(255, 238, 246, 248),
+                              textStyle: const TextStyle(
+                                  fontSize: 18), // Button background color
+                            ),
+                            child: const Text('Apply Filters'),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('Sort by Surname: ',
+                                style: TextStyle(fontSize: 16)),
+                            IconButton(
+                              icon: Icon(_isSortAscending
+                                  ? Icons.arrow_upward
+                                  : Icons.arrow_downward),
+                              onPressed: _toggleSortOrder,
+                            ),
+                          ],
+                        ),
+                        Text(
+                          'Records Found: ${_filteredPayments.length}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
-                    Text(
-                      'Records Found: ${_filteredPayments.length}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    child: _filteredPayments.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No payments found.',
+                              style: TextStyle(color: Colors.red, fontSize: 16),
+                            ),
+                          )
+                        : _buildPaymentsTable(),
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              Container(
-                child: _filteredPayments.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No payments found.',
-                          style: TextStyle(color: Colors.red, fontSize: 16),
-                        ),
-                      )
-                    : _buildPaymentsTable(),
-              ),
-            ],
+            ),
           ),
-        ),
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(),
+            ),
+        ],
       ),
     );
   }

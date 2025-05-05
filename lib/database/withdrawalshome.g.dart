@@ -26,13 +26,14 @@ class WithdrawalAdapter extends TypeAdapter<Withdrawal> {
       operationType: fields[6] as String?,
       id: fields[7] as int?,
       withdrawalCode: fields[8] as String?,
+      modifiedFields: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Withdrawal obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class WithdrawalAdapter extends TypeAdapter<Withdrawal> {
       ..writeByte(7)
       ..write(obj.id)
       ..writeByte(8)
-      ..write(obj.withdrawalCode);
+      ..write(obj.withdrawalCode)
+      ..writeByte(9)
+      ..write(obj.modifiedFields);
   }
 
   @override

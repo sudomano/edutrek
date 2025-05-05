@@ -31,6 +31,9 @@ class Classes extends HiveObject {
   @HiveField(8)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  @HiveField(9)
+  List<String>? terms;
+
   Classes({
     required this.id,
     required this.date,
@@ -41,7 +44,8 @@ class Classes extends HiveObject {
     this.operationType, // Can be null initially
     this.classCode,
     this.modifiedFields,
-  });
+    List<String>? terms,
+  }) : terms = terms ?? [];
 
   Classes copyWith({
     int? id,
@@ -53,6 +57,7 @@ class Classes extends HiveObject {
     String? operationType,
     String? classCode,
     List<String>? modifiedFields,
+    List<String>? terms,
   }) {
     return Classes(
       id: id ?? this.id,
@@ -64,6 +69,7 @@ class Classes extends HiveObject {
       operationType: operationType ?? this.operationType,
       classCode: classCode ?? this.classCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      terms: terms ?? this.terms,
     );
   }
 }

@@ -1,25 +1,31 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:zitf_system/auth/userdb.dart';
+import 'package:zitf_system/database/accounting_module_models/account_type.dart';
+import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_model.dart';
+import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
 import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/database/withdrawalshome.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
-import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart'; // Import the file_picker package
+import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 
 class ExportClassesPages extends StatefulWidget {
   @override
@@ -33,7 +39,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     setState(() {
       _selectedIndex = index;
     });
-    onItemTapped(context, index); // Use the navigation logic
+    onItemTapped(context, index); // Use your navigation logic
   }
 
   Box<Classes>? _classesBox;
@@ -46,6 +52,16 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   Box<Teachers>? _teachersBox;
   Box<School>? _schoolBox;
   Box<Terms>? _termsBox;
+
+  Box<DomainRecord>? _domainRecordBox;
+  Box<User>? _userBox;
+  Box<Account>? _accountBox;
+  Box<Asset>? _assetBox;
+  Box<Project>? _projectBox;
+  Box<ProjectItem>? _projectItemBox;
+  Box<DailyActivity>? _dailyActivityBox;
+  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+
   bool _isExporting = false; // To track export status
 
   @override
@@ -70,20 +86,30 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       _teachersBox = await Hive.openBox<Teachers>('teachers');
       _schoolBox = await Hive.openBox<School>('school');
       _termsBox = await Hive.openBox<Terms>('terms');
-      print('All Hive boxes opened successfully.');
+
+      _domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
+      _userBox = await Hive.openBox<User>('users'); // Open the box for users
+      _accountBox = await Hive.openBox<Account>('account');
+      _assetBox = await Hive.openBox<Asset>('asset');
+      _projectBox = await Hive.openBox<Project>('projects');
+      _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
+      _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
+      _projectStudentPaymentBox =
+          await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
     } catch (e) {
       print('Error opening Hive boxes: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error opening Hive boxes: $e'),
+      ));
     }
   }
 
   Future<void> exportHiveData() async {
     setState(() {
-      _isExporting = true; // Set exporting status
+      _isExporting = true; // Start exporting
     });
 
     try {
-      print('Starting data export...');
-
       // Serialize data
       Map<String, dynamic> exportData = {
         'classes': _serializeBox(_classesBox, _classToJson),
@@ -100,28 +126,72 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'teachers': _serializeBox(_teachersBox, _teacherToJson),
         'school': _serializeBox(_schoolBox, _schoolToJson),
         'terms': _serializeBox(_termsBox, _termsToJson),
+        'domains': _serializeBox(_domainRecordBox, _domainsToJson),
+        'users': _serializeBox(_userBox, _usersToJson),
+        'accounts': _serializeBox(_accountBox, _accountsToJson),
+        'assets': _serializeBox(_assetBox, _assetsToJson),
+        'projects': _serializeBox(_projectBox, _projectsToJson),
+        'project_items': _serializeBox(_projectItemBox, _project_itemsToJson),
+        'daily_activities':
+            _serializeBox(_dailyActivityBox, _daily_activitiesToJson),
+        'project_student_payments': _serializeBox(
+            _projectStudentPaymentBox, _project_student_paymentsToJson),
       };
 
       String jsonData = jsonEncode(exportData);
-      print('Data serialized successfully.');
 
-      // Use File Picker to select a save location
-      String? selectedPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save Hive Data Backup',
-        fileName: 'hive_data_backup.json',
-        allowedExtensions: ['json'],
-        type: FileType.custom,
-      );
+      if (Platform.isWindows) {
+        // **Windows Platform Handling**
 
-      if (selectedPath != null) {
-        File file = File(selectedPath);
+        // Use File Picker to select a save location
+        String? selectedPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Hive Data Backup',
+          fileName: 'hive_data_backup.json',
+          allowedExtensions: ['json'],
+          type: FileType.custom,
+        );
+
+        if (selectedPath != null) {
+          File file = File(selectedPath);
+          await file.writeAsString(jsonData);
+          print('Backup file saved successfully at: $selectedPath');
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Backup saved successfully at: $selectedPath'),
+          ));
+        } else {
+          print('File saving was canceled by the user.');
+        }
+      } else if (Platform.isAndroid) {
+        // **Android Platform Handling**
+        print('Running on Android. Saving to app-specific directory.');
+
+        // Get the app-specific directory
+        Directory? directory = await getExternalStorageDirectory();
+        if (directory == null) {
+          throw Exception('Unable to access external storage directory.');
+        }
+
+        String backupDirPath = '${directory.path}/backup';
+        Directory backupDir = Directory(backupDirPath);
+        if (!await backupDir.exists()) {
+          print('Creating backup directory at: $backupDirPath');
+          await backupDir.create(recursive: true);
+        }
+
+        String filePath = '$backupDirPath/hive_data_backup.json';
+        File file = File(filePath);
+
+        // Write the JSON data to the file
         await file.writeAsString(jsonData);
-        print('Backup file saved successfully at: $selectedPath');
+
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Backup file saved successfully at: $selectedPath'),
+          content: Text('Backup saved successfully at: $filePath'),
         ));
       } else {
-        print('File saving was canceled by the user.');
+        // **Other Platforms (Optional)**
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Export not supported on this platform.'),
+        ));
       }
     } catch (e) {
       print('Error exporting data: $e');
@@ -132,25 +202,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       setState(() {
         _isExporting = false; // Reset exporting status
       });
-      print('Data export process completed.');
     }
-  }
-
-// Helper function to get a unique file name by appending a number if file exists
-  Future<String> _getUniqueFileName(
-      String directory, String baseFileName) async {
-    String filePath = '$directory/$baseFileName';
-    File file = File(filePath);
-
-    int fileCount = 1;
-    while (await file.exists()) {
-      String newFileName =
-          baseFileName.replaceFirst('.json', '($fileCount).json');
-      filePath = '$directory/$newFileName';
-      file = File(filePath);
-      fileCount++;
-    }
-    return filePath;
   }
 
   // Helper function to serialize data
@@ -171,6 +223,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
     };
   }
 
@@ -212,7 +267,6 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'emergencyContactName': cls.emergencyContactName,
       'emergencyContactNumber': cls.emergencyContactNumber,
       'enrollmentStatus': cls.enrollmentStatus,
-
       'isPresent': cls.isPresent,
       'presentDates': cls.presentDates
           .map((date) => date.toIso8601String())
@@ -220,11 +274,13 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'absentDates': cls.absentDates
           .map((date) => date.toIso8601String())
           .toList(), // Convert each DateTime to ISO 8601 string
-
       'termId': cls.termId,
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
     };
   }
 
@@ -310,7 +366,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'paymentPurpose': cls.paymentPurpose,
       'isPaid': cls.isPaid,
       'paymentAmount': cls.paymentAmount,
-      'paymentDate': cls.paymentDate,
+      'paymentDate': cls.paymentDate?.toIso8601String(),
       'email': cls.email,
       'address': cls.address,
       'hireDate': cls.hireDate.toIso8601String(),
@@ -322,6 +378,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'operationType': cls.operationType,
       'assignedClasses': cls.assignedClasses != null
           ? jsonEncode(cls.assignedClasses) // JSON encode the list
+          : null,
+      'terms': cls.terms != null
+          ? jsonEncode(cls.terms) // JSON encode the list
           : null,
     };
   }
@@ -355,24 +414,141 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     };
   }
 
-  Future<String?> _getExternalFilesDirectory() async {
-    try {
-      final directory = await getExternalStorageDirectory();
-      // For Android, this will point to a directory like /storage/emulated/0/Android/data/[package_name]/files
-      if (directory != null) {
-        final path = '${directory.path}/backup'; // Create a backup folder
-        final backupDir = Directory(path);
-        if (!await backupDir.exists()) {
-          await backupDir.create(recursive: true);
-        }
-        return backupDir.path;
-      }
-    } catch (e) {
-      print('Error getting external files directory: $e');
-    }
-    return null;
+  Map<String, dynamic> _domainsToJson(DomainRecord domain) => {
+        'domainName': domain.domainName,
+        'areDomainsActive': domain.areDomainsActive,
+        'syncStatus': domain.syncStatus,
+        'operationType': domain.operationType,
+        'lastModified': domain.lastModified?.toIso8601String(),
+      };
+  Map<String, dynamic> _usersToJson(User user) => {
+        'username': user.username,
+        'password': user.password,
+        'role': user.role,
+        'securityQuestions': user.securityQuestions,
+        'securityAnswers': user.securityAnswers,
+        'phone': user.phone,
+        'termId': user.termId,
+        'syncStatus': user.syncStatus,
+        'lastModified': user.lastModified?.toIso8601String(),
+        'operationType': user.operationType,
+        'id': user.id,
+        'isLogged': user.isLogged,
+        'userCode': user.userCode,
+        'modifiedFields': user.modifiedFields,
+      };
+
+  Map<String, dynamic> _accountsToJson(Account acc) => {
+        'id': acc.id,
+        'accountType': acc.accountType,
+        'accountSubType': acc.accountSubType,
+        'accountName': acc.accountName,
+        'accountCode': acc.accountCode,
+        'operationType': acc.operationType,
+        'syncStatus': acc.syncStatus,
+        'lastModified': acc.lastModified?.toIso8601String(),
+        'isALiquidAccount': acc.isALiquidAccount,
+        'modifiedFields': acc.modifiedFields,
+      };
+  Map<String, dynamic> _assetsToJson(Asset asset) {
+    return {
+      'id': asset.id,
+      'assetName': asset.assetName,
+      'assetType': asset.assetType,
+      'assetSubType': asset.assetSubType,
+      'assetCode': asset.assetCode,
+      'assetSerialNo': asset.assetSerialNo,
+      'acquisitionDate': asset.acquisitionDate?.toIso8601String(),
+      'acquisitionCost': asset.acquisitionCost,
+      'acquisitionMethod': asset.acquisitionMethod,
+      'department': asset.department,
+      'location': asset.location,
+      'depreciationRate': asset.depreciationRate,
+      'depreciationMethod': asset.depreciationMethod,
+      'lastDepreciationDate': asset.lastDepreciationDate?.toIso8601String(),
+      'accumulatedDepreciation': asset.accumulatedDepreciation,
+      'bookValue': asset.bookValue,
+      'isImpaired': asset.isImpaired,
+      'impairmentLoss': asset.impairmentLoss,
+      'revaluationDate': asset.revaluationDate?.toIso8601String(),
+      'revaluationAmount': asset.revaluationAmount,
+      'lastMaintenanceDate': asset.lastMaintenanceDate?.toIso8601String(),
+      'maintenanceCost': asset.maintenanceCost,
+      'maintenanceDescription': asset.maintenanceDescription,
+      'capitalImprovementCost': asset.capitalImprovementCost,
+      'capitalImprovementDescription': asset.capitalImprovementDescription,
+      'disposalDate': asset.disposalDate?.toIso8601String(),
+      'disposalProceeds': asset.disposalProceeds,
+      'disposalReason': asset.disposalReason,
+      'gainOrLossOnDisposal': asset.gainOrLossOnDisposal,
+      'isLeased': asset.isLeased,
+      'leaseType': asset.leaseType,
+      'leaseStartDate': asset.leaseStartDate?.toIso8601String(),
+      'leaseEndDate': asset.leaseEndDate?.toIso8601String(),
+      'leasePaymentAmount': asset.leasePaymentAmount,
+      'lastAuditDate': asset.lastAuditDate?.toIso8601String(),
+      'syncStatus': asset.syncStatus,
+      'notes': asset.notes,
+      'createdAt': asset.createdAt?.toIso8601String(),
+      'lastModified': asset.lastModified?.toIso8601String(),
+      'operationType': asset.operationType,
+      'usefulLife': asset.usefulLife,
+      'hasDebitBalance': asset.hasDebitBalance,
+      'hasCreditBalance': asset.hasCreditBalance,
+      'option': asset.option,
+      'modifiedFields': asset.modifiedFields,
+    };
   }
 
+  Map<String, dynamic> _projectsToJson(Project p) => {
+        'projectCode': p.projectCode,
+        'name': p.name,
+        'description': p.description,
+        'status': p.status,
+        'createdAt': p.createdAt.toIso8601String(),
+        'updatedAt': p.updatedAt.toIso8601String(),
+        'syncStatus': p.syncStatus,
+        'lastModified': p.lastModified?.toIso8601String(),
+        'operationType': p.operationType,
+        'modifiedFields': p.modifiedFields,
+      };
+  Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
+        'projectItemCode': i.projectItemCode,
+        'projectCode': i.projectCode,
+        'name': i.name,
+        'amount': i.amount,
+        'isStudentFee': i.isStudentFee,
+        'syncStatus': i.syncStatus,
+        'lastModified': i.lastModified?.toIso8601String(),
+        'operationType': i.operationType,
+        'modifiedFields': i.modifiedFields,
+      };
+  Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
+        'projectDailyActiviyCode': a.projectDailyActiviyCode,
+        'projectCode': a.projectCode,
+        'date': a.date.toIso8601String(),
+        'type': a.type,
+        'description': a.description,
+        'amount': a.amount,
+        'syncStatus': a.syncStatus,
+        'lastModified': a.lastModified?.toIso8601String(),
+        'operationType': a.operationType,
+        'modifiedFields': a.modifiedFields,
+      };
+  Map<String, dynamic> _project_student_paymentsToJson(
+          ProjectStudentPayment p) =>
+      {
+        'projectStudentPaymentCode': p.projectStudentPaymentCode,
+        'studentId': p.studentId,
+        'projectCode': p.projectCode,
+        'itemId': p.itemId,
+        'amountPaid': p.amountPaid,
+        'balance': p.balance,
+        'syncStatus': p.syncStatus,
+        'lastModified': p.lastModified?.toIso8601String(),
+        'operationType': p.operationType,
+        'modifiedFields': p.modifiedFields,
+      };
   @override
   Widget build(BuildContext context) {
     final isLargeScreen =
@@ -380,46 +556,51 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Export Records'),
-      body: Column(
-        children: [
-          const SizedBox(
-            height: 15,
-          ),
-          buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-          const SizedBox(
-            height: 10,
-          ),
-          Text(
-            'Local Data Backup',
-            style: GoogleFonts.montserrat(
-              fontSize: 20,
-              fontWeight: FontWeight.normal,
-              color:
-                  const Color.fromARGB(255, 0, 0, 0), // White text on gradient
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(
+              height: 15,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(
-            height: 40,
-          ),
-          Center(
-            child: ElevatedButton(
-              onPressed: _isExporting
-                  ? null
-                  : () async {
-                      print('Export button clicked.');
-                      await exportHiveData();
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text(
-                            'All records have been exported successfully.'),
-                      ));
-                    },
-              child: _isExporting
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Export All Database Records'),
+            buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
+            const SizedBox(
+              height: 10,
             ),
-          ),
-        ],
+            Text(
+              'Local Data Backup',
+              style: GoogleFonts.montserrat(
+                fontSize: 20,
+                fontWeight: FontWeight.normal,
+                color: const Color.fromARGB(255, 0, 0, 0), // Black text color
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(
+              height: 40,
+            ),
+            Center(
+              child: ElevatedButton(
+                onPressed: _isExporting
+                    ? null
+                    : () async {
+                        print('Export button clicked.');
+                        await exportHiveData();
+                        // The success SnackBar is already handled in exportHiveData
+                      },
+                child: _isExporting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.0,
+                        ),
+                      )
+                    : const Text('Export All Database Records'),
+              ),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: buildBottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -431,5 +612,24 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   @override
   void dispose() {
     super.dispose();
+    // Close Hive boxes if necessary
+    _classesBox?.close();
+    _teacherPaymentsPurposesBox?.close();
+    _paymentPurposesBox?.close();
+    _studentPaymentsBox?.close();
+    _teacherPaymentsBox?.close();
+    _studentsBox?.close();
+    _withdrawalsBox?.close();
+    _teachersBox?.close();
+    _schoolBox?.close();
+    _termsBox?.close();
+    _domainRecordBox?.close();
+    _userBox?.close();
+    _accountBox?.close();
+    _assetBox?.close();
+    _projectBox?.close();
+    _projectItemBox?.close();
+    _dailyActivityBox?.close();
+    _projectStudentPaymentBox?.close();
   }
 }

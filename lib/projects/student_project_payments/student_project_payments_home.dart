@@ -14,6 +14,7 @@ import 'package:zitf_system/projects/student_project_payments/update_student_pro
 import 'package:zitf_system/projects/student_project_payments/view_student_project_payment.dart';
 
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
@@ -52,155 +53,189 @@ class _MyPageState extends State<StudentProjectPaymentsHome> {
       appBar: const CustomAppBar(title: 'Project Items'),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          bool isLargeScreen = constraints.maxWidth >= 600;
-          // Adjust crossAxisCount based on screen width
-          int crossAxisCount = 2; // Default 2 items per row
-          double crossAxisSpacing = 16.0;
-
-          if (constraints.maxWidth >= 1200) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 10.0;
-          } else if (constraints.maxWidth >= 800) {
-            crossAxisCount = 4;
-            crossAxisSpacing = 1.0;
-          } else if (constraints.maxWidth >= 600) {
-            crossAxisCount = 3;
-            crossAxisSpacing = 4.0;
-          } else {
-            crossAxisCount = 1;
-            crossAxisSpacing = 2.0;
-          }
-          return Container(
-            decoration: BoxDecoration(
-              color: isLargeScreen
-                  ? const Color.fromRGBO(0, 233, 254, 1)
-                  : null, // Set white background for large screens
-              gradient: isLargeScreen
-                  ? null
-                  : const LinearGradient(
-                      colors: [
-                        Color.fromRGBO(0, 233, 254, 1),
-                        Color.fromARGB(255, 1, 80, 71)
-                      ], // Gradient colors for small screens
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-            ),
-            child: Center(
-              child: SingleChildScrollView(
+          return Row(
+            children: [
+              if (constraints.maxWidth >= 500)
+                SizedBox(
+                  width: 250,
+                  child: CustomDrawerAdmin(loggedInUser: loggedInUser),
+                ),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const SizedBox(
-                      height: 5,
-                    ),
-                    buildFutureSchoolsWidget(isLargeScreen: isLargeScreen),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    Text(
-                      'Make Student Project Payment ',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 20,
-                        fontWeight: FontWeight.normal,
-                        color: const Color.fromARGB(
-                            255, 0, 0, 0), // White text on gradient
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    isLargeScreen
-                        ? GridView.count(
-                            crossAxisCount: crossAxisCount,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: crossAxisSpacing,
-                            padding: const EdgeInsets.all(8),
-                            children: [
-                              //if (admin || secretary || subadmin)
+                    Expanded(
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        bool isLargeScreen = constraints.maxWidth >= 500;
+                        // Adjust crossAxisCount based on screen width
+                        int crossAxisCount = 2; // Default 2 items per row
+                        double crossAxisSpacing = 16.0;
 
-                              // Elevated cards with icons
-                              const ElevatedCard(
-                                icon: Icons.view_comfortable_outlined,
-                                text: 'View Student Project Payment',
-                                target: ViewStudentProjectPayment(),
-                                isLargeScreen: true,
-                              ),
-                              //if (admin || secretary || subadmin)
-                              const ElevatedCard(
-                                icon: Icons.create_new_folder_outlined,
-                                text: 'Create Student Project Payment',
-                                target: DuplicatedPaymentWithReceipt(),
-                                isLargeScreen: true,
-                              ),
-                              // if (admin || subadmin)
-                              /* _buildElevatedCardWithDialog(
-                                context,
-                                icon: Icons.update,
-                                text: 'Update Student Project Payment',
-                                isLargeScreen:
-                                    true, // Flag to check screen size
-                              ),*/
+                        if (constraints.maxWidth >= 1200) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 1000) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 800) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 600) {
+                          crossAxisCount = 4;
+                        } else if (constraints.maxWidth >= 400) {
+                          crossAxisCount = 3;
+                        } else if (constraints.maxWidth >= 300) {
+                          crossAxisCount = 2;
+                        } else {
+                          crossAxisCount = 1;
+                        }
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isLargeScreen
+                                ? const Color.fromRGBO(255, 255, 255, 1)
+                                : null, // Set white background for large screens
+                            gradient: isLargeScreen
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : const LinearGradient(
+                                    colors: [
+                                      Color.fromRGBO(255, 255, 255, 1),
+                                      Color.fromARGB(255, 255, 255, 255)
+                                    ], // Gradient colors for small screens
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                          ),
+                          child: Center(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  buildFutureSchoolsWidget(
+                                      isLargeScreen: isLargeScreen),
+                                  isLargeScreen
+                                      ? GridView.count(
+                                          crossAxisCount: crossAxisCount,
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          crossAxisSpacing: crossAxisSpacing,
+                                          padding: const EdgeInsets.all(8),
+                                          children: [
+                                            //if (admin || secretary || subadmin)
 
-                              // if (admin || subadmin)
-                              ElevatedCard(
-                                icon: Icons.update,
-                                text: 'Update Student Project Payment',
-                                target: UpdateStudentPaymentForm(),
-                                isLargeScreen: true,
+                                            // Elevated cards with icons
+                                            const ElevatedCard(
+                                              icon: Icons
+                                                  .view_comfortable_outlined,
+                                              text:
+                                                  'View Student Project Payment',
+                                              target:
+                                                  ViewStudentProjectPayment(),
+                                              isLargeScreen: true,
+                                            ),
+                                            //if (admin || secretary || subadmin)
+                                            const ElevatedCard(
+                                              icon: Icons
+                                                  .create_new_folder_outlined,
+                                              text:
+                                                  'Create Student Project Payment',
+                                              target:
+                                                  DuplicatedPaymentWithReceipt(),
+                                              isLargeScreen: true,
+                                            ),
+                                            // if (admin || subadmin)
+                                            /* _buildElevatedCardWithDialog(
+                                                context,
+                                                icon: Icons.update,
+                                                text: 'Update Student Project Payment',
+                                                isLargeScreen:
+                                                    true, // Flag to check screen size
+                                              ),*/
+
+                                            // if (admin || subadmin)
+                                            ElevatedCard(
+                                              icon: Icons.update,
+                                              text:
+                                                  'Update Student Project Payment',
+                                              target:
+                                                  UpdateStudentPaymentForm(),
+                                              isLargeScreen: true,
+                                            ),
+                                            // if (admin || subadmin)
+                                            const ElevatedCard(
+                                              icon: Icons.delete,
+                                              text:
+                                                  'Delete Student Project Payment',
+                                              target:
+                                                  DeleteStudentProjectPayment(),
+                                              isLargeScreen: true,
+                                            ),
+                                          ],
+                                        )
+                                      : Column(
+                                          children: [
+                                            // Elevated cards with icons
+                                            const ElevatedCard(
+                                              icon: Icons
+                                                  .view_comfortable_outlined,
+                                              text:
+                                                  'View Student Project Payment',
+                                              target:
+                                                  ViewStudentProjectPayment(),
+                                              isLargeScreen: false,
+                                            ),
+                                            //if (admin || secretary || subadmin)
+                                            const ElevatedCard(
+                                              icon: Icons
+                                                  .create_new_folder_outlined,
+                                              text:
+                                                  'Create Student Project Payment',
+                                              target:
+                                                  const DuplicatedPaymentWithReceipt(),
+                                              isLargeScreen: false,
+                                            ),
+                                            /*_buildElevatedCardWithDialog(
+                                                context,
+                                                icon: Icons.update,
+                                                text: 'Update Student Project Payment',
+                                                isLargeScreen:
+                                                    false, // Flag to check screen size
+                                              ),*/
+                                            if (admin || subadmin)
+                                              ElevatedCard(
+                                                icon: Icons.update,
+                                                text:
+                                                    'Update Student Project Payment',
+                                                target:
+                                                    UpdateStudentPaymentForm(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.delete,
+                                                text:
+                                                    'Delete Student Project Payment',
+                                                target:
+                                                    const DeleteStudentProjectPayment(),
+                                                isLargeScreen: false,
+                                              ),
+                                          ],
+                                        )
+                                ],
                               ),
-                              // if (admin || subadmin)
-                              const ElevatedCard(
-                                icon: Icons.delete,
-                                text: 'Delete Student Project Payment',
-                                target: DeleteStudentProjectPayment(),
-                                isLargeScreen: true,
-                              ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              // Elevated cards with icons
-                              const ElevatedCard(
-                                icon: Icons.view_comfortable_outlined,
-                                text: 'View Student Project Payment',
-                                target: ViewStudentProjectPayment(),
-                                isLargeScreen: false,
-                              ),
-                              //if (admin || secretary || subadmin)
-                              const ElevatedCard(
-                                icon: Icons.create_new_folder_outlined,
-                                text: 'Create Student Project Payment',
-                                target: const DuplicatedPaymentWithReceipt(),
-                                isLargeScreen: false,
-                              ),
-                              /*_buildElevatedCardWithDialog(
-                                context,
-                                icon: Icons.update,
-                                text: 'Update Student Project Payment',
-                                isLargeScreen:
-                                    false, // Flag to check screen size
-                              ),*/
-                              if (admin || subadmin)
-                                ElevatedCard(
-                                  icon: Icons.update,
-                                  text: 'Update Student Project Payment',
-                                  target: UpdateStudentPaymentForm(),
-                                  isLargeScreen: false,
-                                ),
-                              if (admin || subadmin)
-                                const ElevatedCard(
-                                  icon: Icons.delete,
-                                  text: 'Delete Student Project Payment',
-                                  target: const DeleteStudentProjectPayment(),
-                                  isLargeScreen: false,
-                                ),
-                            ],
-                          )
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       ),

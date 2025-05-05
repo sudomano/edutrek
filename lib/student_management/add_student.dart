@@ -3,7 +3,9 @@ import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/student.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
+import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 
 class AddStudentScreen extends StatefulWidget {
@@ -40,18 +42,34 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   List<String> _classes = [];
 
+  // --- New: Variables for term selection ---
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = []; // Stores user-selected term IDs
+
   @override
   void initState() {
     super.initState();
     _loadClasses();
+    _loadTerms();
+
     _setInitialRegNumber();
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms =
+          termsBox.values.map((term) => term.termId).toSet().toList();
+      _selectedTerms =
+          List.from(_availableTerms); // Select all terms by default
+    });
   }
 
   Future<void> _loadClasses() async {
     final box = await Hive.openBox<Classes>('classes');
     setState(() {
       _classes = box.values
-          .where((c) => c.termId == globalTermId)
+          .where((c) => c.terms!.contains(globalTermId))
           .map((c) => c.className)
           .toList();
     });
@@ -84,6 +102,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               });
             }),
             const SizedBox(height: 20),
+
+            // --- New: Term Selection Section ---
+            const Center(
+              child: Text('Select Terms (optional)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            _buildTermSelection(),
+            const SizedBox(height: 20),
+
             const Center(
               child: Text('Student Details',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -183,7 +210,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _submit,
+              onPressed: _validateAndSubmit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color.fromARGB(255, 227, 233, 241),
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -197,6 +224,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTermSelection() {
+    return _availableTerms.isEmpty
+        ? const Text('No terms available')
+        : Column(
+            children: _availableTerms.map((term) {
+              return CheckboxListTile(
+                title: Text(term),
+                value: _selectedTerms.contains(term),
+                onChanged: (selected) {
+                  setState(() {
+                    if (selected == true) {
+                      _selectedTerms.add(term);
+                    } else {
+                      _selectedTerms.remove(term);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          );
   }
 
   Widget _buildTextField(String label, TextEditingController controller,
@@ -359,6 +408,210 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return currentMaxId + 1;
   }
 
+  Future<void> _validateAndSubmit() async {
+    debugPrint("Validating student registration number...");
+    final name = _nameController.text.toLowerCase();
+    final surname = _surnameController.text.toLowerCase();
+    final className = _selectedClass?.toLowerCase() ?? '';
+    final box = await Hive.openBox<Student>('students');
+    // Check if a student with the same details already exists
+    final existingStudents = box.values.any((student) =>
+        student.name.toLowerCase() == name &&
+        student.surname.toLowerCase() == surname &&
+        student.class_.toLowerCase() == className);
+
+    if (existingStudents) {
+      debugPrint(
+          "Student ID number is empty. Prompting user for confirmation.");
+      _showProceedWithoutSameStudentDialog(context);
+    }
+
+    if (_studentIdNumberController.text.isEmpty) {
+      debugPrint(
+          "Student ID number is empty. Prompting user for confirmation.");
+      _showProceedWithoutRegNumberDialog(context);
+    } else {
+      debugPrint("Student ID number provided. Proceeding to validate inputs.");
+      _validateInputs();
+    }
+  }
+
+  Future<void> _showProceedWithoutRegNumberDialog(BuildContext context) async {
+    debugPrint("Showing dialog: Proceed without registration number?");
+
+    bool proceed = await showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Missing Registration Number'),
+          content: const Text(
+            'The student registration number is required. Do you want to proceed without it?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                debugPrint("User selected: No");
+                Navigator.of(context).pop(false); // Return "false"
+              },
+              child: const Text(
+                'No',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                debugPrint("User selected: Yes");
+                Navigator.of(context).pop(true); // Return "true"
+              },
+              child: const Text(
+                'Yes',
+                style: TextStyle(color: Colors.green),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (proceed) {
+      debugPrint("Proceeding without student registration number.");
+      _validateInputs();
+    } else {
+      debugPrint("User canceled, prompting to enter registration number.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter the student registration number.',
+            style: TextStyle(color: Colors.red),
+          ),
+          backgroundColor: Colors.white,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showProceedWithoutSameStudentDialog(
+      BuildContext context) async {
+    debugPrint("Showing dialog: Proceed with the SAME USER INFO?");
+
+    bool proceed = await showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('SAME USER INFOMATION WAS FOUND'),
+          content: const Text(
+            'The student NAME - SURNAME - CLASS exists. Do you want to proceed anyways?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                debugPrint("User selected: No");
+                Navigator.of(context).pop(false); // Return "false"
+              },
+              child: const Text(
+                'No',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                debugPrint("User selected: Yes");
+                Navigator.of(context).pop(true); // Return "true"
+              },
+              child: const Text(
+                'Yes',
+                style: TextStyle(color: Colors.green),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (proceed) {
+      debugPrint("Proceeding with student registration.");
+      _validateInputs();
+    } else {
+      debugPrint("User canceled, prompting to enter different user info.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please enter the student another student.',
+            style: TextStyle(color: Colors.red),
+          ),
+          backgroundColor: Colors.white,
+        ),
+      );
+    }
+  }
+
+  void _validateInputs() {
+    if (_selectedClass == null || _selectedClass!.isEmpty) {
+      debugPrint("Validation failed: Class is required");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Class is Required', style: TextStyle(color: Colors.red)),
+          backgroundColor: Colors.white,
+        ),
+      );
+      return;
+    }
+
+    if (_nameController.text.isEmpty) {
+      debugPrint("Validation failed: Name is required");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Name is Required', style: TextStyle(color: Colors.red)),
+          backgroundColor: Colors.white,
+        ),
+      );
+      return;
+    }
+
+    if (_surnameController.text.isEmpty) {
+      debugPrint("Validation failed: Surname is required");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Surname is Required', style: TextStyle(color: Colors.red)),
+          backgroundColor: Colors.white,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedGender == null || _selectedGender!.isEmpty) {
+      debugPrint("Validation failed: Gender is required");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Gender is Required', style: TextStyle(color: Colors.red)),
+          backgroundColor: Colors.white,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedDateOfBirth == null) {
+      debugPrint("Validation failed: Date of Birth is required");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Date Of Birth is Required',
+              style: TextStyle(color: Colors.red)),
+          backgroundColor: Colors.white,
+        ),
+      );
+      return;
+    }
+
+    // If all validations pass, proceed to submit
+    _submit();
+  }
+
   void _submit() async {
     if (_formKey.currentState!.validate()) {
       if (globalTermId != null) {
@@ -367,6 +620,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final className = _selectedClass?.toLowerCase() ?? '';
         final gender = _selectedGender?.toLowerCase() ?? '';
         final studentIdNumber = _studentIdNumberController.text.toLowerCase();
+        final regnumber = uuid.v4();
 
         final box = await Hive.openBox<Student>('students');
 
@@ -375,103 +629,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             student.name.toLowerCase() == name &&
             student.surname.toLowerCase() == surname &&
             student.class_.toLowerCase() == className &&
-            student.termId == globalTermId &&
             student.gender.toLowerCase() == gender);
 
         // Check for student ID duplication
         final duplicateId = box.values.any((student) =>
-            student.studentIdNumber?.toLowerCase() == studentIdNumber &&
-            student.termId == globalTermId);
-        if (studentIdNumber.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Student Registration Number is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
+            student.studentIdNumber?.toLowerCase() == studentIdNumber);
 
-          return;
-        }
-        if (_selectedClass!.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Class is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
+        final duplicateDetails = box.values.any((student) =>
+            student.name.toLowerCase() == name &&
+            student.surname.toLowerCase() == surname &&
+            student.class_.toLowerCase() == className &&
+            student.gender.toLowerCase() == gender);
 
-          return;
-        }
-        if (name.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Name is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
-
-          return;
-        }
-        if (surname.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Surname  Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
-
-          return;
-        }
-        if (gender.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Gender is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
-
-          return;
-        }
-        if (_selectedDateOfBirth == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Date Of Birth is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
-
-          return;
-        }
         if (_physicalAddressController.text.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -536,6 +705,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
           return;
         }
+        if (duplicateDetails) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  ' Student With Same Name, Surname, Class, Gender already exists'),
+            ),
+          );
+
+          return;
+        }
 
         int newId = await getNextId();
 
@@ -566,69 +745,82 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         modifiedFields.add('emergencyContactNumber');
         modifiedFields.add('healthStauts');
         modifiedFields.add('healthDetailedInformation');
+        modifiedFields.add('terms');
 
-        final newStudent = Student(
-          id: newId,
-          name: name,
-          surname: surname,
-          regNumber: _regNumberController.text,
-          class_: _selectedClass!,
-          gender: _selectedGender!,
-          age: _selectedDateOfBirth!,
-          phoneNumber: _phoneController.text,
-          paymentStatus: _parentNameController.text,
-          termId: globalTermId,
-          syncStatus: false, // Set syncStatus to false
-          lastModified: DateTime.now(), // Set lastModified to current datetime
-          operationType:
-              'create', // Set operationType to 'create' // Set the global term ID
-          physicalAddress: _physicalAddressController.text.isEmpty
-              ? null
-              : _physicalAddressController.text,
-          formerSchool: _formerSchoolController.text.isEmpty
-              ? null
-              : _formerSchoolController.text,
-          religion: _religionController.text.isEmpty
-              ? null
-              : _religionController.text,
-          denomination: _denominationController.text.isEmpty
-              ? null
-              : _denominationController.text,
-          studentIdNumber: _studentIdNumberController.text,
-          nationalIdNumber: _nationalIdNumberController.text.isEmpty
-              ? null
-              : _nationalIdNumberController.text,
-          nationality: _nationalityController.text.isEmpty
-              ? null
-              : _nationalityController.text,
-          district: _districtController.text.isEmpty
-              ? null
-              : _districtController.text,
-          previousSchoolPerformanceResults:
-              _previousSchoolPerformanceResultsController.text.isEmpty
-                  ? null
-                  : _previousSchoolPerformanceResultsController.text,
-          emergencyContactName: _emergencyContactNameController.text.isEmpty
-              ? null
-              : _emergencyContactNameController.text,
-          emergencyContactNumber: _emergencyContactNumberController.text.isEmpty
-              ? null
-              : _emergencyContactNumberController.text,
-          healthStauts: _selectedValue.toString(),
-          healthDetailedInformation: _illnessInfoController.text.isEmpty
-              ? null
-              : _illnessInfoController.text,
+        // Determine the terms to use: either the selected ones or default to globalTermId.
+        final List<String> termsToSave =
+            _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!];
 
-          modifiedFields: modifiedFields,
-        );
+        // Save a student record for each term.
+        for (var term in termsToSave) {
+          final newStudent = Student(
+            id: newId,
+            name: name,
+            surname: surname,
+            regNumber: _regNumberController.text,
+            class_: _selectedClass!,
+            gender: _selectedGender!,
+            age: _selectedDateOfBirth!,
+            phoneNumber: _phoneController.text,
+            paymentStatus: _parentNameController.text,
+            termId: term,
+            syncStatus: false, // Set syncStatus to false
+            lastModified:
+                DateTime.now(), // Set lastModified to current datetime
+            operationType:
+                'create', // Set operationType to 'create' // Set the global term ID
+            physicalAddress: _physicalAddressController.text.isEmpty
+                ? null
+                : _physicalAddressController.text,
+            formerSchool: _formerSchoolController.text.isEmpty
+                ? null
+                : _formerSchoolController.text,
+            religion: _religionController.text.isEmpty
+                ? null
+                : _religionController.text,
+            denomination: _denominationController.text.isEmpty
+                ? null
+                : _denominationController.text,
+            studentIdNumber: _studentIdNumberController.text.isEmpty
+                ? regnumber
+                : _studentIdNumberController.text,
+            nationalIdNumber: _nationalIdNumberController.text.isEmpty
+                ? null
+                : _nationalIdNumberController.text,
+            nationality: _nationalityController.text.isEmpty
+                ? null
+                : _nationalityController.text,
+            district: _districtController.text.isEmpty
+                ? null
+                : _districtController.text,
+            previousSchoolPerformanceResults:
+                _previousSchoolPerformanceResultsController.text.isEmpty
+                    ? null
+                    : _previousSchoolPerformanceResultsController.text,
+            emergencyContactName: _emergencyContactNameController.text.isEmpty
+                ? null
+                : _emergencyContactNameController.text,
+            emergencyContactNumber:
+                _emergencyContactNumberController.text.isEmpty
+                    ? null
+                    : _emergencyContactNumberController.text,
+            healthStauts: _selectedValue.toString(),
+            healthDetailedInformation: _illnessInfoController.text.isEmpty
+                ? null
+                : _illnessInfoController.text,
 
-        box.add(newStudent); // Add the student
+            modifiedFields: modifiedFields,
+            // Populate the new 'terms' field with the full list of selected terms.
+            terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
+          );
 
+          box.add(newStudent); // Add the student
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Student Added Successfully')),
         );
 
-        _clearForm();
+        _reloadFormWithNavigator();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -670,6 +862,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       // Reset form validation state
       _formKey.currentState?.reset();
     });
+  }
+
+  void _reloadFormWithNavigator() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const AddStudentScreen()),
+    );
   }
 
   @override

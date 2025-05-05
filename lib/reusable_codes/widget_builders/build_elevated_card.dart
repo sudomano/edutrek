@@ -51,8 +51,8 @@ class ElevatedCard extends StatelessWidget {
                           icon,
                           size: 20, // Larger icon size for large screens
                           color: isLargeScreen
-                              ? Colors.blue.shade800
-                              : Colors.blueAccent,
+                              ? const Color.fromARGB(255, 0, 43, 92)
+                              : const Color.fromARGB(255, 0, 43, 92),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -63,8 +63,8 @@ class ElevatedCard extends StatelessWidget {
                                 ? FontWeight.normal
                                 : FontWeight.bold,
                             color: isLargeScreen
-                                ? Colors.black
-                                : Colors.blueGrey[900],
+                                ? const Color.fromARGB(255, 0, 0, 0)
+                                : const Color.fromARGB(255, 0, 0, 0),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -77,7 +77,7 @@ class ElevatedCard extends StatelessWidget {
                         Icon(
                           icon,
                           size: 20, // Smaller icon for small screens
-                          color: Colors.blueAccent,
+                          color: const Color.fromARGB(255, 0, 43, 92),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -86,7 +86,7 @@ class ElevatedCard extends StatelessWidget {
                             style: GoogleFonts.montserrat(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Colors.blueGrey[900],
+                              color: const Color.fromARGB(255, 0, 0, 0),
                             ),
                             textAlign: TextAlign.center,
                           ),

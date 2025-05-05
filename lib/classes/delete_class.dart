@@ -7,13 +7,51 @@ import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 
 class DeleteClassScreen extends StatefulWidget {
-  const DeleteClassScreen({Key? key}) : super(key: key);
+  final Classes? classToDelete; // <- Accept class to delete (optional)
+
+  const DeleteClassScreen({Key? key, this.classToDelete}) : super(key: key);
 
   @override
   _DeleteClassScreenState createState() => _DeleteClassScreenState();
 }
 
 class _DeleteClassScreenState extends State<DeleteClassScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.classToDelete != null) {
+      // If a class is passed, confirm deletion immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _confirmDeleteSpecificClass(widget.classToDelete!);
+      });
+    }
+  }
+
+  void _confirmDeleteSpecificClass(Classes classToDelete) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Class'),
+        content:
+            Text('Are you sure you want to delete ${classToDelete.className}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(), // Cancel
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _deleteClass(classToDelete);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   final _formKey = GlobalKey<FormState>();
   final _indexController =
       TextEditingController(); // To specify which class to delete

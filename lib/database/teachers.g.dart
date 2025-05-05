@@ -39,13 +39,15 @@ class TeachersAdapter extends TypeAdapter<Teachers> {
       lastModified: fields[18] as DateTime?,
       operationType: fields[19] as String?,
       id: fields[20] as int?,
+      modifiedFields: (fields[22] as List?)?.cast<String>(),
+      terms: (fields[23] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Teachers obj) {
     writer
-      ..writeByte(22)
+      ..writeByte(24)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -89,7 +91,11 @@ class TeachersAdapter extends TypeAdapter<Teachers> {
       ..writeByte(20)
       ..write(obj.id)
       ..writeByte(21)
-      ..write(obj.assignedClasses);
+      ..write(obj.assignedClasses)
+      ..writeByte(22)
+      ..write(obj.modifiedFields)
+      ..writeByte(23)
+      ..write(obj.terms);
   }
 
   @override

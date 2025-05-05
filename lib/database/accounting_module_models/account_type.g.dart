@@ -26,13 +26,14 @@ class AccountAdapter extends TypeAdapter<Account> {
       syncStatus: fields[6] as bool,
       lastModified: fields[7] as DateTime?,
       isALiquidAccount: fields[8] as bool?,
+      modifiedFields: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Account obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class AccountAdapter extends TypeAdapter<Account> {
       ..writeByte(7)
       ..write(obj.lastModified)
       ..writeByte(8)
-      ..write(obj.isALiquidAccount);
+      ..write(obj.isALiquidAccount)
+      ..writeByte(9)
+      ..write(obj.modifiedFields);
   }
 
   @override

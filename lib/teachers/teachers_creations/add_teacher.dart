@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:intl/intl.dart'; // For date formatting
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/teachers.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart'; // Import your Teachers model
 
@@ -29,17 +30,33 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   List<String> _classes = []; // List of class names
   List<String> _selectedClasses = []; // Selected classes
+
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = []; // Stores user-selected term IDs
+
   @override
   void initState() {
     super.initState();
     _fetchClasses();
+    _loadTerms();
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms =
+          termsBox.values.map((term) => term.termId).toSet().toList();
+      _selectedTerms =
+          List.from(_availableTerms); // Select all terms by default
+    });
   }
 
   Future<void> _fetchClasses() async {
     final box = await Hive.box<Classes>('classes');
     final classes = box.values
         .where((purposeItem) =>
-            purposeItem.termId != null && purposeItem.termId == globalTermId)
+            purposeItem.termId != null &&
+            purposeItem.terms!.contains(globalTermId))
         .map((e) => e.className)
         .toList();
     setState(() {
@@ -55,6 +72,12 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         key: _formKey,
         child: ListView(
           children: [
+            const Center(
+              child: Text('Select Terms (optional)',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            _buildTermSelection(),
+            const SizedBox(height: 20),
             _buildTextField('Name (required)', _nameController),
             _buildTextField('Surname (required)', _surnameController),
             _buildIdNumberField('ID Number (required)', _idNumberController),
@@ -80,6 +103,28 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTermSelection() {
+    return _availableTerms.isEmpty
+        ? const Text('No terms available')
+        : Column(
+            children: _availableTerms.map((term) {
+              return CheckboxListTile(
+                title: Text(term),
+                value: _selectedTerms.contains(term),
+                onChanged: (selected) {
+                  setState(() {
+                    if (selected == true) {
+                      _selectedTerms.add(term);
+                    } else {
+                      _selectedTerms.remove(term);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          );
   }
 
   Widget _buildClassesList() {
@@ -423,9 +468,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       final qualifications = _qualificationsController.text;
 
       // Check for student ID duplication
-      final duplicateId = box.values.any((student) =>
-          student.IdNumber.toLowerCase() == idNumber &&
-          student.termId == globalTermId);
+      final duplicateId = box.values
+          .any((student) => student.IdNumber.toLowerCase() == idNumber);
 
       if (name.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -599,6 +643,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       modifiedFields.add('qualifications');
       modifiedFields.add('employmentStatus');
       modifiedFields.add('termId');
+      modifiedFields.add('terms');
+
+      // Determine the terms to use: either the selected ones or default to globalTermId.
+      final List<String> termsToSave =
+          _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!];
 
       final teacher = Teachers(
         id: newId,
@@ -624,12 +673,13 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         operationType: 'create',
         lastModified: DateTime.now(),
         modifiedFields: modifiedFields,
+        terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
+
         // Assign global termId here
       );
 // Check if teacher with the same ID Number already exists
       final existingTeacher = box.values.firstWhere(
-        (teacher) =>
-            teacher.IdNumber == idNumber && teacher.termId == globalTermId,
+        (teacher) => teacher.IdNumber == idNumber,
         orElse: () => Teachers(
           name: 'empty',
           surname: 'empty',
@@ -649,8 +699,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         ),
       );
 
-      if (existingTeacher.IdNumber == 'empty' &&
-          existingTeacher.termId == globalTermId) {
+      if (existingTeacher.IdNumber == 'empty') {
         box.add(teacher);
 
         ScaffoldMessenger.of(context).showSnackBar(

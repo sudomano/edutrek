@@ -18,7 +18,10 @@ import 'package:excel/excel.dart';
 import 'package:zitf_system/student_management/create_students/multi_class_selection.dart';
 
 class ViewStudentsScreenfilter extends StatefulWidget {
-  const ViewStudentsScreenfilter({Key? key}) : super(key: key);
+  final String? selectedClassName; // <- Add this line #######################
+
+  const ViewStudentsScreenfilter({Key? key, this.selectedClassName})
+      : super(key: key);
 
   @override
   _ViewStudentsScreenStatefilter createState() =>
@@ -41,34 +44,83 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
   bool _isSyncing = false;
 
+  String _progressMessage = '';
+  final GlobalKey _studentsTableKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _fetchInitialData();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (widget.selectedClassName != null) {
+        _selectedClasses = [widget.selectedClassName!];
+
+        await _filterStudents();
+
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (_studentsTableKey.currentContext != null) {
+            Scrollable.ensureVisible(
+              _studentsTableKey.currentContext!,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+            );
+          } else {}
+        });
+      } else {}
+    });
+  }
+
+  // Helper to update progress message and force rebuild
+  void _updateProgress(String message) {
+    setState(() {
+      _progressMessage = message;
+    });
   }
 
   Future<void> _fetchInitialData() async {
-    final studentBox = await Hive.openBox<Student>('students');
-    final _filteredStudentsBox = studentBox.values
-        .where((classItem) => classItem.termId == globalTermId)
-        .toList();
-    // Fetch unique classes and add "All" option
-    _classes = ['All'];
-    _classes.addAll(
-        _filteredStudentsBox.map((student) => student.class_).toSet().toList());
-    _selectedClasses = ['All']; // Default selection
+    setState(() {
+      _isSyncing = true;
+      _progressMessage = 'Fetching initial data...';
+    });
+    try {
+      final studentBox = await Hive.openBox<Student>('students');
+      final _filteredStudentsBox = studentBox.values
+          .where((classItem) => classItem.terms!.contains(globalTermId))
+          .toList();
+      // Fetch unique classes and add "All" option
+      _classes = ['All'];
+      _classes.addAll(_filteredStudentsBox
+          .map((student) => student.class_)
+          .toSet()
+          .toList());
+      _selectedClasses = ['All']; // Default selection
 
-    setState(() {});
+      setState(() {
+        _isSyncing = false;
+      });
+    } catch (error) {
+      print("Error fetching initial data: $error");
+      setState(() {
+        _isSyncing = false;
+      });
+    }
   }
 
   Future<void> _filterStudents() async {
     setState(() {
       _isSyncing = true;
+      _progressMessage = 'Fetching Students From Database ...';
     });
     try {
       final studentBox = Hive.box<Student>('students');
+
+      setState(() {
+        _filteredStudents = [];
+      });
+
       _filteredStudents = studentBox.values
-          .where((classItem) => classItem.termId == globalTermId)
+          .where((classItem) => classItem.terms!.contains(globalTermId))
           .toList();
 
       if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
@@ -79,30 +131,24 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
       if (_selectedGender != null && _selectedGender != "All") {
         _filteredStudents = _filteredStudents
-            .where((student) =>
-                student.gender == _selectedGender &&
-                student.termId == globalTermId)
+            .where((student) => student.gender == _selectedGender)
             .toList();
       }
 
       if (_selectedSurname != null && _selectedSurname!.isNotEmpty) {
         _filteredStudents = _filteredStudents
-            .where((student) =>
-                student.surname
-                    .toLowerCase()
-                    .contains(_selectedSurname!.toLowerCase()) &&
-                student.termId == globalTermId)
+            .where((student) => student.surname
+                .toLowerCase()
+                .contains(_selectedSurname!.toLowerCase()))
             .toList();
       }
 
       if (_selectedReg != null && _selectedReg!.isNotEmpty) {
         _filteredStudents = _filteredStudents
-            .where((student) =>
-                student.studentIdNumber!
-                    .toLowerCase()
-                    .trim()
-                    .contains(_selectedReg!.toLowerCase().trim()) &&
-                student.termId == globalTermId)
+            .where((student) => student.studentIdNumber!
+                .toLowerCase()
+                .trim()
+                .contains(_selectedReg!.toLowerCase().trim()))
             .toList();
       }
 
@@ -121,16 +167,38 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         }).toList();
       }
 
-      // Sort students by surname
       _filteredStudents.sort((a, b) => _isSortAscending
           ? a.surname.compareTo(b.surname)
           : b.surname.compareTo(a.surname));
+
+      setState(() {
+        _isSyncing = false;
+      });
+
+      // ✅ After filtering, show a message if no students are found
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_filteredStudents.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Center(
+                  child: Text('❗ No students found for the selected class.')),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else if (_studentsTableKey.currentContext != null) {
+          Scrollable.ensureVisible(
+            _studentsTableKey.currentContext!,
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
     } catch (error) {
-      // Log error if needed
-      print("Error filtering students: $error");
+      print("[DEBUG] Error filtering students: $error");
     } finally {
       setState(() {
-        _isSyncing = false; // Always reset syncing state
+        _isSyncing = false;
       });
     }
   }
@@ -152,7 +220,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       'Gender',
       'Date of Birth',
       'Address',
-      'Parent Number'
+      'Parent Number',
+      'Terms Associated', // New column for terms
     ];
     final data = _filteredStudents.map((student) {
       return [
@@ -163,6 +232,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         DateFormat('yyyy-MM-dd').format(student.age ?? DateTime.now()),
         student.physicalAddress,
         student.paymentStatus,
+        student.terms?.join(", ") ?? (''), // New field to display terms
       ];
     }).toList();
 
@@ -202,7 +272,9 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                 3: const pw.FlexColumnWidth(), // Class Name column
                 4: const pw.FlexColumnWidth(), // Created On column
                 5: const pw.FlexColumnWidth(), // Current Term column
-                6: const pw.FlexColumnWidth(), // Created On column
+                6: const pw.FlexColumnWidth(),
+                7: const pw.FlexColumnWidth(), // Created On column
+                // Created On column
               },
             ),
           ];
@@ -288,7 +360,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
             onPressed: () async {
               final studentBox = await Hive.openBox<Student>('students');
               List<Student> students = studentBox.values
-                  .where((student) => student.termId == globalTermId)
+                  .where((student) => student.terms!.contains(globalTermId))
                   .toList();
               Uint8List pdfBytes = await generateStudentsPDF(_filteredStudents);
 
@@ -409,6 +481,29 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                     ],
                   ),
                 ),
+                if (_isSyncing)
+                  Container(
+                    color: Colors.black45,
+                    child: Center(
+                      child: Card(
+                        margin: const EdgeInsets.all(32),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 16),
+                              Text(
+                                _progressMessage,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -583,109 +678,120 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       );
     }
 
-    return Stack(
-      children: [
-        // Main table with vertical and horizontal scrolling
-        Scrollbar(
-          thumbVisibility: true,
-          controller: horizontalScrollController,
-          child: SingleChildScrollView(
+    return Container(
+      // ############################
+      key: _studentsTableKey, // <== ADD THIS KEY #######################
+
+      child: Stack(
+        children: [
+          // Main table with vertical and horizontal scrolling
+          Scrollbar(
+            thumbVisibility: true,
             controller: horizontalScrollController,
-            scrollDirection: Axis.horizontal,
-            child: Scrollbar(
-              thumbVisibility: true,
-              controller: verticalScrollController,
-              child: SingleChildScrollView(
+            child: SingleChildScrollView(
+              controller: horizontalScrollController,
+              scrollDirection: Axis.horizontal,
+              child: Scrollbar(
+                thumbVisibility: true,
                 controller: verticalScrollController,
-                scrollDirection: Axis.vertical,
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text('Student Registration Number')),
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Surname')),
-                    DataColumn(label: Text('Class')),
-                    DataColumn(label: Text('Gender')),
-                    DataColumn(label: Text('Date of Birth')),
-                    DataColumn(label: Text('Nationality')),
-                    DataColumn(label: Text('District')),
-                    DataColumn(label: Text('National ID Number')),
-                    DataColumn(label: Text('Student Registration Position')),
-                    DataColumn(label: Text('Physical Address')),
-                    DataColumn(label: Text('Parent Name')),
-                    DataColumn(label: Text('Parent Phone Number')),
-                    DataColumn(label: Text('Religion')),
-                    DataColumn(label: Text('Denomination')),
-                    DataColumn(label: Text('Former School')),
-                    DataColumn(label: Text('Former School Results')),
-                    DataColumn(label: Text('Emergency Contact Name')),
-                    DataColumn(label: Text('Emergency Contact Number')),
-                    DataColumn(label: Text('Health Status')),
-                    DataColumn(label: Text('Health Detailed Information')),
-                    DataColumn(label: Text(' modified Information')),
-                  ],
-                  rows: _filteredStudents.map((student) {
-                    return DataRow(
-                      cells: [
-                        DataCell(Text(student.studentIdNumber.toString())),
-                        DataCell(Text(student.name)),
-                        DataCell(Text(student.surname)),
-                        DataCell(Text(student.class_)),
-                        DataCell(Text(student.gender)),
-                        DataCell(Text(student.age.toString().split(' ')[0])),
-                        DataCell(Text(student.nationality.toString())),
-                        DataCell(Text(student.district.toString())),
-                        DataCell(Text(student.nationalIdNumber.toString())),
-                        DataCell(Text(student.regNumber.toString())),
-                        DataCell(Text(student.physicalAddress.toString())),
-                        DataCell(Text(student.paymentStatus.toString())),
-                        DataCell(Text(student.phoneNumber.toString())),
-                        DataCell(Text(student.religion.toString())),
-                        DataCell(Text(student.denomination.toString())),
-                        DataCell(Text(student.formerSchool.toString())),
-                        DataCell(Text(student.previousSchoolPerformanceResults
-                            .toString())),
-                        DataCell(Text(student.emergencyContactName.toString())),
-                        DataCell(
-                            Text(student.emergencyContactNumber.toString())),
-                        DataCell(Text((student.healthStauts.toString()))),
-                        DataCell(Text(
-                            (student.healthDetailedInformation.toString()))),
-                        DataCell(Text(student.modifiedFields.toString())),
-                      ],
-                    );
-                  }).toList(),
+                child: SingleChildScrollView(
+                  controller: verticalScrollController,
+                  scrollDirection: Axis.vertical,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Student Registration Number')),
+                      DataColumn(label: Text('Name')),
+                      DataColumn(label: Text('Surname')),
+                      DataColumn(label: Text('Class')),
+                      DataColumn(label: Text('Gender')),
+                      DataColumn(label: Text('Date of Birth')),
+                      DataColumn(label: Text('Nationality')),
+                      DataColumn(label: Text('District')),
+                      DataColumn(label: Text('National ID Number')),
+                      DataColumn(label: Text('Student Registration Position')),
+                      DataColumn(label: Text('Physical Address')),
+                      DataColumn(label: Text('Parent Name')),
+                      DataColumn(label: Text('Parent Phone Number')),
+                      DataColumn(label: Text('Religion')),
+                      DataColumn(label: Text('Denomination')),
+                      DataColumn(label: Text('Former School')),
+                      DataColumn(label: Text('Former School Results')),
+                      DataColumn(label: Text('Emergency Contact Name')),
+                      DataColumn(label: Text('Emergency Contact Number')),
+                      DataColumn(label: Text('Health Status')),
+                      DataColumn(label: Text('Health Detailed Information')),
+                      DataColumn(label: Text('Terms Associated')), // New column
+
+                      //  DataColumn(label: Text(' modified Information')),
+                    ],
+                    rows: _filteredStudents.map((student) {
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(student.studentIdNumber.toString())),
+                          DataCell(Text(student.name)),
+                          DataCell(Text(student.surname)),
+                          DataCell(Text(student.class_)),
+                          DataCell(Text(student.gender)),
+                          DataCell(Text(student.age.toString().split(' ')[0])),
+                          DataCell(Text(student.nationality.toString())),
+                          DataCell(Text(student.district.toString())),
+                          DataCell(Text(student.nationalIdNumber.toString())),
+                          DataCell(Text(student.regNumber.toString())),
+                          DataCell(Text(student.physicalAddress.toString())),
+                          DataCell(Text(student.paymentStatus.toString())),
+                          DataCell(Text(student.phoneNumber.toString())),
+                          DataCell(Text(student.religion.toString())),
+                          DataCell(Text(student.denomination.toString())),
+                          DataCell(Text(student.formerSchool.toString())),
+                          DataCell(Text(student.previousSchoolPerformanceResults
+                              .toString())),
+                          DataCell(
+                              Text(student.emergencyContactName.toString())),
+                          DataCell(
+                              Text(student.emergencyContactNumber.toString())),
+                          DataCell(Text((student.healthStauts.toString()))),
+                          DataCell(Text(
+                              (student.healthDetailedInformation.toString()))),
+                          DataCell(Text(student.terms?.join(", ") ??
+                              (''))), // New field to display terms
+
+                          // DataCell(Text(student.modifiedFields.toString())),
+                        ],
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
 
-        // Floating arrow buttons for scrolling horizontally (Sticky at the bottom)
-        Positioned(
-          bottom: 100, // Position the arrows at the bottom
-          left: 60,
-          right: 60,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Left arrow button to scroll left
-              FloatingActionButton(
-                onPressed: _scrollLeft,
-                child: const Icon(Icons.arrow_back),
-                mini: true,
-                backgroundColor: Colors.blue,
-              ),
-              // Right arrow button to scroll right
-              FloatingActionButton(
-                onPressed: _scrollRight,
-                child: const Icon(Icons.arrow_forward),
-                mini: true,
-                backgroundColor: Colors.blue,
-              ),
-            ],
+          // Floating arrow buttons for scrolling horizontally (Sticky at the bottom)
+          Positioned(
+            bottom: 100, // Position the arrows at the bottom
+            left: 60,
+            right: 60,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Left arrow button to scroll left
+                FloatingActionButton(
+                  onPressed: _scrollLeft,
+                  child: const Icon(Icons.arrow_back),
+                  mini: true,
+                  backgroundColor: Colors.blue,
+                ),
+                // Right arrow button to scroll right
+                FloatingActionButton(
+                  onPressed: _scrollRight,
+                  child: const Icon(Icons.arrow_forward),
+                  mini: true,
+                  backgroundColor: Colors.blue,
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -717,7 +823,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       TextCellValue('Emergency Contact Name'),
       TextCellValue('Emergency Contact Number'),
       TextCellValue('Health Condition'),
-      TextCellValue('Healthe Condition Details'),
+      TextCellValue('Health Condition Details'),
+      TextCellValue('Terms Associated'), // New column
     ]);
 
     // Add the data rows (wrap each value accordingly)
@@ -748,6 +855,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         TextCellValue(student.healthStauts ?? ''),
 
         TextCellValue(student.healthDetailedInformation ?? ''),
+        TextCellValue(
+            student.terms?.join(", ") ?? ('')), // New field to display terms
       ]);
     }
 

@@ -19,14 +19,12 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
 
   void _searchStudent() async {
     final box = await Hive.openBox<Student>('students');
-    final classes =
-        box.values.where((class_) => class_.termId == globalTermId).toList();
+    final classes = box.values.toList();
     final searchTerm = _indexController.text.toLowerCase();
 
     final classesWithName = classes
         .where((class_) =>
-            class_.surname.toLowerCase().startsWith(searchTerm.toLowerCase()) &&
-            class_.termId == globalTermId)
+            class_.surname.toLowerCase().startsWith(searchTerm.toLowerCase()))
         .toList();
 
     // Sort classes alphabetically by class name
@@ -41,7 +39,7 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
     final classesBox = await Hive.openBox<Student>('students');
     final studentsBox = await Hive.openBox<StudentPayment>('student_payments');
 
-    if (classToDelete.termId == globalTermId) {
+    if (classToDelete != null) {
       final classNameToDelete = classToDelete.name.toLowerCase();
       final classSurnameToDelete = classToDelete.surname.toLowerCase();
       final classClassToDelete = classToDelete.class_.toLowerCase();
@@ -49,7 +47,6 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
       // Delete related records in the Students-Payments model
       final studentsToDelete = studentsBox.values
           .where((student) =>
-              student.termId == globalTermId &&
               student.studentName.toLowerCase() ==
                   classNameToDelete.toLowerCase() &&
               student.studentSurname.toLowerCase() ==
@@ -111,21 +108,16 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
         await Hive.openBox<StudentPayment>('student_payments');
 
     // Filter classes by termId before deleting
-    final classesToDelete = studentsBox.values
-        .cast<Student>()
-        .where((c) => c.termId == globalTermId)
-        .toList();
+    final classesToDelete = studentsBox.values.cast<Student>().toList();
 
     for (var classRecord in classesToDelete) {
       final classNameToDelete = classRecord.name.toLowerCase();
-
       final classSurnameToDelete = classRecord.surname.toLowerCase();
       final classClassToDelete = classRecord.class_.toLowerCase();
 
       // Delete related records in the Students model
       final studentsToDelete = studentPaymentsBox.values
           .where((student) =>
-              student.termId == globalTermId &&
               student.studentName.toLowerCase() ==
                   classNameToDelete.toLowerCase() &&
               student.studentSurname.toLowerCase() ==

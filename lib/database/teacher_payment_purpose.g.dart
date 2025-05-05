@@ -27,13 +27,14 @@ class TeacherPaymentsPurposesAdapter
       operationType: fields[6] as String?,
       associatedStaff: (fields[7] as List?)?.cast<String>(),
       purposeCode: fields[8] as String?,
+      modifiedFields: (fields[9] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, TeacherPaymentsPurposes obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -51,7 +52,9 @@ class TeacherPaymentsPurposesAdapter
       ..writeByte(7)
       ..write(obj.associatedStaff)
       ..writeByte(8)
-      ..write(obj.purposeCode);
+      ..write(obj.purposeCode)
+      ..writeByte(9)
+      ..write(obj.modifiedFields);
   }
 
   @override

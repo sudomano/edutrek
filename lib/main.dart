@@ -11,6 +11,7 @@ import 'package:zitf_system/auth/update_auth.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/accounting_module_models/account_type.dart';
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
+import 'package:zitf_system/database/auto_logout_timer/auto_logou_timer.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
@@ -20,20 +21,25 @@ import 'package:zitf_system/database/projects/project_student_payment_model.dart
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
+import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
 import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/export_import_backup_data/export_import_home.dart';
 import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_final.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/projects/projects_home.dart';
+import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_user_when_app_in_background.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/settings/developer_options/developer_home.dart';
 import 'package:zitf_system/welcome/welcome_admin.dart';
 import 'package:zitf_system/welcome/welcome_secretary.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +51,7 @@ void main() async {
   } catch (e) {
     print("Error opening financial_position_box: $e");
   }
+
   // Initialize Hive for Flutter
   Hive.registerAdapter(StudentAdapter()); // Register the adapter
   Hive.registerAdapter(ClassesAdapter());
@@ -64,7 +71,10 @@ void main() async {
   Hive.registerAdapter(ProjectItemAdapter());
   Hive.registerAdapter(DailyActivityAdapter());
   Hive.registerAdapter(ProjectStudentPaymentAdapter());
-  // Open Hive boxes
+  Hive.registerAdapter(AutoLogoutSettingsAdapter());
+  Hive.registerAdapter(DomainRecordAdapter());
+
+  await Hive.openBox<DomainRecord>('domainBox');
   await Hive.openBox<TeacherPaymentsPurposes>('teacher_payments_purposes');
   await Hive.openBox<PaymentPurpose>('payment_purposes');
   await Hive.openBox<Classes>('classes'); // Open the payment purposes box
@@ -120,79 +130,104 @@ void main() async {
   runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool isLoggedIn;
 
   const MyApp({Key? key, required this.isLoggedIn}) : super(key: key);
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final AutoLogoutManager _autoLogoutManager;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoLogoutManager = AutoLogoutManager();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoLogoutManager.initialize(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoLogoutManager.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final loggedInUser = getLoggedInUser();
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      initialRoute: isLoggedIn ? '/home' : '/login',
-      routes: {
-        '/login': (context) => LoginScreen(),
-        '/home': (context) => const HomeScreen(),
-        '/homedeveloper': (context) => ViewSecurityScreen(),
-        '/forgot': (context) => ForgottenPasswordScreen(),
-        '/admin': (context) => EditSecurityScreen(),
-        '/sync': (context) => const ClassesFinal(),
-        '/secretary': (context) => ViewSecretaryScreen(),
-        '/developer': (context) => DeveloperLoginScreen(),
-        '/welcome': (context) => WelcomePage(),
-        '/welcome1': (context) => WelcomePage1(),
-        '/drawer': (context) => CustomDrawerAdmin(
-              loggedInUser: loggedInUser,
-            ),
-        '/profile': (context) => const AdminPanelScreen(),
-        '/settings': (context) => const DeveloperHome(),
-        '/projects': (context) => const ProjectsHome(),
+    return GestureDetector(
+      onTap: () {
+        _autoLogoutManager.resetInactivityTimer();
       },
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
+      child: MaterialApp(
+        navigatorKey: navigatorKey, // Use the global navigatorKey
+        debugShowCheckedModeBanner: false,
+        initialRoute: widget.isLoggedIn ? '/home' : '/login',
+        routes: {
+          '/login': (context) => LoginScreen(),
+          '/home': (context) => const HomeScreen(),
+          '/homedeveloper': (context) => ViewSecurityScreen(),
+          '/forgot': (context) => ForgottenPasswordScreen(),
+          '/admin': (context) => EditSecurityScreen(),
+          '/sync': (context) => const ClassesFinal(),
+          '/secretary': (context) => ViewSecretaryScreen(),
+          '/developer': (context) => DeveloperLoginScreen(),
+          '/welcome': (context) => WelcomePage(),
+          '/welcome1': (context) => WelcomePage1(),
+          '/backup': (context) => const ExportImportHome(),
+          '/profile': (context) => const AdminPanelScreen(),
+          '/settings': (context) => const DeveloperHome(),
+          '/projects': (context) => const ProjectsHome(),
+        },
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+        ),
+        navigatorObservers: [
+          RouteObserver<PageRoute>(),
+        ],
+        builder: (BuildContext context, Widget? child) {
+          return PopScope(
+            onBackPress: () async {
+              bool shouldPop = true;
+
+              if (widget.isLoggedIn) {
+                shouldPop = await showDialog(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: const Text("Logout"),
+                      content: const Text("Do you want to logout?"),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(true);
+                          },
+                          child: const Text("Yes"),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(false);
+                          },
+                          child: const Text("No"),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              }
+
+              return shouldPop;
+            },
+            child: child ?? Container(),
+          );
+        },
       ),
-      navigatorObservers: [
-        RouteObserver<PageRoute>(),
-      ],
-      builder: (BuildContext context, Widget? child) {
-        return PopScope(
-          onBackPress: () async {
-            bool shouldPop = true;
-
-            if (isLoggedIn) {
-              shouldPop = await showDialog(
-                context: context,
-                builder: (context) {
-                  return AlertDialog(
-                    title: const Text("Logout"),
-                    content: const Text("Do you want to logout?"),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(true);
-                          // Set logout state here if required
-                        },
-                        child: const Text("Yes"),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(false);
-                        },
-                        child: const Text("No"),
-                      ),
-                    ],
-                  );
-                },
-              );
-            }
-
-            return shouldPop;
-          },
-          child: child ?? Container(),
-        );
-      },
     );
   }
 }

@@ -27,7 +27,7 @@ class _ViewAttendanceScreenState extends State<ViewAttendanceScreen> {
   void _loadClasses() {
     // Load classes where termId matches globalTermId
     _classes = _studentBox.values
-        .where((student) => student.termId == globalTermId)
+        .where((student) => student.terms!.contains(globalTermId))
         .map((student) => student.class_)
         .toSet()
         .toList();
@@ -35,7 +35,7 @@ class _ViewAttendanceScreenState extends State<ViewAttendanceScreen> {
 
     // Load available dates where termId matches globalTermId
     _dates = _studentBox.values
-        .where((student) => student.termId == globalTermId)
+        .where((student) => student.terms!.contains(globalTermId))
         .expand((student) => student.presentDates
             .map((date) => DateFormat('yyyy-MM-dd').format(date)))
         .toSet()
@@ -47,10 +47,12 @@ class _ViewAttendanceScreenState extends State<ViewAttendanceScreen> {
     setState(() {
       _students = _selectedClass != null
           ? _studentBox.values
-              .where(
-                  (s) => s.class_ == _selectedClass && s.termId == globalTermId)
+              .where((s) =>
+                  s.class_ == _selectedClass && s.terms!.contains(globalTermId))
               .toList()
-          : _studentBox.values.where((s) => s.termId == globalTermId).toList();
+          : _studentBox.values
+              .where((s) => s.terms!.contains(globalTermId))
+              .toList();
 
       if (_selectedDate != null) {
         DateTime selectedDate = DateFormat('yyyy-MM-dd').parse(_selectedDate!);
@@ -68,7 +70,7 @@ class _ViewAttendanceScreenState extends State<ViewAttendanceScreen> {
       List<Student> studentsInClass = _studentBox.values
           .where((student) =>
               student.class_ == _selectedClass &&
-              student.termId == globalTermId)
+              student.terms!.contains(globalTermId))
           .toList();
 
       for (Student student in studentsInClass) {

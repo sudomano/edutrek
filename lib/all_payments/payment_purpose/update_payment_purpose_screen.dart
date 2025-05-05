@@ -42,11 +42,11 @@ class _UpdatePaymentPurposeScreenState
   Future<void> _fetchClasses() async {
     final box = await Hive.openBox<Classes>('classes');
     final classes = box.values
-        .where((classItem) =>
-            classItem.termId != null && classItem.termId == globalTermId)
+        .where((purposeItem) =>
+            purposeItem.termId != null &&
+            purposeItem.terms!.contains(globalTermId))
         .map((e) => e.className)
         .toList();
-
     setState(() {
       _classes = classes;
     });
@@ -112,6 +112,7 @@ class _UpdatePaymentPurposeScreenState
 
   Widget _buildClassesList() {
     bool _selectAll = _selectedClasses.length == _classes.length;
+    debugPrint('Displayed classes on the UI: $_classes');
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -185,16 +186,32 @@ class _UpdatePaymentPurposeScreenState
         }
       }
 
+      // Debug: Show old list and new list for associatedClasses
+      debugPrint(
+          'Old associatedClasses: ${widget.existingPurpose.associatedClasses}');
+      debugPrint('New associatedClasses: $_selectedClasses');
+
+      // Only keep the selected classes that match the displayed classes
+      List<String> filteredSelectedClasses = _selectedClasses
+          .where((className) => _classes.contains(className))
+          .toList();
+
+      // Debug: Show the filtered selected classes
+      debugPrint(
+          'Filtered selectedClasses (matching displayed classes): $filteredSelectedClasses');
+
       final updatedPurpose = widget.existingPurpose.copyWith(
         paymentPurpose: _purposeController.text,
         purposeAmount: double.parse(_amountController.text),
-        associatedClasses: _selectedClasses,
+        associatedClasses:
+            List<String>.from(filteredSelectedClasses), // Use filtered classes
         syncStatus: false, // Mark for syncing
         lastModified: DateTime.now(), // Update last modified time
         operationType: 'update',
         purposeCode: purposeCode, // Mark operation as update
         modifiedFields: modifiedFields,
       );
+      debugPrint('Updated PaymentPurpose: $updatedPurpose');
 
       final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
       final index = box.values

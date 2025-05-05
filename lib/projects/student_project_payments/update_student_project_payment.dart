@@ -108,7 +108,7 @@ class _UpdateStudentPaymentFormState extends State<UpdateStudentPaymentForm> {
                   student.surname
                       .toLowerCase()
                       .contains(query.toLowerCase())) &&
-              student.termId == globalTermId)
+              student.terms!.contains(globalTermId))
           .toList();
     });
   }
@@ -145,7 +145,7 @@ class _UpdateStudentPaymentFormState extends State<UpdateStudentPaymentForm> {
                                                 .toLowerCase()
                                                 .contains(
                                                     query.toLowerCase())) &&
-                                        student.termId == globalTermId)
+                                        student.terms!.contains(globalTermId))
                                     .toList();
                               });
                             },

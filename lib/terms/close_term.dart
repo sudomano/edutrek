@@ -78,7 +78,7 @@ class _CloseTermScreenState extends State<CloseTermScreen> {
       currentTerm.isActive = true;
       currentTerm.endDate = DateTime.now();
 
-      await termsBox.put(currentTerm.termId, currentTerm);
+      await currentTerm.save();
 
       setState(() {
         message = 'The term with ID $globalTermId was closed successfully!';

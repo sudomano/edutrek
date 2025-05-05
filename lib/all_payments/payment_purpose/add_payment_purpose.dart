@@ -32,7 +32,8 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
     final box = await Hive.openBox<Classes>('classes');
     final classes = box.values
         .where((purposeItem) =>
-            purposeItem.termId != null && purposeItem.termId == globalTermId)
+            purposeItem.termId != null &&
+            purposeItem.terms!.contains(globalTermId))
         .map((e) => e.className)
         .toList();
     setState(() {

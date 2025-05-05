@@ -44,7 +44,8 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       bool purposeExists =
           box.values.any((w) => w.withdrawalPurpose == purpose);
 
-      if (purposeExists) {
+      /*
+ if (purposeExists) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -58,6 +59,8 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         return;
       }
 
+
+     */
       // Proceed with adding a new withdrawal
       int newId = await getNextId();
       final newPkValue = uuid.v4();
