@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/admin/purpose_home_screen1.dart';
 import 'package:zitf_system/auth/crud_auth/crud_auth_home1.dart';
-import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/class_post.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_secretary.dart';
 import 'package:zitf_system/secretary/classes/classes_home.dart';
 import 'package:zitf_system/secretary/student_management/create_students/students_options.dart';
@@ -111,13 +110,6 @@ class HomeScreen1 extends StatelessWidget {
                   icon: Icons.attach_money,
                   text: 'Payments',
                   target: const PurposeHome1(),
-                ),
-
-                _buildElevatedCard(
-                  context,
-                  icon: Icons.delete,
-                  text: 'Data Synchronization  ',
-                  target: SyncClassesPages(),
                 ),
               ],
             ),

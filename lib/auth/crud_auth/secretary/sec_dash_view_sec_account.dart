@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/auth/crud_auth/secretary/update_secretary.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 
 class ViewSecretaryScreen1 extends StatefulWidget {
   @override
@@ -30,6 +31,8 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen1> {
     ));
   }
 
+  final loggedInUser = getLoggedInUser(); // your helper
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,6 +49,9 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen1> {
               itemCount: userBox.length,
               itemBuilder: (context, index) {
                 final user = userBox.getAt(index);
+                final loggedInRole = loggedInUser.role.toLowerCase();
+                final isAdmin = loggedInRole == 'admin';
+                final isAdministration = loggedInRole == 'administration';
                 if (user == null || user.role != 'secretary')
                   return Container(); // Show only secretaries
 
@@ -62,8 +68,10 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen1> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  UpdateSecretaryScreen(index: index),
+                              builder: (context) => UpdateSecretaryScreen(
+                                index: index,
+                                canEditRole: (isAdmin || isAdministration),
+                              ),
                             ),
                           );
                         },

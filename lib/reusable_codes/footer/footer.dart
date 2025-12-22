@@ -16,6 +16,10 @@ Widget buildBottomNavigationBar({
         label: 'Projects',
       ),
       BottomNavigationBarItem(
+        icon: Icon(Icons.switch_right_rounded),
+        label: 'Terms',
+      ),
+      BottomNavigationBarItem(
         icon: Icon(Icons.person_outlined),
         label: 'Profile',
       ),
@@ -48,15 +52,18 @@ void onItemTapped(BuildContext context, int index) {
       Navigator.pushNamed(context, '/projects');
       break;
     case 2:
-      Navigator.pushNamed(context, '/profile');
+      Navigator.pushNamed(context, '/term_switch');
       break;
     case 3:
-      Navigator.pushNamed(context, '/backup');
+      Navigator.pushNamed(context, '/profile');
       break;
     case 4:
-      Navigator.pushNamed(context, '/sync');
+      Navigator.pushNamed(context, '/backup');
       break;
     case 5:
+      Navigator.pushNamed(context, '/sync');
+      break;
+    case 6:
       Navigator.pushNamed(context, '/settings');
       break;
     default:

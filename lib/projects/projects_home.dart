@@ -48,6 +48,7 @@ class _MyPageState extends State<ProjectsHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
     return Scaffold(
       appBar: const CustomAppBar(title: 'Projects'),
       body: LayoutBuilder(
@@ -156,8 +157,8 @@ class _MyPageState extends State<ProjectsHome> {
                                             ),
                                           ],
                                         )
-                                      : Column(
-                                          children: const [
+                                      : const Column(
+                                          children: [
                                             // Elevated cards with icons
                                             ElevatedCard(
                                               icon: Icons.work_outline_outlined,

@@ -46,6 +46,7 @@ class _MyPageState extends State<ManageTermsScreen> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Terms Management'),
@@ -118,6 +119,7 @@ class _MyPageState extends State<ManageTermsScreen> {
                                             padding: const EdgeInsets.all(8),
                                             children: [
                                               if (admin ||
+                                                  administration ||
                                                   secretary ||
                                                   subadmin)
                                                 ElevatedCard(
@@ -126,7 +128,9 @@ class _MyPageState extends State<ManageTermsScreen> {
                                                   target: TermSwitcher(),
                                                   isLargeScreen: true,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 const ElevatedCard(
                                                   icon: Icons.calendar_today,
                                                   text: 'Create New Term',
@@ -134,6 +138,7 @@ class _MyPageState extends State<ManageTermsScreen> {
                                                   isLargeScreen: true,
                                                 ),
                                               if (admin ||
+                                                  administration ||
                                                   secretary ||
                                                   subadmin)
                                                 const ElevatedCard(
@@ -142,14 +147,14 @@ class _MyPageState extends State<ManageTermsScreen> {
                                                   target: ViewTermsScreen(),
                                                   isLargeScreen: true,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin || administration)
                                                 buildElevatedCardWithDialog(
                                                   context,
                                                   icon: Icons.update,
                                                   text: 'Update Term',
                                                   isLargeScreen: true,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin || administration)
                                                 const ElevatedCard(
                                                   icon: Icons.delete,
                                                   text: 'Delete Term',
@@ -162,42 +167,60 @@ class _MyPageState extends State<ManageTermsScreen> {
                                       : Column(
                                           children: [
                                             const SizedBox(height: 4),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               ElevatedCard(
                                                 icon: Icons.swap_horiz,
                                                 text: 'Switch Terms',
                                                 target: TermSwitcher(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.calendar_today,
                                                 text: 'Create New Term',
                                                 target: TermOptionsScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.view_list,
                                                 text: 'View All Terms',
                                                 target: ViewTermsScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               buildElevatedCardWithDialog(
                                                 context,
                                                 icon: Icons.update,
                                                 text: 'Update Term',
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Term',
                                                 target: DeleteTermScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.home,
                                                 text: 'Go to Home Page',
@@ -267,24 +290,38 @@ Widget buildElevatedCardWithDialog(
                       itemCount: box.length,
                       itemBuilder: (context, index) {
                         final currentClass = box.getAt(index);
-                        return ListTile(
-                          title: Text(
-                            currentClass!.termId,
-                            style: GoogleFonts.montserrat(
-                              fontSize: isLargeScreen ? 14 : 14,
-                              color: Colors.blueGrey[900],
-                            ),
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                              vertical: 4, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: index % 2 == 0
+                                ? Colors.blueGrey[50]
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blueGrey.shade100),
                           ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    UpdateTermScreen(index: index),
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            title: Text(
+                              currentClass!.termId,
+                              style: GoogleFonts.montserrat(
+                                fontSize: isLargeScreen ? 14 : 14,
+                                color: Colors.blueGrey[900],
                               ),
-                            );
-                          },
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      UpdateTermScreen(index: index),
+                                ),
+                              );
+                            },
+                          ),
                         );
                       },
                     ),

@@ -9,6 +9,7 @@ import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/accounting_module_models/account_type.dart';
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
@@ -61,6 +62,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   Box<ProjectItem>? _projectItemBox;
   Box<DailyActivity>? _dailyActivityBox;
   Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+  Box<ExceptionalStudents>? _exceptionalStudentsBox;
 
   bool _isExporting = false; // To track export status
 
@@ -96,6 +98,8 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
       _projectStudentPaymentBox =
           await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+      _exceptionalStudentsBox =
+          await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
     } catch (e) {
       print('Error opening Hive boxes: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -136,6 +140,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
             _serializeBox(_dailyActivityBox, _daily_activitiesToJson),
         'project_student_payments': _serializeBox(
             _projectStudentPaymentBox, _project_student_paymentsToJson),
+        'exceptions': _serializeBox(_exceptionalStudentsBox, _exceptionsToJson),
       };
 
       String jsonData = jsonEncode(exportData);
@@ -212,6 +217,27 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     return box?.values.map((data) => toJson(data as T)).toList() ?? [];
   }
 
+// JSON Serialization method for ExceptionalStudents
+  Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exc) {
+    return {
+      'id': exc.id,
+      'exceptionId': exc.exceptionId,
+      'exceptionName': exc.exceptionName,
+      'exceptionStatus': exc.exceptionStatus,
+      'exceptionType': exc.exceptionType,
+      'exceptionFigure': exc.exceptionFigure,
+      'syncStatus': exc.syncStatus,
+      'lastModified': exc.lastModified?.toIso8601String(),
+      'operationType': exc.operationType,
+      'modifiedFields': exc.modifiedFields != null
+          ? jsonEncode(exc.modifiedFields) // JSON encode the list
+          : null,
+      'terms': exc.terms != null
+          ? jsonEncode(exc.terms) // JSON encode the list
+          : null,
+    };
+  }
+
   // JSON Serialization methods
   Map<String, dynamic> _classToJson(Classes cls) {
     return {
@@ -225,6 +251,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'operationType': cls.operationType,
       'terms': cls.terms != null
           ? jsonEncode(cls.terms) // JSON encode the list
+          : null,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
           : null,
     };
   }
@@ -241,6 +270,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -281,6 +313,16 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'terms': cls.terms != null
           ? jsonEncode(cls.terms) // JSON encode the list
           : null,
+      'exceptions': cls.exceptions != null
+          ? jsonEncode(
+              cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
+          : null,
+      'isNewComer': cls.isNewComer,
+      'isNewComerFrom': cls.isNewComerFrom?.toIso8601String(),
+      'isNewComerUntil': cls.isNewComerUntil?.toIso8601String(),
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -299,6 +341,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'username': cls.username,
+      'role': cls.role,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -317,6 +364,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -332,6 +382,14 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'associatedClasses':
           jsonEncode(cls.associatedClasses), // Convert list to JSON
       'purposeCode': cls.purposeCode,
+      'exceptions': cls.exceptions != null
+          ? jsonEncode(
+              cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
+          : null,
+      'forNewcomersOnly': cls.forNewcomersOnly,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -349,6 +407,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'associatedStaff': cls.associatedStaff != null
           ? jsonEncode(
               cls.associatedStaff) // Explicit JSON encode for associatedStaff
+          : null,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
           : null,
     };
   }
@@ -382,6 +443,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'terms': cls.terms != null
           ? jsonEncode(cls.terms) // JSON encode the list
           : null,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -397,6 +461,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -411,6 +478,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
+      'modifiedFields': cls.modifiedFields != null
+          ? jsonEncode(cls.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -420,6 +490,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': domain.syncStatus,
         'operationType': domain.operationType,
         'lastModified': domain.lastModified?.toIso8601String(),
+        'modifiedFields': domain.modifiedFields != null
+            ? jsonEncode(domain.modifiedFields) // JSON encode the list
+            : null,
       };
   Map<String, dynamic> _usersToJson(User user) => {
         'username': user.username,
@@ -435,7 +508,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'id': user.id,
         'isLogged': user.isLogged,
         'userCode': user.userCode,
-        'modifiedFields': user.modifiedFields,
+        'modifiedFields': user.modifiedFields != null
+            ? jsonEncode(user.modifiedFields) // JSON encode the list
+            : null,
       };
 
   Map<String, dynamic> _accountsToJson(Account acc) => {
@@ -448,8 +523,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': acc.syncStatus,
         'lastModified': acc.lastModified?.toIso8601String(),
         'isALiquidAccount': acc.isALiquidAccount,
-        'modifiedFields': acc.modifiedFields,
+        'modifiedFields': acc.modifiedFields != null
+            ? jsonEncode(acc.modifiedFields) // JSON encode the list
+            : null,
       };
+
   Map<String, dynamic> _assetsToJson(Asset asset) {
     return {
       'id': asset.id,
@@ -496,7 +574,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'hasDebitBalance': asset.hasDebitBalance,
       'hasCreditBalance': asset.hasCreditBalance,
       'option': asset.option,
-      'modifiedFields': asset.modifiedFields,
+      'modifiedFields': asset.modifiedFields != null
+          ? jsonEncode(asset.modifiedFields) // JSON encode the list
+          : null,
     };
   }
 
@@ -510,7 +590,9 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': p.syncStatus,
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
+        'modifiedFields': p.modifiedFields != null
+            ? jsonEncode(p.modifiedFields) // JSON encode the list
+            : null,
       };
   Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
         'projectItemCode': i.projectItemCode,
@@ -521,8 +603,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': i.syncStatus,
         'lastModified': i.lastModified?.toIso8601String(),
         'operationType': i.operationType,
-        'modifiedFields': i.modifiedFields,
+        'modifiedFields': i.modifiedFields != null
+            ? jsonEncode(i.modifiedFields) // JSON encode the list
+            : null,
       };
+
   Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
         'projectDailyActiviyCode': a.projectDailyActiviyCode,
         'projectCode': a.projectCode,
@@ -533,8 +618,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': a.syncStatus,
         'lastModified': a.lastModified?.toIso8601String(),
         'operationType': a.operationType,
-        'modifiedFields': a.modifiedFields,
+        'modifiedFields': a.modifiedFields != null
+            ? jsonEncode(a.modifiedFields) // JSON encode the list
+            : null,
       };
+
   Map<String, dynamic> _project_student_paymentsToJson(
           ProjectStudentPayment p) =>
       {
@@ -547,8 +635,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': p.syncStatus,
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
+        'modifiedFields': p.modifiedFields != null
+            ? jsonEncode(p.modifiedFields) // JSON encode the list
+            : null,
       };
+
   @override
   Widget build(BuildContext context) {
     final isLargeScreen =
@@ -631,5 +722,6 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     _projectItemBox?.close();
     _dailyActivityBox?.close();
     _projectStudentPaymentBox?.close();
+    _exceptionalStudentsBox?.close();
   }
 }

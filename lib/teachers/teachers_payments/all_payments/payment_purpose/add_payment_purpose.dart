@@ -42,6 +42,22 @@ class _AddTeacherPaymentPurposeScreenState
     });
   }
 
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾  Payment Purpose Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CenteredFormContainer(
@@ -236,26 +252,19 @@ class _AddTeacherPaymentPurposeScreenState
                 );
 
         if (existingPurpose.paymentPurpose.toLowerCase() != 'empty') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment Purpose Already Exists')),
-          );
+          _showDialog('Payment Purpose Already Exists');
           return;
         }
 
         box.add(newPurpose); // Add the new payment purpose
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment Purpose Added Successfully')),
-        );
+        _showDialog('Payment Purpose Added Successfully');
 
         Navigator.pop(context); // Return to the previous screen
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'No Selected School Term Was Found. Create A New Term or Switch Terms To AnExisting One.')),
-      );
+      _showDialog(
+          'No Selected School Term Was Found. Create A New Term or Switch Terms To AnExisting One.');
     }
   }
 

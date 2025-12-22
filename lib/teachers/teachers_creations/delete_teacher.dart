@@ -62,14 +62,28 @@ class _DeleteTeacherScreenState extends State<DeleteTeacherScreen> {
       // Delete the class itself
       await box.delete(teacherToDelete.key);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Staff Deleted Successfully')),
-      );
+      _showDialog('Staff Deleted Successfully');
 
       setState(() {
         _foundTeachers.remove(teacherToDelete);
       });
     }
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 School Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDeleteAllTeachers() {
@@ -132,11 +146,8 @@ class _DeleteTeacherScreenState extends State<DeleteTeacherScreen> {
       await box.delete(classRecord.key);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(
-              '${classesToDelete.length} Staff and related records deleted successfully')),
-    );
+    _showDialog(
+        '${classesToDelete.length} Staff and related records deleted successfully');
 
     setState(() {
       _foundTeachers.clear();

@@ -9,6 +9,7 @@ import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/accounting_module_models/account_type.dart';
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
@@ -26,6 +27,7 @@ import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
+import 'package:zitf_system/reusable_codes/serializers/utilities/parse_string_list.dart';
 
 class ImportClassesPages extends StatefulWidget {
   @override
@@ -61,6 +63,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
   Box<ProjectItem>? _projectItemBox;
   Box<DailyActivity>? _dailyActivityBox;
   Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+  Box<ExceptionalStudents>? _exceptionalStudentsBox;
+
   bool _isImporting = false; // To track import status
 
   @override
@@ -94,6 +98,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
     _projectStudentPaymentBox =
         await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+    _exceptionalStudentsBox =
+        await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
   }
 
   Future<void> importHiveData() async {
@@ -152,6 +158,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
 
         await _deserializeAndSave(importData['project_student_payments'],
             _project_student_paymentsFromJson, _projectStudentPaymentBox);
+        await _deserializeAndSave(importData['exceptions'], _exceptionsFromJson,
+            _exceptionalStudentsBox);
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Data imported successfully.'),
@@ -188,6 +196,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     await _projectItemBox?.clear();
     await _dailyActivityBox?.clear();
     await _projectStudentPaymentBox?.clear();
+    await _exceptionalStudentsBox?.clear();
   }
 
   Future<void> _deserializeAndSave<T>(List<dynamic>? data,
@@ -217,6 +226,27 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     return [];
   }
 
+// JSON Deserialization method for ExceptionalStudents
+  ExceptionalStudents _exceptionsFromJson(Map<String, dynamic> json) {
+    return ExceptionalStudents(
+      id: json['id'],
+      exceptionId: json['exceptionId'],
+      exceptionName: json['exceptionName'],
+      exceptionStatus: json['exceptionStatus'],
+      exceptionType: json['exceptionType'],
+      exceptionFigure: json['exceptionFigure'],
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
+      terms: json['terms'] != null
+          ? List<String>.from(jsonDecode(json['terms']))
+          : null,
+    );
+  }
+
   // JSON Deserialization methods
   Classes _classFromJson(Map<String, dynamic> json) {
     return Classes(
@@ -233,6 +263,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       terms: json['terms'] != null
           ? List<String>.from(jsonDecode(json['terms']))
           : null,
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -250,6 +281,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -297,6 +329,19 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       terms: json['terms'] != null
           ? List<String>.from(jsonDecode(json['terms']))
           : null,
+      exceptions: json['exceptions'] != null
+          ? (jsonDecode(json['exceptions']) as List<dynamic>)
+              .map((e) => _exceptionsFromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : null,
+      isNewComer: json['isNewComer'],
+      isNewComerFrom: json['isNewComerFrom'] != null
+          ? DateTime.parse(json['isNewComerFrom'])
+          : null,
+      isNewComerUntil: json['isNewComerUntil'] != null
+          ? DateTime.parse(json['isNewComerUntil'])
+          : null,
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -317,6 +362,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
+      username: json['username'],
+      role: json['role'],
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -337,6 +385,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -353,6 +402,13 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       operationType: json['operationType'],
       purposeCode: json['purposeCode'],
       associatedClasses: _decodeToList(json['associatedClasses']),
+      exceptions: json['exceptions'] != null
+          ? (jsonDecode(json['exceptions']) as List<dynamic>)
+              .map((e) => _exceptionsFromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : null,
+      forNewcomersOnly: json['forNewcomersOnly'],
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -372,6 +428,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null, // Handle nullable dates
       operationType: json['operationType'] ?? '',
       associatedStaff: _decodeToList(json['associatedStaff']),
+      modifiedFields: parseStringList(json['modifiedFields']),
+
 // Default empty string
     );
   }
@@ -420,6 +478,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       terms: json['terms'] != null
           ? List<String>.from(jsonDecode(json['terms']))
           : null,
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -442,7 +501,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
 
-      operationType: json['operationType'], // Matches 'operationType'
+      operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
+      // Matches 'operationType'
     );
   }
 
@@ -472,6 +533,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
 
       operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -483,6 +545,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         lastModified: json['lastModified'] != null
             ? DateTime.parse(json['lastModified'])
             : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
 
   User _usersFromJson(Map<String, dynamic> json) => User(
@@ -501,10 +564,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         id: json['id'],
         isLogged: json['isLogged'],
         userCode: json['userCode'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   Account _accountsFromJson(Map<String, dynamic> json) => Account(
         id: json['id'],
         accountType: json['accountType'],
@@ -517,10 +579,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         isALiquidAccount: json['isALiquidAccount'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   Asset _assetsFromJson(Map<String, dynamic> json) {
     return Asset(
       id: json['id'],
@@ -588,7 +649,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       hasDebitBalance: json['hasDebitBalance'],
       hasCreditBalance: json['hasCreditBalance'],
       option: json['option'],
-      modifiedFields: List<String>.from(json['modifiedFields'] ?? []),
+      modifiedFields: parseStringList(json['modifiedFields']),
     );
   }
 
@@ -604,10 +665,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   ProjectItem _project_itemsFromJson(Map<String, dynamic> json) => ProjectItem(
         projectItemCode: json['projectItemCode'],
         projectCode: json['projectCode'],
@@ -619,10 +679,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   DailyActivity _daily_activitiesFromJson(Map<String, dynamic> json) =>
       DailyActivity(
         projectDailyActiviyCode: json['projectDailyActiviyCode'],
@@ -636,10 +695,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   ProjectStudentPayment _project_student_paymentsFromJson(
           Map<String, dynamic> json) =>
       ProjectStudentPayment(
@@ -654,10 +712,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: json['modifiedFields'] != null
-            ? List<String>.from(json['modifiedFields'])
-            : null,
+        modifiedFields: parseStringList(json['modifiedFields']),
       );
+
   @override
   Widget build(BuildContext context) {
     final isLargeScreen =

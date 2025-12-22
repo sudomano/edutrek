@@ -38,6 +38,7 @@ class _MyPageState extends State<AccountsVsIncomesHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Accounting Options'),

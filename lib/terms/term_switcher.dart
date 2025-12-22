@@ -224,7 +224,7 @@ class _TermSwitcherState extends State<TermSwitcher> {
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Global Term ID updated to $_selectedTermId')),
+                content: Text('Term Succesfully Switched To $_selectedTermId')),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(

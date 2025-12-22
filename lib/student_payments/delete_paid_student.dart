@@ -21,9 +21,7 @@ class _DeletePaidStudentBySurnameState
     final query = _searchController.text.trim().toLowerCase();
 
     if (query.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a surname to search')),
-      );
+      _showDialog('Please enter a surname to search');
       return;
     }
 
@@ -46,13 +44,27 @@ class _DeletePaidStudentBySurnameState
     final key = box.keys.firstWhere((k) => box.get(k) == paymentToDelete);
     await box.delete(key);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment record deleted successfully')),
-    );
+    _showDialog('Payment record deleted successfully');
 
     setState(() {
       _matchingPayments.remove(paymentToDelete);
     });
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Payment Delete Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDeleteAllPayments() {
@@ -93,11 +105,8 @@ class _DeletePaidStudentBySurnameState
       await box.delete(key);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text(
-              'All payment records for the current term deleted successfully')),
-    );
+    _showDialog(
+        'All payment records for the current term deleted successfully');
 
     setState(() {
       _matchingPayments.clear();

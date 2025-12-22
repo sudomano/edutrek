@@ -51,6 +51,22 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     });
   }
 
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Staff Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _fetchClasses() async {
     final box = await Hive.box<Classes>('classes');
     final classes = box.values
@@ -472,152 +488,58 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           .any((student) => student.IdNumber.toLowerCase() == idNumber);
 
       if (name.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Name is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Name is Required');
 
         return;
       }
       if (idNumber.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'National Identification Number is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('National Identification Number is Required');
 
         return;
       }
       if (gender.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Gender is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Gender is Required');
 
         return;
       }
       if (surname.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Surname  Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        ('Surname  Required');
 
         return;
       }
       if (gender.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Gender is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Gender is Required');
 
         return;
       }
       if (employmentStatus.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Employment Status is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Employment Status is Required');
 
         return;
       }
       if (phoneNumber.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Phone Number is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Phone Number is Required');
 
         return;
       }
       if (_selectedDateOfBirth == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Date of Birth is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Date of Birth is Required');
 
         return;
       }
       if (_selectedHireDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Date of Hire is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Date of Hire is Required');
 
         return;
       }
       if (address.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Physical Address is Required',
-              style: TextStyle(color: Colors.red), // Set the text color to red
-            ),
-            backgroundColor: Colors
-                .white, // Optional: Change the background color for better contrast
-          ),
-        );
+        _showDialog('Physical Address is Required');
 
         return;
       }
 
       if (duplicateId) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(' National Identification Number already exists'),
-          ),
-        );
+        _showDialog(' National Identification Number already exists');
 
         return;
       }
@@ -702,16 +624,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       if (existingTeacher.IdNumber == 'empty') {
         box.add(teacher);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Staff Added Successfully')),
-        );
+        _showDialog('Staff Added Successfully');
 
         Navigator.pop(context); // Return to previous screen
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Staff with this ID Number already exists')),
-        );
+        _showDialog('Staff with this ID Number already exists');
       }
     }
   }

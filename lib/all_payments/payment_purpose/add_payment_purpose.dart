@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:multi_select_flutter/dialog/multi_select_dialog_field.dart';
+import 'package:multi_select_flutter/util/multi_select_item.dart';
+import 'package:multi_select_flutter/util/multi_select_list_type.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
@@ -22,10 +27,55 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
   List<String> _classes = []; // List of class names
   List<String> _selectedClasses = []; // Selected classes
 
+  List<ExceptionalStudents> _exceptionNames = [];
+  List<ExceptionalStudents> _selectedExceptionNames = [];
+  bool _forNewcomersOnly = false;
+
+  List<String> _availableTerms = [];
+  List<String> _selectedTerms = [];
+
   @override
   void initState() {
     super.initState();
     _fetchClasses(); // Fetch classes when screen loads
+    _fetchExceptionalStudents(); // <- new
+    _loadTerms(); // Load terms on init
+  }
+
+  Future<void> _loadTerms() async {
+    final termsBox = await Hive.openBox<Terms>('terms');
+    setState(() {
+      _availableTerms = termsBox.values.map((term) => term.termId).toList();
+      _selectedTerms = List.from(_availableTerms); // Preselect all
+    });
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Payment Purpose Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _fetchExceptionalStudents() async {
+    final box =
+        await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+    final all = box.values.toList();
+
+    setState(() {
+      _exceptionNames = all
+          .where((e) => e.exceptionStatus!.toLowerCase() == 'active')
+          .toList();
+    });
   }
 
   Future<void> _fetchClasses() async {
@@ -53,7 +103,84 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
             const SizedBox(height: 16),
             _buildAmountField('Payment Purpose Amount', _amountController),
             const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            Text(
+              'Exceptional To New Comers ONLY',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            CheckboxListTile(
+              title: const Text("Applicable To Newcomers ONLY"),
+              value: _forNewcomersOnly,
+              onChanged: (val) {
+                setState(() {
+                  _forNewcomersOnly = val ?? false;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            Text(
+              'Select Other Applicable Exceptions',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            MultiSelectDialogField<ExceptionalStudents>(
+              items: _exceptionNames
+                  .map((e) => MultiSelectItem<ExceptionalStudents>(
+                      e, e.exceptionName.toString()))
+                  .toList(),
+              title: const Text("Exceptional Students"),
+              searchable: true,
+              listType: MultiSelectListType.CHIP,
+              initialValue: _selectedExceptionNames,
+              onConfirm: (values) {
+                setState(() {
+                  _selectedExceptionNames = values;
+                });
+                print(
+                    "🎯 Selected exceptions: ${values.map((e) => e.exceptionName)}");
+              },
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: _selectedExceptionNames
+                  .map((e) => Chip(
+                        label: Text(e.exceptionName.toString()),
+                        backgroundColor: Colors.blue.shade100,
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            Text(
+              'Must Be Paid By Classes',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             _buildClassesList(),
+            const SizedBox(height: 32),
+            Text(
+              'Apply Payment Purpose To These Terms',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            MultiSelectDialogField<String>(
+              items: _availableTerms
+                  .map((e) => MultiSelectItem<String>(e, e))
+                  .toList(),
+              initialValue: _selectedTerms,
+              listType: MultiSelectListType.CHIP,
+              searchable: true,
+              title: const Text("Terms"),
+              onConfirm: (values) {
+                setState(() {
+                  _selectedTerms = values;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: _submit,
@@ -180,9 +307,11 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
 
   Future<void> _submit() async {
     if (_formKey.currentState!.validate()) {
+      if (_selectedTerms.isEmpty) {
+        _showDialog('Please select at least one term.');
+        return;
+      }
       if (globalTermId != null) {
-        int newId = await getNextId();
-
         List<String> modifiedFields = [];
         modifiedFields.add('id');
         modifiedFields.add('paymentPurpose');
@@ -190,57 +319,64 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
         modifiedFields.add('purposeAmount');
         modifiedFields.add('termId');
         modifiedFields.add('associatedClasses');
+        modifiedFields.add('associatedExceptions');
+        modifiedFields.add('forNewcomersOnly');
 
         final paymentPurpose = _purposeController.text.toLowerCase();
-        final newPkValue = uuid.v4();
+        for (var termId in _selectedTerms) {
+          final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
+          int newId = await getNextId();
+          final newPkValue = uuid.v4();
 
-        final newPurpose = PaymentPurpose(
-          id: newId,
-          paymentPurpose: paymentPurpose,
-          purposeCode: newPkValue,
-          purposeAmount: double.parse(_amountController.text),
-          termId: globalTermId,
-          associatedClasses: _selectedClasses, // Save the selected classes
-          syncStatus: false, // Set syncStatus to false
-          lastModified: DateTime.now(), // Set lastModified to current datetime
-          operationType: 'create', // Set operationType to 'create'
-          modifiedFields: modifiedFields,
-        );
+          // Check for duplicate in the term
+          bool alreadyExists = box.values.any((pp) =>
+              pp.paymentPurpose.toLowerCase() == paymentPurpose &&
+              pp.termId == termId);
 
-        final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
-        final existingPurpose = box.values.cast<PaymentPurpose>().firstWhere(
-              (c) =>
-                  ((c.paymentPurpose.toLowerCase() ==
-                      paymentPurpose.toLowerCase())) &&
-                  c.termId == globalTermId,
-              orElse: () => PaymentPurpose(
-                id: -1,
-                paymentPurpose: 'empty',
-                purposeAmount: -0.0,
-                termId: '',
-              ),
-            );
+          if (alreadyExists) continue;
 
-        if (existingPurpose.paymentPurpose.toLowerCase() != 'empty') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment Purpose Already Exists')),
+          final newPurpose = PaymentPurpose(
+            id: newId,
+            paymentPurpose: paymentPurpose,
+            purposeCode: newPkValue,
+            purposeAmount: double.parse(_amountController.text),
+            termId: termId,
+            associatedClasses: _selectedClasses, // Save the selected classes
+            syncStatus: false, // Set syncStatus to false
+            lastModified:
+                DateTime.now(), // Set lastModified to current datetime
+            operationType: 'create', // Set operationType to 'create'
+            exceptions: _selectedExceptionNames, // New line
+            forNewcomersOnly: _forNewcomersOnly, // New line
+            modifiedFields: modifiedFields,
           );
-          return;
+
+          final existingPurpose = box.values.cast<PaymentPurpose>().firstWhere(
+                (c) =>
+                    ((c.paymentPurpose.toLowerCase() ==
+                        paymentPurpose.toLowerCase())) &&
+                    c.termId == termId,
+                orElse: () => PaymentPurpose(
+                  id: -1,
+                  paymentPurpose: 'empty',
+                  purposeAmount: -0.0,
+                  termId: '',
+                ),
+              );
+
+          if (existingPurpose.paymentPurpose.toLowerCase() != 'empty') {
+            _showDialog('Payment Purpose Already Exists');
+            return;
+          }
+
+          box.add(newPurpose); // Add the new payment purpose
         }
-
-        box.add(newPurpose); // Add the new payment purpose
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment Purpose Added Successfully')),
-        );
+        _showDialog('Payment Purpose Added Successfully');
 
         Navigator.pop(context); // Return to the previous screen
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'No Selected School Term Was Found. Create A New Term or Switch Terms To AnExisting One.')),
-        );
+        _showDialog(
+            'No Selected School Term Was Found. Create A New Term or Switch Terms To AnExisting One.');
       }
     }
   }

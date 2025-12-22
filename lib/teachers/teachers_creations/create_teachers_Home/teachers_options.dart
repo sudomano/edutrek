@@ -40,6 +40,7 @@ class _MyPageState extends State<CreateTeachersoption> {
 
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
     return Scaffold(
       appBar: const CustomAppBar(title: 'School Staff'),
       body: LayoutBuilder(
@@ -117,14 +118,17 @@ class _MyPageState extends State<CreateTeachersoption> {
                                           padding: const EdgeInsets.all(8),
                                           children: [
                                             // Elevated cards with icons
-                                            if (admin || subadmin || secretary)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'Manage Staff Accounts',
                                                 target: CreateTeachers(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.attach_money,
                                                 text: 'Go To Staff Payments',
@@ -137,14 +141,17 @@ class _MyPageState extends State<CreateTeachersoption> {
                                       : Column(
                                           children: [
                                             // Elevated cards with icons
-                                            if (admin || subadmin || secretary)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'Manage Staff Accounts',
                                                 target: CreateTeachers(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.attach_money,
                                                 text: 'Go To Staff Payments',
@@ -152,7 +159,10 @@ class _MyPageState extends State<CreateTeachersoption> {
                                                     TeacherPaymentsScreenHome(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin || secretary)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
                                               const ElevatedCard(
                                                 icon: Icons.payment,
                                                 text: 'Go to Home Page',

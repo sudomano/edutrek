@@ -42,6 +42,8 @@ class _MyPageState extends State<CreateTeachers> {
 
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
+
     return Scaffold(
       appBar: const CustomAppBar(title: 'Staff Accounts'),
 
@@ -135,15 +137,15 @@ class _MyPageState extends State<CreateTeachers> {
                                               target: AddTeacherScreen(),
                                               isLargeScreen: true,
                                             ),
-
-                                            const ElevatedCard(
-                                              icon: Icons.update,
-                                              text: 'Update Staff',
-                                              target:
-                                                  SelectstaffPaymentPurposeToUpdate(),
-                                              isLargeScreen: true,
-                                            ),
-                                            if (admin || subadmin)
+                                            if (admin || administration)
+                                              const ElevatedCard(
+                                                icon: Icons.update,
+                                                text: 'Update Staff',
+                                                target:
+                                                    SelectstaffPaymentPurposeToUpdate(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Staff',
@@ -168,15 +170,15 @@ class _MyPageState extends State<CreateTeachers> {
                                               target: AddTeacherScreen(),
                                               isLargeScreen: false,
                                             ),
-
-                                            const ElevatedCard(
-                                              icon: Icons.update,
-                                              text: 'Update Staff',
-                                              target:
-                                                  SelectstaffPaymentPurposeToUpdate(),
-                                              isLargeScreen: false,
-                                            ),
-                                            if (admin || subadmin)
+                                            if (admin || administration)
+                                              const ElevatedCard(
+                                                icon: Icons.update,
+                                                text: 'Update Staff',
+                                                target:
+                                                    SelectstaffPaymentPurposeToUpdate(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Staff',

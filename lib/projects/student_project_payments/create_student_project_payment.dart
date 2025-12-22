@@ -16,7 +16,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
 
-  String? _selectedStudentId;
+  Student? _selectedStudent;
   String? _selectedProjectCode;
   String? _selectedItemId;
 
@@ -45,6 +45,9 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
   }
 
   Future<void> _processPayment() async {
+    debugPrint(
+        '[DEBUG] Processing Payment for Student: ${_selectedStudent?.name} (${_selectedStudent?.studentIdNumber})');
+
     if (_formKey.currentState!.validate()) {
       final paymentBox =
           await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
@@ -54,7 +57,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
       final existingPaymentss =
           paymentBox.values.cast<ProjectStudentPayment>().where(
                 (payment) =>
-                    payment.studentId == _selectedStudentId &&
+                    payment.studentId == _selectedStudent?.studentIdNumber &&
                     payment.projectCode == _selectedProjectCode &&
                     payment.itemId == _selectedItemId,
               );
@@ -92,7 +95,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
         final newPayment = ProjectStudentPayment(
           projectStudentPaymentCode:
               DateTime.now().toIso8601String(), // Unique code.
-          studentId: _selectedStudentId!,
+          studentId: _selectedStudent!.studentIdNumber.toString(),
           projectCode: _selectedProjectCode!,
           itemId: _selectedItemId!,
           amountPaid: amountPaid,
@@ -111,7 +114,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
       _formKey.currentState!.reset();
       _amountController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment processed successfully')),
+        const SnackBar(content: Text('Payment processed successfully')),
       );
     }
   }
@@ -147,8 +150,8 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           TextField(
-                            decoration: InputDecoration(
-                              labelText: 'Search Student',
+                            decoration: const InputDecoration(
+                              labelText: 'Searche Student',
                               suffixIcon: Icon(Icons.search),
                             ),
                             onChanged: (query) {
@@ -166,10 +169,11 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                               });
                             },
                           ),
-                          SizedBox(height: 10),
+                          const SizedBox(height: 10),
                           Expanded(
                             child: _searchResults.isEmpty
-                                ? Center(child: Text("No students found."))
+                                ? const Center(
+                                    child: Text("No students found."))
                                 : ListView.builder(
                                     itemCount: _searchResults.length,
                                     itemBuilder: (context, index) {
@@ -177,12 +181,15 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                                       return ListTile(
                                         title: Text(
                                             '${student.name} ${student.surname}'),
+                                        subtitle: Text(
+                                            'ID: ${student.studentIdNumber} | Class: ${student.class_}'),
                                         onTap: () {
-                                          setState(() {
-                                            _selectedStudentId =
-                                                student.studentIdNumber;
-                                          });
+                                          debugPrint(
+                                              '[DEBUG] Student selected in modal: ${student.name} (${student.studentIdNumber})');
                                           Navigator.pop(context);
+                                          setState(() {
+                                            _selectedStudent = student;
+                                          });
                                         },
                                       );
                                     },
@@ -207,19 +214,19 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
       return item.projectCode == _selectedProjectCode;
     }).toList();
     return CenteredFormContainer(
-      title: 'Make Student Project Payment',
+      title: 'Make Student Project Paymentss',
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ListTile(
-              title: Text(
-                _selectedStudentId == null
-                    ? 'Select Student'
-                    : 'Selected: $_selectedStudentId',
-              ),
-              trailing: Icon(Icons.search),
+              title: _selectedStudent == null
+                  ? const Text('Select Student')
+                  : Text(
+                      'Selected: ${_selectedStudent!.studentIdNumber} - ${_selectedStudent!.name} ${_selectedStudent!.surname} ${_selectedStudent!.class_} ${_selectedStudent!.terms?.join(', ') ?? ''}'),
+              subtitle: Text('ID: ${_selectedStudent?.studentIdNumber ?? ''}'),
+              trailing: const Icon(Icons.search),
               onTap: _showStudentSearchModal,
             ),
             DropdownButtonFormField<String>(
@@ -230,7 +237,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                         child: Text(project.name),
                       ))
                   .toList(),
-              decoration: InputDecoration(labelText: 'Select Project'),
+              decoration: const InputDecoration(labelText: 'Select Project'),
               onChanged: (value) {
                 setState(() {
                   _selectedProjectCode = value;
@@ -253,7 +260,7 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
                         child: Text('  ${item.name}'),
                       ))
                   .toList(),
-              decoration: InputDecoration(labelText: 'Select Item'),
+              decoration: const InputDecoration(labelText: 'Select Item'),
               onChanged: (value) {
                 setState(() {
                   _selectedItemId = value;
@@ -264,16 +271,20 @@ class _StudentPaymentFormState extends State<StudentPaymentForm> {
             ),
             TextFormField(
               controller: _amountController,
-              decoration: InputDecoration(labelText: 'Amount'),
+              decoration: const InputDecoration(labelText: 'Amount'),
               keyboardType: TextInputType.number,
               validator: (value) =>
                   value == null || value.isEmpty ? 'Enter amount' : null,
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             Center(
               child: ElevatedButton(
-                onPressed: _processPayment,
-                child: Text('Submit Payment'),
+                onPressed: () {
+                  debugPrint(
+                      '[DEBUG] Submit tapped for student: ${_selectedStudent?.name} (${_selectedStudent?.studentIdNumber})');
+                  _selectedStudent == null ? null : _processPayment();
+                },
+                child: const Text('Submit Payment'),
               ),
             ),
           ],

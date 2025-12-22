@@ -49,6 +49,22 @@ class _ViewTeachersScreenStatefilter extends State<ViewTeachersScreenfilter> {
     _fetchInitialData();
   }
 
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Staff Manipulation Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _fetchInitialData() async {
     final studentBox = await Hive.openBox<Teachers>('teachers');
 

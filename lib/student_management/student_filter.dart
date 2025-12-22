@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
@@ -10,12 +11,20 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart'; // For PDF preview
 import 'package:printing/printing.dart'; // For PDF preview and printing
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zitf_system/all_payments/filter_payments.dart';
+import 'package:zitf_system/arrears_and_prepayments/arrears_and_prepayments.dart';
 import 'package:zitf_system/database/student.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:path/path.dart' as path;
+import 'package:zitf_system/main.dart';
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart'; // To handle file name extensions
 import 'package:excel/excel.dart';
+import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart';
+import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
 import 'package:zitf_system/student_management/create_students/multi_class_selection.dart';
+import 'package:zitf_system/student_payments/view_all_paid_students.dart';
 
 class ViewStudentsScreenfilter extends StatefulWidget {
   final String? selectedClassName; // <- Add this line #######################
@@ -42,10 +51,34 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
   List<String> _classes = [];
   List<String> _genders = ['All', 'Male', 'Female'];
 
+  String? _selectedTermId;
+
+  /// we change here 06/05/25
+  List<String> _termIds = [];
+
+  /// we change here 06/05/25
+
   bool _isSyncing = false;
 
   String _progressMessage = '';
   final GlobalKey _studentsTableKey = GlobalKey();
+
+  bool _filterByExceptional = false;
+  bool _filterByNewcomer = false;
+
+  final TextEditingController _surnameController = TextEditingController();
+
+  final TextEditingController _regNumberController = TextEditingController();
+
+  Future<List<Student>> _studentsFuture = Future.value([]);
+  DeviceRole? _role;
+  String? _hostIp;
+  bool get _isHostIpMissing => _hostIp == null || _hostIp!.isEmpty;
+
+  List<Student>? _cachedServerStudents;
+  List<Terms>? _cachedServerTerms;
+
+  List<Student>? _cachedFilteredStudents;
 
   @override
   void initState() {
@@ -69,6 +102,86 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         });
       } else {}
     });
+
+    _initialize();
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Student Manipulation Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _initialize() async {
+    _role = await getDeviceRole();
+
+    final prefs = await SharedPreferences.getInstance();
+    _hostIp = prefs.getString('host_ip') ?? '192.168.68.2';
+
+    setState(() {
+      _studentsFuture = (_role == DeviceRole.host)
+          ? _fetchStudentsFromHive()
+          : _fetchStudentsFromServer();
+    });
+  }
+
+  Future<List<Student>> _fetchStudentsFromHive() async {
+    final box = await Hive.openBox<Student>('students');
+    final students = box.values.where((s) => s.termId != null).toList();
+    students.sort((a, b) => a.surname.compareTo(b.surname));
+
+    return students;
+  }
+
+  Future<List<Student>> _fetchStudentsFromServer() async {
+    if (_cachedServerStudents != null) {
+      return _cachedServerStudents!;
+    }
+    if (_isHostIpMissing) {
+      debugPrint("Host IP is null, cannot fetch from server");
+      if (mounted) {
+        _showDialog("⚠️ Host IP not set. Please configure connection.");
+      }
+      return [];
+    }
+
+    try {
+      final url = Uri.parse('http://$_hostIp:8080/api/students');
+      final httpClient = HttpClient();
+      final request = await httpClient.getUrl(url);
+      final response = await request.close();
+
+      if (response.statusCode == 200) {
+        final jsonString = await response.transform(utf8.decoder).join();
+        final jsonList = jsonDecode(jsonString) as List;
+
+        _cachedServerStudents = jsonList
+            .map((json) => studentsFromJson(Map<String, dynamic>.from(json)))
+            .toList();
+
+        return _cachedServerStudents!;
+      } else {
+        throw Exception('Failed to load students data: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint("Error fetching students data: $e");
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showDialog("⚠️ Host IP not set. Please configure connection.");
+        }
+      });
+      return [];
+    }
   }
 
   // Helper to update progress message and force rebuild
@@ -83,18 +196,76 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       _isSyncing = true;
       _progressMessage = 'Fetching initial data...';
     });
+
     try {
-      final studentBox = await Hive.openBox<Student>('students');
-      final _filteredStudentsBox = studentBox.values
-          .where((classItem) => classItem.terms!.contains(globalTermId))
+      _role = await getDeviceRole();
+      final prefs = await SharedPreferences.getInstance();
+      _hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
+
+      List<Student> allStudents = [];
+      List<Terms> allTerms = [];
+
+      if (_role == DeviceRole.host) {
+        final studentBox = await Hive.openBox<Student>('students');
+        final termBox = await Hive.openBox<Terms>('terms');
+
+        allStudents = studentBox.values.toList();
+        allTerms = termBox.values.toList();
+      } else {
+        if (_isHostIpMissing) {
+          _showDialog("⚠️ Host IP not set. Please configure connection.");
+          setState(() => _isSyncing = false);
+          return;
+        }
+        if (_cachedServerTerms == null || _cachedServerStudents == null) {
+          final termsResponse = await HttpClient()
+              .getUrl(Uri.parse('http://$_hostIp:8080/api/terms'))
+              .then((req) => req.close());
+          final studentsResponse = await HttpClient()
+              .getUrl(Uri.parse('http://$_hostIp:8080/api/students'))
+              .then((req) => req.close());
+
+          if (termsResponse.statusCode == 200 &&
+              studentsResponse.statusCode == 200) {
+            final termsJsonString =
+                await termsResponse.transform(utf8.decoder).join();
+            final studentsJsonString =
+                await studentsResponse.transform(utf8.decoder).join();
+
+            final termsList = jsonDecode(termsJsonString) as List;
+            final studentsList = jsonDecode(studentsJsonString) as List;
+
+            _cachedServerTerms = termsList
+                .map((json) => termsFromJson(Map<String, dynamic>.from(json)))
+                .toList();
+            _cachedServerStudents = studentsList
+                .map(
+                    (json) => studentsFromJson(Map<String, dynamic>.from(json)))
+                .toList();
+          } else {
+            throw Exception("Failed to load terms or students data from host.");
+          }
+        }
+        allTerms = _cachedServerTerms!;
+        allStudents = _cachedServerStudents!;
+      }
+
+      // Extract term IDs
+      _termIds = allTerms.map((e) => e.termId.toString()).toSet().toList();
+      _selectedTermId = _termIds.contains(globalTermId)
+          ? globalTermId
+          : (_termIds.isNotEmpty ? _termIds.first : null);
+
+      // Filter students by selected term
+      final filtered = allStudents
+          .where((student) =>
+              student.terms != null && student.terms!.contains(_selectedTermId))
           .toList();
-      // Fetch unique classes and add "All" option
+
+      // Extract class names
       _classes = ['All'];
-      _classes.addAll(_filteredStudentsBox
-          .map((student) => student.class_)
-          .toSet()
-          .toList());
-      _selectedClasses = ['All']; // Default selection
+      _classes.addAll(filtered.map((s) => s.class_).toSet().toList());
+      _selectedClasses = ['All'];
 
       setState(() {
         _isSyncing = false;
@@ -113,89 +284,101 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       _progressMessage = 'Fetching Students From Database ...';
     });
     try {
-      final studentBox = Hive.box<Student>('students');
+      List<Student> allStudents;
 
-      setState(() {
-        _filteredStudents = [];
-      });
+      if (_role == DeviceRole.host) {
+        final studentBox = Hive.box<Student>('students');
+        allStudents = studentBox.values
+            .where(
+                (s) => s.termId != null && s.terms!.contains(_selectedTermId))
+            .toList();
+      } else {
+        // Use previously fetched server data
+        allStudents = await _studentsFuture;
+        allStudents = allStudents
+            .where((s) => s.terms!.contains(_selectedTermId))
+            .toList();
+      }
 
-      _filteredStudents = studentBox.values
-          .where((classItem) => classItem.terms!.contains(globalTermId))
-          .toList();
+      List<Student> filtered = allStudents;
 
       if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
-        _filteredStudents = _filteredStudents.where((student) {
+        filtered =
+            filtered.where((s) => _selectedClasses.contains(s.class_)).toList();
+      }
+
+      if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
+        filtered = filtered.where((student) {
           return _selectedClasses.contains(student.class_);
         }).toList();
       }
 
       if (_selectedGender != null && _selectedGender != "All") {
-        _filteredStudents = _filteredStudents
+        filtered = filtered
             .where((student) => student.gender == _selectedGender)
             .toList();
       }
 
-      if (_selectedSurname != null && _selectedSurname!.isNotEmpty) {
-        _filteredStudents = _filteredStudents
+      if (_selectedSurname?.isNotEmpty ?? false) {
+        filtered = filtered
             .where((student) => student.surname
                 .toLowerCase()
                 .contains(_selectedSurname!.toLowerCase()))
             .toList();
       }
 
-      if (_selectedReg != null && _selectedReg!.isNotEmpty) {
-        _filteredStudents = _filteredStudents
-            .where((student) => student.studentIdNumber!
+      if (_selectedReg?.isNotEmpty ?? false) {
+        filtered = filtered
+            .where((s) => s.studentIdNumber!
                 .toLowerCase()
-                .trim()
-                .contains(_selectedReg!.toLowerCase().trim()))
+                .contains(_selectedReg!.toLowerCase()))
             .toList();
       }
 
       if (_selectedStartDate != null || _selectedEndDate != null) {
-        _filteredStudents = _filteredStudents.where((student) {
-          final studentDOB = student.age;
+        filtered = filtered.where((s) {
+          final dob = s.age;
           if (_selectedStartDate != null && _selectedEndDate != null) {
-            return studentDOB.isAfter(_selectedStartDate!) &&
-                studentDOB.isBefore(_selectedEndDate!);
+            return dob.isAfter(_selectedStartDate!) &&
+                dob.isBefore(_selectedEndDate!);
           } else if (_selectedStartDate != null) {
-            return studentDOB.isAfter(_selectedStartDate!);
-          } else if (_selectedEndDate != null) {
-            return studentDOB.isBefore(_selectedEndDate!);
+            return dob.isAfter(_selectedStartDate!);
+          } else {
+            return dob.isBefore(_selectedEndDate!);
           }
-          return true;
         }).toList();
       }
+      if (_filterByExceptional) {
+        filtered = filtered
+            .where((s) => s.exceptions != null && s.exceptions!.isNotEmpty)
+            .toList();
+      }
 
-      _filteredStudents.sort((a, b) => _isSortAscending
+      if (_filterByNewcomer) {
+        filtered = filtered.where((s) => s.isNewComer == true).toList();
+      }
+
+      filtered.sort((a, b) => _isSortAscending
           ? a.surname.compareTo(b.surname)
           : b.surname.compareTo(a.surname));
 
       setState(() {
-        _isSyncing = false;
+        _filteredStudents = filtered;
+        _cachedFilteredStudents = filtered;
       });
 
       // ✅ After filtering, show a message if no students are found
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_filteredStudents.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Center(
-                  child: Text('❗ No students found for the selected class.')),
-              backgroundColor: Colors.redAccent,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        } else if (_studentsTableKey.currentContext != null) {
-          Scrollable.ensureVisible(
-            _studentsTableKey.currentContext!,
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeInOut,
-          );
-        }
-      });
+      if (filtered.isEmpty) {
+        _showDialog('❗ No students found for the selected criteria.');
+      } else if (_studentsTableKey.currentContext != null) {
+        Scrollable.ensureVisible(
+          _studentsTableKey.currentContext!,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
     } catch (error) {
-      print("[DEBUG] Error filtering students: $error");
+      debugPrint("Error during filtering: $error");
     } finally {
       setState(() {
         _isSyncing = false;
@@ -220,68 +403,74 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       'Gender',
       'Date of Birth',
       'Address',
-      'Parent Number',
-      'Terms Associated', // New column for terms
+      'Parent Name',
+      'Parent Phone', // New column for terms
     ];
-    final data = _filteredStudents.map((student) {
-      return [
-        student.name,
-        student.surname,
-        student.class_,
-        student.gender,
-        DateFormat('yyyy-MM-dd').format(student.age ?? DateTime.now()),
-        student.physicalAddress,
-        student.paymentStatus,
-        student.terms?.join(", ") ?? (''), // New field to display terms
-      ];
-    }).toList();
+    final chunkSize = 300; // Customize as needed (keep below 500 rows/page)
 
-    // Create a PDF page
+    for (int i = 0; i < _filteredStudents.length; i += chunkSize) {
+      final chunk = _filteredStudents.skip(i).take(chunkSize).toList();
+      final data = chunk.map((student) {
+        return [
+          student.name,
+          student.surname,
+          student.class_,
+          student.gender,
+          DateFormat('yyyy-MM-dd').format(student.age ?? DateTime.now()),
+          student.physicalAddress,
+          student.paymentStatus,
+          student.phoneNumber,
+        ];
+      }).toList();
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32), // Add margins for layout
-        build: (pw.Context context) {
-          return [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Title of the page
-                pw.Text('Student Information',
-                    style: const pw.TextStyle(fontSize: 24)),
-                pw.SizedBox(height: 20),
+      // Create a PDF page
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32), // Add margins for layout
+          build: (pw.Context context) {
+            return [
+              if (i == 0) ...[
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    // Title of the page
+                    pw.Text('Student Information',
+                        style: const pw.TextStyle(fontSize: 24)),
+                    pw.SizedBox(height: 20),
+                  ],
+                ),
+                // The table should now automatically split across multiple pages
               ],
-            ),
-            // The table should now automatically split across multiple pages
-            pw.Table.fromTextArray(
-              headers: headers,
-              data: data,
-              cellStyle: const pw.TextStyle(fontSize: 10),
-              headerStyle: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
+              pw.Table.fromTextArray(
+                headers: headers,
+                data: data,
+                cellStyle: const pw.TextStyle(fontSize: 10),
+                headerStyle: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                headerDecoration:
+                    const pw.BoxDecoration(color: PdfColors.grey300),
+                border: pw.TableBorder.all(color: PdfColors.black),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(), // Class Name column
+                  1: const pw.FlexColumnWidth(), // Created On column
+                  2: const pw.FlexColumnWidth(), // Current Term column
+                  3: const pw.FlexColumnWidth(), // Class Name column
+                  4: const pw.FlexColumnWidth(), // Created On column
+                  5: const pw.FlexColumnWidth(), // Current Term column
+                  6: const pw.FlexColumnWidth(),
+                  7: const pw.FlexColumnWidth(), // Created On column
+                  // Created On column
+                },
               ),
-              headerDecoration:
-                  const pw.BoxDecoration(color: PdfColors.grey300),
-              border: pw.TableBorder.all(color: PdfColors.black),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(), // Class Name column
-                1: const pw.FlexColumnWidth(), // Created On column
-                2: const pw.FlexColumnWidth(), // Current Term column
-                3: const pw.FlexColumnWidth(), // Class Name column
-                4: const pw.FlexColumnWidth(), // Created On column
-                5: const pw.FlexColumnWidth(), // Current Term column
-                6: const pw.FlexColumnWidth(),
-                7: const pw.FlexColumnWidth(), // Created On column
-                // Created On column
-              },
-            ),
-          ];
-        },
-      ),
-    );
-
+            ];
+          },
+        ),
+      );
+    }
     return pdf.save();
   }
 
@@ -300,8 +489,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           // Create the directory if it doesn't exist
           if (!await downloadDir.exists()) {
             await downloadDir.create(recursive: true);
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Download directory created.")));
+            _showDialog("Download directory created.");
           }
 
           // Define the initial file path
@@ -319,22 +507,18 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           await file.writeAsBytes(pdfBytes);
 
           // Show success notification
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
+          _showDialog("PDF saved to $filePath");
         } else {
           // Show error notification
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text("Error: External storage directory not found.")));
+          _showDialog("Error: External storage directory not found.");
         }
       } else {
         // Show permission denied notification
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Permission denied for storage access.")));
+        _showDialog("Permission denied for storage access.");
       }
     } catch (e) {
       // Show error notification
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error saving PDF: $e")));
+      _showDialog("Error saving PDF: $e");
     }
   }
 
@@ -352,17 +536,67 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           ),
         ),
         actions: [
+          Tooltip(
+            message: 'View Student Receipts',
+            child: IconButton(
+              icon: const Icon(
+                Icons.visibility_outlined,
+                color: Color.fromARGB(255, 245, 164, 2),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ViewAllStudentPayments(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Tooltip(
+            message: 'View detailed payments',
+            child: IconButton(
+              icon: const Icon(
+                Icons.visibility_outlined,
+                color: Color.fromARGB(255, 0, 255, 81),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ViewByScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Tooltip(
+            message: 'View detailed arrear',
+            child: IconButton(
+              icon: const Icon(
+                Icons.visibility_outlined,
+                color: Color.fromARGB(255, 255, 0, 0),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ArrearsAndPrepayments(),
+                  ),
+                );
+              },
+            ),
+          ),
           IconButton(
             icon: const Icon(
               Icons.picture_as_pdf,
               color: Colors.white,
             ),
             onPressed: () async {
-              final studentBox = await Hive.openBox<Student>('students');
-              List<Student> students = studentBox.values
-                  .where((student) => student.terms!.contains(globalTermId))
-                  .toList();
-              Uint8List pdfBytes = await generateStudentsPDF(_filteredStudents);
+              final studentsToExport =
+                  _cachedFilteredStudents ?? _filteredStudents;
+
+              Uint8List pdfBytes = await generateStudentsPDF(studentsToExport);
 
               // Show the PDF preview and confirm if the user wants to save it
               bool confirmSave =
@@ -399,6 +633,24 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildCard(
+                        title: 'Select Term',
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedTermId,
+                          hint: const Text('Select Term'),
+                          onChanged: (value) {
+                            setState(() {
+                              if (value != null) _onTermChanged(value);
+                            });
+                          },
+                          items: _termIds.map((termId) {
+                            return DropdownMenuItem(
+                              value: termId,
+                              child: Text(termId),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      _buildCard(
                         title: 'View by Class',
                         child: _buildClassDropdown(),
                       ),
@@ -420,6 +672,32 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                       _buildCard(
                         title: 'View by Date of Birth',
                         child: _buildDOBPicker(),
+                      ),
+                      _buildCard(
+                        title: 'Filter by Special Categories',
+                        child: Column(
+                          children: [
+                            CheckboxListTile(
+                              title:
+                                  const Text("Show Only Exceptional Students"),
+                              value: _filterByExceptional,
+                              onChanged: (value) {
+                                setState(() {
+                                  _filterByExceptional = value!;
+                                });
+                              },
+                            ),
+                            CheckboxListTile(
+                              title: const Text("Show Only Newcomer Students"),
+                              value: _filterByNewcomer,
+                              onChanged: (value) {
+                                setState(() {
+                                  _filterByNewcomer = value!;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 20),
                       Center(
@@ -550,6 +828,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
   Widget _buildSurnameField() {
     return TextField(
+      controller: _surnameController,
       decoration: InputDecoration(
         labelText: 'Search Student by Surname',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -566,6 +845,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
   Widget _buildRegField() {
     return TextField(
+      controller: _regNumberController,
       decoration: InputDecoration(
         labelText: 'Search Student by Reg Number',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -720,6 +1000,12 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                       DataColumn(label: Text('Emergency Contact Number')),
                       DataColumn(label: Text('Health Status')),
                       DataColumn(label: Text('Health Detailed Information')),
+                      DataColumn(label: Text('Is Exceptional?')),
+                      DataColumn(label: Text('Exceptions')),
+                      DataColumn(label: Text('Is Newcomer?')),
+                      DataColumn(label: Text('Newcomer From')),
+                      DataColumn(label: Text('Newcomer Until')),
+
                       DataColumn(label: Text('Terms Associated')), // New column
 
                       //  DataColumn(label: Text(' modified Information')),
@@ -752,6 +1038,31 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                           DataCell(Text((student.healthStauts.toString()))),
                           DataCell(Text(
                               (student.healthDetailedInformation.toString()))),
+                          DataCell(
+                              Text(student.exceptions != null ? 'Yes' : 'No')),
+                          DataCell(Text(
+                            (student.exceptions != null &&
+                                    student.exceptions!.isNotEmpty)
+                                ? student.exceptions!
+                                    .map((e) => e.exceptionName)
+                                    .join(', ')
+                                : 'None',
+                          )),
+                          DataCell(
+                              Text(student.isNewComer == true ? 'Yes' : 'No')),
+                          DataCell(Text(student.isNewComerFrom != null
+                              ? student.isNewComerFrom!
+                                  .toLocal()
+                                  .toString()
+                                  .split(' ')[0]
+                              : '')),
+                          DataCell(Text(student.isNewComerUntil != null
+                              ? student.isNewComerUntil!
+                                  .toLocal()
+                                  .toString()
+                                  .split(' ')[0]
+                              : '')),
+
                           DataCell(Text(student.terms?.join(", ") ??
                               (''))), // New field to display terms
 
@@ -795,6 +1106,49 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     );
   }
 
+  Future<void> _onTermChanged(String value) async {
+    setState(() {
+      _isSyncing = true;
+      _selectedTermId = value;
+      _selectedClasses = ['All'];
+      _selectedGender = 'All';
+      _selectedSurname = '';
+      _selectedReg = '';
+
+      _selectedStartDate = null;
+      _selectedEndDate = null;
+      _filterByExceptional = false;
+      _filterByNewcomer = false;
+      _filteredStudents = [];
+
+      _surnameController.clear(); // <-- Clears the field visibly
+      _regNumberController.clear(); // <-- Clears the field visibly
+    });
+
+    if (_role == DeviceRole.host) {
+      final studentBox = await Hive.openBox<Student>('students');
+      final termClasses =
+          studentBox.values.where((s) => s.termId == _selectedTermId).toList();
+
+      _classes = ['All'];
+      _classes.addAll(termClasses.map((s) => s.class_).toSet().toList());
+    } else {
+      // Use cached or filtered server data
+      final serverStudents = _cachedServerStudents ?? [];
+
+      final termClasses = serverStudents
+          .where((s) => s.terms?.contains(_selectedTermId) ?? false)
+          .toList();
+
+      _classes = ['All'];
+      _classes.addAll(termClasses.map((s) => s.class_).toSet().toList());
+    }
+
+    setState(() {
+      _isSyncing = false;
+    });
+  }
+
   void generateAndSaveSpreadsheet() async {
     // Create an Excel document
     var excel = Excel.createExcel();
@@ -824,6 +1178,12 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       TextCellValue('Emergency Contact Number'),
       TextCellValue('Health Condition'),
       TextCellValue('Health Condition Details'),
+// ✅ New fields
+      TextCellValue('Is Exceptional?'),
+      TextCellValue('Exceptions'),
+      TextCellValue('Is Newcomer?'),
+      TextCellValue('Newcomer From'),
+      TextCellValue('Newcomer Until'),
       TextCellValue('Terms Associated'), // New column
     ]);
 
@@ -855,32 +1215,81 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         TextCellValue(student.healthStauts ?? ''),
 
         TextCellValue(student.healthDetailedInformation ?? ''),
+        // ✅ New field values
+        TextCellValue(student.exceptions != null ? 'Yes' : 'No'),
+        TextCellValue(
+          (student.exceptions != null && student.exceptions!.isNotEmpty)
+              ? student.exceptions!.map((e) => e.exceptionName).join(', ')
+              : 'None',
+        ),
+        TextCellValue(student.isNewComer == true ? 'Yes' : 'No'),
+        TextCellValue(student.isNewComerFrom != null
+            ? student.isNewComerFrom!.toLocal().toString().split(' ')[0]
+            : ''),
+        TextCellValue(student.isNewComerUntil != null
+            ? student.isNewComerUntil!.toLocal().toString().split(' ')[0]
+            : ''),
         TextCellValue(
             student.terms?.join(", ") ?? ('')), // New field to display terms
       ]);
     }
-
-    // Use FilePicker to choose save location
     try {
-      String? savePath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save Excel File',
-        type: FileType.custom,
-        allowedExtensions: ['xlsx'],
-        fileName: 'Students.xlsx',
-      );
+      final fileBytes = excel.encode();
+      if (fileBytes == null) throw Exception("Excel encoding failed.");
 
-      if (savePath != null) {
-        // Write the file
-        File(savePath)
-          ..createSync(recursive: true)
-          ..writeAsBytesSync(excel.encode()!);
+      if (Platform.isAndroid) {
+        // Get app's scoped documents directory
+        final directory = await getApplicationDocumentsDirectory();
+        final folder =
+            Directory('${directory.path}/school_files/school_students');
 
-        print('Spreadsheet saved at: $savePath');
+        // Create folder if not exists
+        if (!await folder.exists()) {
+          await folder.create(recursive: true);
+        }
+
+        // Generate unique file name with timestamp
+        final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+        final filePath = '${folder.path}/school_students_$timestamp.xlsx';
+
+        final file = File(filePath);
+        await file.writeAsBytes(fileBytes);
+
+        print('✅ Spreadsheet saved to: $filePath');
       } else {
-        print('File save operation was canceled.');
+        // Use FilePicker to choose save location
+        try {
+          String? savePath = await FilePicker.platform.saveFile(
+            dialogTitle: 'Save Excel File',
+            type: FileType.custom,
+            allowedExtensions: ['xlsx'],
+            fileName: 'Students.xlsx',
+          );
+
+          if (savePath != null) {
+            // Write the file
+            File(savePath)
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(excel.encode()!);
+
+            print('Spreadsheet saved at: $savePath');
+          } else {
+            print('File save operation was canceled.');
+          }
+        } catch (e) {
+          print('Error saving spreadsheet: $e');
+        }
       }
     } catch (e) {
       print('Error saving spreadsheet: $e');
     }
+  }
+
+  @override
+  void dispose() {
+    _surnameController.dispose();
+    _regNumberController.dispose();
+
+    super.dispose();
   }
 }

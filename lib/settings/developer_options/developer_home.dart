@@ -24,12 +24,16 @@ import 'package:zitf_system/database/teacher_payment_purpose.dart';
 import 'package:zitf_system/database/teacher_payments.dart';
 import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_timer.dart';
 import 'package:zitf_system/reusable_codes/bluetooth_helper_codes/bluetooth_tips_helper.dart';
+import 'package:zitf_system/reusable_codes/contact_utils/contact_utils.dart';
 
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:zitf_system/settings/developer_options/assign_missing_terms.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs.dart';
+import 'package:zitf_system/settings/developer_options/domainConfigs/ip_address_settings.dart';
+import 'package:zitf_system/settings/developer_options/domainConfigs/reset_app.dart';
 import 'package:zitf_system/settings/developer_options/remove_duplicates.dart';
+import 'package:zitf_system/settings/developer_options/termAggregation.dart';
 
 class DeveloperHome extends StatefulWidget {
   const DeveloperHome({super.key});
@@ -37,6 +41,27 @@ class DeveloperHome extends StatefulWidget {
   @override
   _SyncClassesPageState createState() => _SyncClassesPageState();
 }
+
+final Map<String, bool> modelSelections = {
+  'TeacherPaymentsPurposes': false,
+  'PaymentPurpose': false,
+  'Classes': false,
+  'StudentPayment': false,
+  'TeacherPayment': false,
+  'Student': false,
+  'Withdrawal': false,
+  'User': false,
+  'Teachers': false,
+  'School': false,
+  'Terms': false,
+  'Account': false,
+  'Asset': false,
+  'Project': false,
+  'ProjectItem': false,
+  'DailyActivity': false,
+  'ProjectStudentPayment': false,
+  'DomainRecord': false,
+};
 
 class _SyncClassesPageState extends State<DeveloperHome> {
   @override
@@ -81,9 +106,82 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                     const SizedBox(
                       height: 10,
                     ),
-                    const SizedBox(
-                      height: 20,
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        // Navigate to the AutoLogoutSettingsScreen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const DeviceSettingsPage(),
+                          ),
+                        );
+
+                        // Optionally, show a SnackBar indicating the action.
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Combine Terms?',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.timer, size: 24),
+                      label: const Text(
+                        'Terms Combiner',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
                     ),
+
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await syncAllParentsToPhoneBook();
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            'Parent contacts saved successfully.',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                        ));
+                      },
+                      icon: const Icon(Icons.key, size: 24),
+                      label: const Text(
+                        'Save All Parent Contacts',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
@@ -127,41 +225,7 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                     ),
 
                     const SizedBox(height: 20),
-                    const SizedBox(
-                      height: 10,
-                    ),
 
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            const Color.fromARGB(255, 255, 255, 255),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () async {
-                        await setOperationTypeToCreateForAllModels();
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(
-                          content: Text(
-                            'Operation Type Reset was successfully.',
-                            style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.black,
-                                fontWeight: FontWeight.w600),
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
-                        ));
-                      },
-                      icon: const Icon(Icons.restart_alt, size: 24),
-                      label: const Text(
-                        'Reset Operation Type',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w600),
-                      ),
-                    ),
                     const SizedBox(height: 20),
 
                     ElevatedButton.icon(
@@ -267,6 +331,35 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                         ),
                       ),
                     ),
+
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Navigate to SettingsScreen when clicked
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const IpAddressSettings()),
+                        );
+                      },
+                      icon: const Icon(Icons.key, size: 24, color: Colors.blue),
+                      label: const Text(
+                        'Change IP Address',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 20),
 
                     ElevatedButton.icon(
@@ -302,6 +395,133 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                     ),
                     const SizedBox(height: 20),
                     // Retrieve and Save Records Button
+                    const SizedBox(
+                      height: 10,
+                    ),
+                    const Text(
+                      'Select Models to Reset:',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              modelSelections.updateAll((key, value) => true);
+                            });
+                          },
+                          child: const Text("Select All"),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              modelSelections.updateAll((key, value) => false);
+                            });
+                          },
+                          child: const Text("Deselect All"),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+                    ...modelSelections.keys.map((modelName) {
+                      return CheckboxListTile(
+                        title: Text(modelName),
+                        value: modelSelections[modelName],
+                        onChanged: (bool? value) {
+                          setState(() {
+                            modelSelections[modelName] = value ?? false;
+                          });
+                        },
+                      );
+                    }).toList(),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final selectedModels = modelSelections.entries
+                            .where((entry) => entry.value)
+                            .map((entry) => entry.key)
+                            .toList();
+
+                        if (selectedModels.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text("Please select at least one model."),
+                            ),
+                          );
+                          return;
+                        }
+
+                        await setOperationTypeForSelectedModels(selectedModels);
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Selected models reset successfully.',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text(
+                        'Reset Selected Models',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color.fromARGB(255, 255, 255, 255),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await developerLoginReset(context);
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            'Redirect To Developer Login',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Color.fromARGB(255, 255, 255, 255),
+                        ));
+                      },
+                      icon: const Icon(Icons.restart_alt, size: 24),
+                      label: const Text(
+                        'Reset All Databases',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -312,230 +532,226 @@ class _SyncClassesPageState extends State<DeveloperHome> {
     );
   }
 
-  Future<void> setOperationTypeToCreateForAllModels() async {
-    // Set operationType for TeacherPaymentsPurposes
-    final teacherPaymentsPurposesBox =
-        await Hive.openBox<TeacherPaymentsPurposes>(
-            'teacher_payments_purposes');
-    for (var key in teacherPaymentsPurposesBox.keys) {
-      final item = teacherPaymentsPurposesBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-        await teacherPaymentsPurposesBox.put(key, item);
+  Future<void> setOperationTypeForSelectedModels(List<String> models) async {
+    if (models.contains('TeacherPaymentsPurposes')) {
+      final box = await Hive.openBox<TeacherPaymentsPurposes>(
+          'teacher_payments_purposes');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for PaymentPurpose
-    final paymentPurposeBox =
-        await Hive.openBox<PaymentPurpose>('payment_purposes');
-    for (var key in paymentPurposeBox.keys) {
-      final item = paymentPurposeBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await paymentPurposeBox.put(key, item);
+    if (models.contains('PaymentPurpose')) {
+      final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Classes
-    final classesBox = await Hive.openBox<Classes>('classes');
-    for (var key in classesBox.keys) {
-      final item = classesBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await classesBox.put(key, item);
+    if (models.contains('Classes')) {
+      final box = await Hive.openBox<Classes>('classes');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for StudentPayment
-    final studentPaymentBox =
-        await Hive.openBox<StudentPayment>('student_payments');
-    for (var key in studentPaymentBox.keys) {
-      final item = studentPaymentBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await studentPaymentBox.put(key, item);
+    if (models.contains('StudentPayment')) {
+      final box = await Hive.openBox<StudentPayment>('student_payments');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for TeacherPayment
-    final teacherPaymentBox =
-        await Hive.openBox<TeacherPayment>('teacher_payments');
-    for (var key in teacherPaymentBox.keys) {
-      final item = teacherPaymentBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await teacherPaymentBox.put(key, item);
+    if (models.contains('TeacherPayment')) {
+      final box = await Hive.openBox<TeacherPayment>('teacher_payments');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Student
-    final studentBox = await Hive.openBox<Student>('students');
-    for (var key in studentBox.keys) {
-      final item = studentBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await studentBox.put(key, item);
+    if (models.contains('Student')) {
+      final box = await Hive.openBox<Student>('students');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Withdrawal
-    final withdrawalBox = await Hive.openBox<Withdrawal>('withdrawals');
-    for (var key in withdrawalBox.keys) {
-      final item = withdrawalBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await withdrawalBox.put(key, item);
+    if (models.contains('Withdrawal')) {
+      final box = await Hive.openBox<Withdrawal>('withdrawals');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for User
-    final userBox = await Hive.openBox<User>('users');
-    for (var key in userBox.keys) {
-      final item = userBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await userBox.put(key, item);
+    if (models.contains('User')) {
+      final box = await Hive.openBox<User>('users');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Teachers
-    final teachersBox = await Hive.openBox<Teachers>('teachers');
-    for (var key in teachersBox.keys) {
-      final item = teachersBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await teachersBox.put(key, item);
+    if (models.contains('Teachers')) {
+      final box = await Hive.openBox<Teachers>('teachers');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for School
-    final schoolBox = await Hive.openBox<School>('school');
-    for (var key in schoolBox.keys) {
-      final item = schoolBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await schoolBox.put(key, item);
+    if (models.contains('School')) {
+      final box = await Hive.openBox<School>('school');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Terms
-    final termsBox = await Hive.openBox<Terms>('terms');
-    for (var key in termsBox.keys) {
-      final item = termsBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await termsBox.put(key, item);
+    if (models.contains('Terms')) {
+      final box = await Hive.openBox<Terms>('terms');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Account
-    final accountBox = await Hive.openBox<Account>('account');
-    for (var key in accountBox.keys) {
-      final item = accountBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await accountBox.put(key, item);
+    if (models.contains('Account')) {
+      final box = await Hive.openBox<Account>('account');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Asset
-    final assetBox = await Hive.openBox<Asset>('asset');
-    for (var key in assetBox.keys) {
-      final item = assetBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await assetBox.put(key, item);
+    if (models.contains('Asset')) {
+      final box = await Hive.openBox<Asset>('asset');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for Project
-    final projectBox = await Hive.openBox<Project>('projects');
-    for (var key in projectBox.keys) {
-      final item = projectBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await projectBox.put(key, item);
+    if (models.contains('Project')) {
+      final box = await Hive.openBox<Project>('projects');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for ProjectItem
-    final projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
-    for (var key in projectItemBox.keys) {
-      final item = projectItemBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await projectItemBox.put(key, item);
+    if (models.contains('ProjectItem')) {
+      final box = await Hive.openBox<ProjectItem>('projectItems');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for DailyActivity
-    final dailyActivityBox =
-        await Hive.openBox<DailyActivity>('dailyActivities');
-    for (var key in dailyActivityBox.keys) {
-      final item = dailyActivityBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await dailyActivityBox.put(key, item);
+    if (models.contains('DailyActivity')) {
+      final box = await Hive.openBox<DailyActivity>('dailyActivities');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for ProjectStudentPayment
-    final projectStudentPaymentBox =
-        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
-    for (var key in projectStudentPaymentBox.keys) {
-      final item = projectStudentPaymentBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await projectStudentPaymentBox.put(key, item);
+    if (models.contains('ProjectStudentPayment')) {
+      final box =
+          await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    // Set operationType for _domainRecordBox
-    final domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
-    for (var key in domainRecordBox.keys) {
-      final item = domainRecordBox.get(key);
-      if (item != null) {
-        item.operationType = 'create';
-        item.syncStatus = false;
-
-        await domainRecordBox.put(key, item);
+    if (models.contains('DomainRecord')) {
+      final box = await Hive.openBox<DomainRecord>('domainBox');
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          item.operationType = 'create';
+          item.syncStatus = false;
+          await box.put(key, item);
+        }
       }
     }
 
-    print("All operationType fields set to 'create' for all models.");
+    print("Selected models' operationType fields set to 'create'.");
   }
 
   @override

@@ -29,9 +29,7 @@ class _UpdatePaymentScreenState extends State<UpdatePaymentScreen> {
     final query = _studentSearchController.text.trim();
 
     if (query.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a surname to search')),
-      );
+      _showDialog('Please enter a surname to search');
       return;
     }
 
@@ -39,14 +37,11 @@ class _UpdatePaymentScreenState extends State<UpdatePaymentScreen> {
     final matchingStudents = studentBox.values
         .where((student) =>
             student.surname.toLowerCase().contains(query.toLowerCase()) &&
-            student.termId == globalTermId)
+            student.terms!.contains(globalTermId!))
         .toList();
 
     if (matchingStudents.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('No matching payments found for that student')),
-      );
+      _showDialog('No matching payments found for that student');
     } else {
       showDialog(
         context: context,
@@ -68,12 +63,8 @@ class _UpdatePaymentScreenState extends State<UpdatePaymentScreen> {
                         _selectedStudent = student;
                         _getStudentPayments();
                       });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Selected student: ${student.name} ${student.surname}',
-                          ),
-                        ),
+                      _showDialog(
+                        'Selected student: ${student.name} ${student.surname}',
                       );
                       Navigator.pop(context);
                     },
@@ -114,23 +105,17 @@ class _UpdatePaymentScreenState extends State<UpdatePaymentScreen> {
 
   Future<void> _updatePayment(StudentPayment payment) async {
     if (_selectedPayment == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a payment to update')),
-      );
+      _showDialog('Please select a payment to update');
       return;
     }
 
     if (_selectedPaymentPurpose == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a payment purpose')),
-      );
+      _showDialog('Please select a payment purpose');
       return;
     }
 
     if (_paymentAmount == null || _paymentAmount! <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid payment amount')),
-      );
+      _showDialog('Please enter a valid payment amount');
       return;
     }
 
@@ -190,12 +175,26 @@ class _UpdatePaymentScreenState extends State<UpdatePaymentScreen> {
       paymentBox.add(updatedPayment);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment updated successfully')),
-    );
+    _showDialog('Payment updated successfully');
 
     Navigator.pop(context);
     Navigator.pop(context);
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Payment Update  Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showUpdateDialog(StudentPayment payment) {

@@ -17,6 +17,7 @@ class _ForgottenPasswordScreenState extends State<ForgottenPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   int _tapCount = 0;
   bool _isDeveloperMode = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -27,15 +28,29 @@ class _ForgottenPasswordScreenState extends State<ForgottenPasswordScreen> {
   Future<void> _loadUserData() async {
     var userBox = await Hive.openBox<User>('users');
     if (userBox.isNotEmpty) {
-      setState(() {
-        _user = userBox.values.first; // Assuming admin user is first
-        _securityQuestions = _user.securityQuestions;
-        _answerControllers = List.generate(
-          _securityQuestions.length,
-          (index) => TextEditingController(),
-        );
-      });
+      _user = userBox.values.first;
+      _securityQuestions = _user.securityQuestions;
+      _answerControllers = List.generate(
+        _securityQuestions.length,
+        (index) => TextEditingController(),
+      );
+    } else {
+      // 🔧 Prevent LateInitializationError by initializing with empty values
+      _user = User(
+          username: '',
+          password: '',
+          role: '',
+          securityQuestions: [],
+          securityAnswers: [],
+          phone:
+              ''); // You may need to define a default constructor or dummy user
+      _securityQuestions = [];
+      _answerControllers = [];
     }
+
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   @override
@@ -80,6 +95,9 @@ class _ForgottenPasswordScreenState extends State<ForgottenPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return CenteredFormContainer(
       title: 'Forgotten Password',
       child: Form(

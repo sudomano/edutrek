@@ -48,6 +48,10 @@ class StudentAdapter extends TypeAdapter<Student> {
       healthStauts: fields[30] as String?,
       healthDetailedInformation: fields[31] as String?,
       modifiedFields: (fields[32] as List?)?.cast<String>(),
+      exceptions: (fields[34] as List?)?.cast<ExceptionalStudents>(),
+      isNewComer: fields[35] as bool?,
+      isNewComerFrom: fields[36] as DateTime?,
+      isNewComerUntil: fields[37] as DateTime?,
       terms: (fields[33] as List?)?.cast<String>(),
     );
   }
@@ -55,7 +59,7 @@ class StudentAdapter extends TypeAdapter<Student> {
   @override
   void write(BinaryWriter writer, Student obj) {
     writer
-      ..writeByte(32)
+      ..writeByte(36)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -119,7 +123,15 @@ class StudentAdapter extends TypeAdapter<Student> {
       ..writeByte(32)
       ..write(obj.modifiedFields)
       ..writeByte(33)
-      ..write(obj.terms);
+      ..write(obj.terms)
+      ..writeByte(34)
+      ..write(obj.exceptions)
+      ..writeByte(35)
+      ..write(obj.isNewComer)
+      ..writeByte(36)
+      ..write(obj.isNewComerFrom)
+      ..writeByte(37)
+      ..write(obj.isNewComerUntil);
   }
 
   @override

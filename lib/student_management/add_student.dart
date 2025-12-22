@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
+import 'package:multi_select_flutter/multi_select_flutter.dart';
+import 'package:zitf_system/reusable_codes/contact_utils/contact_utils.dart';
 
 class AddStudentScreen extends StatefulWidget {
   const AddStudentScreen({super.key});
@@ -39,6 +42,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _previousSchoolPerformanceResultsController = TextEditingController();
   final _emergencyContactNameController = TextEditingController();
   final _emergencyContactNumberController = TextEditingController();
+  List<ExceptionalStudents> _allExceptions = [];
+  List<ExceptionalStudents> _selectedExceptions = [];
 
   List<String> _classes = [];
 
@@ -46,13 +51,31 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   List<String> _availableTerms = [];
   List<String> _selectedTerms = []; // Stores user-selected term IDs
 
+  bool? _isNewComer;
+  bool? _isExceptional;
+  DateTime? _isNewComerFrom;
+  DateTime? _isNewComerUntil;
+
   @override
   void initState() {
     super.initState();
     _loadClasses();
     _loadTerms();
+    _loadExceptions();
 
     _setInitialRegNumber();
+  }
+
+  void _loadExceptions() async {
+    final box =
+        await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+    final all = box.values.toList();
+
+    setState(() {
+      _allExceptions = all
+          .where((e) => e.exceptionStatus!.toLowerCase() == 'active')
+          .toList();
+    });
   }
 
   Future<void> _loadTerms() async {
@@ -82,6 +105,22 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
   }
 
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Student Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CenteredFormContainer(
@@ -91,6 +130,106 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         child: ListView(
           children: [
             const SizedBox(height: 20),
+            CheckboxListTile(
+              title: const Text("Is Newcomer?"),
+              value: _isNewComer ?? false,
+              onChanged: (value) {
+                setState(() {
+                  _isNewComer = value;
+                  if (value == true) {
+                    Terms? currentTerm;
+
+                    final termsBox = Hive.box<Terms>('terms');
+                    final terms = termsBox.values
+                        .where((term) => term.termId == globalTermId);
+                    if (terms.isNotEmpty) {
+                      currentTerm = terms.first;
+                    }
+
+                    final now = DateTime.now();
+                    final termEnd = currentTerm?.endDate;
+                    final DateTime defaultUntilDate =
+                        (termEnd != null && termEnd.isAfter(now))
+                            ? termEnd
+                            : now.add(const Duration(days: 30));
+
+                    setState(() {
+                      _isNewComerFrom = now;
+                      _isNewComerUntil = defaultUntilDate;
+                    });
+                  } else {
+                    setState(() {
+                      _isNewComerFrom = null;
+                      _isNewComerUntil = null;
+                    });
+                  }
+                });
+              },
+            ),
+
+            if (_isNewComer == true) ...[
+              _buildDateField('Newcomer From', _isNewComerFrom, (date) {
+                // Optional: allow the user to override the default
+                setState(() {
+                  _isNewComerFrom = date;
+                });
+              }),
+              _buildDateField('Newcomer Until', _isNewComerUntil, (date) {
+                if (date != null && date.isAfter(DateTime.now())) {
+                  setState(() {
+                    _isNewComerUntil = date;
+                  });
+                } else {
+                  _showDialog('Newcomer Until must be in the future');
+                }
+              }),
+            ],
+
+            CheckboxListTile(
+              title: const Text("Is Exceptional?"),
+              value: _isExceptional ?? false,
+              onChanged: (value) {
+                setState(() {
+                  _isExceptional = value;
+                  if (value == false) {
+                    _selectedExceptions = []; // ✅ Reset selected exceptions
+                  }
+                });
+              },
+            ),
+
+            if (_isExceptional == true) ...[
+              const Center(
+                  child: Text('Exceptional Info',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold))),
+              MultiSelectDialogField<ExceptionalStudents>(
+                items: _allExceptions
+                    .map((e) => MultiSelectItem<ExceptionalStudents>(
+                        e, '${e.exceptionName} (${e.exceptionId})'))
+                    .toList(),
+                title: const Text("Select Exception(s)"),
+                selectedColor: Colors.blue,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: Colors.grey.shade400,
+                    width: 1,
+                  ),
+                ),
+                buttonText: const Text(
+                  "Select Exception(s)",
+                  style: TextStyle(fontSize: 16),
+                ),
+                onConfirm: (values) {
+                  setState(() {
+                    _selectedExceptions =
+                        List<ExceptionalStudents>.from(values);
+                  });
+                },
+                initialValue: _selectedExceptions,
+              ),
+            ],
             const Center(
               child: Text('Student Class',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -207,6 +346,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 ['No Ailment', ' Has Ailment'], (value) {}),
 
             _buildTextFieldd('Illness Information', _illnessInfoController),
+            const SizedBox(height: 20),
 
             const SizedBox(height: 20),
             ElevatedButton(
@@ -363,7 +503,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             context: context,
             initialDate: selectedDate ?? DateTime.now(),
             firstDate: DateTime(1900),
-            lastDate: DateTime.now(),
+            lastDate: DateTime(2100),
           );
           if (selected != null) {
             onDateSelected(selected);
@@ -479,15 +619,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       _validateInputs();
     } else {
       debugPrint("User canceled, prompting to enter registration number.");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please enter the student registration number.',
-            style: TextStyle(color: Colors.red),
-          ),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Please enter the student registration number.');
     }
   }
 
@@ -535,76 +667,38 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       _validateInputs();
     } else {
       debugPrint("User canceled, prompting to enter different user info.");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please enter the student another student.',
-            style: TextStyle(color: Colors.red),
-          ),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Please enter the student another student.');
     }
   }
 
   void _validateInputs() {
     if (_selectedClass == null || _selectedClass!.isEmpty) {
       debugPrint("Validation failed: Class is required");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Class is Required', style: TextStyle(color: Colors.red)),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Class is Required');
       return;
     }
 
     if (_nameController.text.isEmpty) {
       debugPrint("Validation failed: Name is required");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Name is Required', style: TextStyle(color: Colors.red)),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Name is Required');
       return;
     }
 
     if (_surnameController.text.isEmpty) {
       debugPrint("Validation failed: Surname is required");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Surname is Required', style: TextStyle(color: Colors.red)),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Surname is Required');
       return;
     }
 
     if (_selectedGender == null || _selectedGender!.isEmpty) {
       debugPrint("Validation failed: Gender is required");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Gender is Required', style: TextStyle(color: Colors.red)),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Gender is Required');
       return;
     }
 
     if (_selectedDateOfBirth == null) {
       debugPrint("Validation failed: Date of Birth is required");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Date Of Birth is Required',
-              style: TextStyle(color: Colors.red)),
-          backgroundColor: Colors.white,
-        ),
-      );
+      _showDialog('Date Of Birth is Required');
       return;
     }
 
@@ -642,76 +736,34 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             student.gender.toLowerCase() == gender);
 
         if (_physicalAddressController.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Physical Address is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
+          _showDialog('Physical Address is Required');
 
           return;
         }
         if (_phoneController.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Parent Phone Number is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
+          _showDialog('Parent Phone Number is Required');
 
           return;
         }
         if (_parentNameController.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Parent Name is Required',
-                style:
-                    TextStyle(color: Colors.red), // Set the text color to red
-              ),
-              backgroundColor: Colors
-                  .white, // Optional: Change the background color for better contrast
-            ),
-          );
+          _showDialog('Parent Name is Required');
 
           return;
         }
 
         if (existingStudents.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Student already exists'),
-            ),
-          );
+          _showDialog('Student already exists');
 
           return;
         }
         if (duplicateId) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(' Registration Number already exists'),
-            ),
-          );
+          _showDialog(' Registration Number already exists');
 
           return;
         }
         if (duplicateDetails) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  ' Student With Same Name, Surname, Class, Gender already exists'),
-            ),
-          );
+          _showDialog(
+              ' Student With Same Name, Surname, Class, Gender already exists');
 
           return;
         }
@@ -746,87 +798,92 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         modifiedFields.add('healthStauts');
         modifiedFields.add('healthDetailedInformation');
         modifiedFields.add('terms');
+        modifiedFields.add('isNewComer');
+        modifiedFields.add('isNewComerFrom');
+        modifiedFields.add('isNewComerUntil');
+        modifiedFields.add('exceptions');
+
+        List<ExceptionalStudents>? exceptions =
+            _selectedExceptions.isNotEmpty ? _selectedExceptions : null;
 
         // Determine the terms to use: either the selected ones or default to globalTermId.
         final List<String> termsToSave =
             _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!];
 
         // Save a student record for each term.
-        for (var term in termsToSave) {
-          final newStudent = Student(
-            id: newId,
-            name: name,
-            surname: surname,
-            regNumber: _regNumberController.text,
-            class_: _selectedClass!,
-            gender: _selectedGender!,
-            age: _selectedDateOfBirth!,
-            phoneNumber: _phoneController.text,
-            paymentStatus: _parentNameController.text,
-            termId: term,
-            syncStatus: false, // Set syncStatus to false
-            lastModified:
-                DateTime.now(), // Set lastModified to current datetime
-            operationType:
-                'create', // Set operationType to 'create' // Set the global term ID
-            physicalAddress: _physicalAddressController.text.isEmpty
-                ? null
-                : _physicalAddressController.text,
-            formerSchool: _formerSchoolController.text.isEmpty
-                ? null
-                : _formerSchoolController.text,
-            religion: _religionController.text.isEmpty
-                ? null
-                : _religionController.text,
-            denomination: _denominationController.text.isEmpty
-                ? null
-                : _denominationController.text,
-            studentIdNumber: _studentIdNumberController.text.isEmpty
-                ? regnumber
-                : _studentIdNumberController.text,
-            nationalIdNumber: _nationalIdNumberController.text.isEmpty
-                ? null
-                : _nationalIdNumberController.text,
-            nationality: _nationalityController.text.isEmpty
-                ? null
-                : _nationalityController.text,
-            district: _districtController.text.isEmpty
-                ? null
-                : _districtController.text,
-            previousSchoolPerformanceResults:
-                _previousSchoolPerformanceResultsController.text.isEmpty
-                    ? null
-                    : _previousSchoolPerformanceResultsController.text,
-            emergencyContactName: _emergencyContactNameController.text.isEmpty
-                ? null
-                : _emergencyContactNameController.text,
-            emergencyContactNumber:
-                _emergencyContactNumberController.text.isEmpty
-                    ? null
-                    : _emergencyContactNumberController.text,
-            healthStauts: _selectedValue.toString(),
-            healthDetailedInformation: _illnessInfoController.text.isEmpty
-                ? null
-                : _illnessInfoController.text,
+        final newStudent = Student(
+          exceptions: exceptions,
 
-            modifiedFields: modifiedFields,
-            // Populate the new 'terms' field with the full list of selected terms.
-            terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
-          );
+          id: newId,
+          name: name,
+          surname: surname,
+          regNumber: _regNumberController.text,
+          class_: _selectedClass!,
+          gender: _selectedGender!,
+          age: _selectedDateOfBirth!,
+          phoneNumber: _phoneController.text,
+          paymentStatus: _parentNameController.text,
+          termId: globalTermId,
+          syncStatus: false, // Set syncStatus to false
+          lastModified: DateTime.now(), // Set lastModified to current datetime
+          operationType:
+              'create', // Set operationType to 'create' // Set the global term ID
+          physicalAddress: _physicalAddressController.text.isEmpty
+              ? null
+              : _physicalAddressController.text,
+          formerSchool: _formerSchoolController.text.isEmpty
+              ? null
+              : _formerSchoolController.text,
+          religion: _religionController.text.isEmpty
+              ? null
+              : _religionController.text,
+          denomination: _denominationController.text.isEmpty
+              ? null
+              : _denominationController.text,
+          studentIdNumber: _studentIdNumberController.text.isEmpty
+              ? regnumber
+              : _studentIdNumberController.text,
+          nationalIdNumber: _nationalIdNumberController.text.isEmpty
+              ? null
+              : _nationalIdNumberController.text,
+          nationality: _nationalityController.text.isEmpty
+              ? null
+              : _nationalityController.text,
+          district: _districtController.text.isEmpty
+              ? null
+              : _districtController.text,
+          previousSchoolPerformanceResults:
+              _previousSchoolPerformanceResultsController.text.isEmpty
+                  ? null
+                  : _previousSchoolPerformanceResultsController.text,
+          emergencyContactName: _emergencyContactNameController.text.isEmpty
+              ? null
+              : _emergencyContactNameController.text,
+          emergencyContactNumber: _emergencyContactNumberController.text.isEmpty
+              ? null
+              : _emergencyContactNumberController.text,
+          healthStauts: _selectedValue.toString(),
+          healthDetailedInformation: _illnessInfoController.text.isEmpty
+              ? null
+              : _illnessInfoController.text,
 
-          box.add(newStudent); // Add the student
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Student Added Successfully')),
+          modifiedFields: modifiedFields,
+          // Populate the new 'terms' field with the full list of selected terms.
+          terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
+          isNewComer: _isNewComer ?? false,
+          isNewComerFrom: _isNewComerFrom,
+          isNewComerUntil: _isNewComerUntil,
         );
+
+        box.add(newStudent); // Add the student
+        await saveParentContact(newStudent); // 👈 Auto save parent contact
+
+        _showDialog('Student Was Added Successfully');
 
         _reloadFormWithNavigator();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'No Selected Term Was Found. Create A New Term or Switch Terms To AnExisting One.')),
-        );
+        _showDialog(
+            'No Selected Term Was Found. Create A New Term or Switch Terms To AnExisting One.');
       }
       // Return to the previous screen
     }

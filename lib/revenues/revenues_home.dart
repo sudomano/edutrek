@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart'; // Custom fonts
 import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/all_payments/filter_payments.dart';
+import 'package:zitf_system/arrears_and_prepayments/arrears_and_prepayments.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
@@ -39,6 +41,7 @@ class _MyPageState extends State<RevenuesHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Incomes and Expenditures'),
@@ -120,18 +123,25 @@ class _MyPageState extends State<RevenuesHome> {
                                           padding: const EdgeInsets.all(8),
                                           children: [
                                             // Elevated cards with icons
-                                            if (admin || subadmin || accountant)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                accountant)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'Summerised Incomes',
                                                 target: SummarizedIncomes(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin || accountant)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                accountant)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'Detailed Incomes',
-                                                target: ViewAllRevenuesFilter(),
+                                                //target: ViewAllRevenuesFilter(),
+                                                target: ViewByScreen(),
                                                 isLargeScreen: true,
                                               ),
 
@@ -146,6 +156,7 @@ class _MyPageState extends State<RevenuesHome> {
                                       : Column(
                                           children: [
                                             if (admin ||
+                                                administration ||
                                                 subadmin) // Elevated cards with icons
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
@@ -153,7 +164,9 @@ class _MyPageState extends State<RevenuesHome> {
                                                 target: SummarizedIncomes(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'Detailed Incomes',

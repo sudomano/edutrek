@@ -31,13 +31,14 @@ class UserAdapter extends TypeAdapter<User> {
       isLogged: fields[11] as bool?,
       userCode: fields[12] as String?,
       modifiedFields: (fields[13] as List?)?.cast<String>(),
+      email: fields[14] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, User obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.username)
       ..writeByte(1)
@@ -65,7 +66,9 @@ class UserAdapter extends TypeAdapter<User> {
       ..writeByte(12)
       ..write(obj.userCode)
       ..writeByte(13)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(14)
+      ..write(obj.email);
   }
 
   @override

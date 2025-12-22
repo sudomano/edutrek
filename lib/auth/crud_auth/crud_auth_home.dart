@@ -22,6 +22,7 @@ class AdminPanelScreen extends StatelessWidget {
     final teacher = loggedInUser.role.toLowerCase() == 'teacher';
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'User Accounts Panel'),

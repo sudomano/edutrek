@@ -176,8 +176,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
     final studentBox = Hive.box<Student>('students');
     final matchingStudents = studentBox.values
         .where((student) =>
-            student.surname.toLowerCase().contains(query.toLowerCase()) &&
-            student.terms!.contains(globalTermId))
+            student.surname.toLowerCase().contains(query.toLowerCase()))
         .toList();
 
     if (matchingStudents.isEmpty) {
@@ -238,7 +237,7 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(capitalize(
-                    'Student: ${_searchResults.first.name} ${_searchResults.first.surname} ${_searchResults.first.class_}')),
+                    'Student: ${_selectedStudentName ?? ''} ${_selectedStudentSurname ?? ''} ${_selectedStudentClass ?? ''}')),
                 DataTable(
                   columns: const [
                     DataColumn(label: Text('Purpose')),
@@ -526,17 +525,11 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
     final amountPaid = double.parse(_paymentAmountController.text);
 
     final adminBox = Hive.box<User>('users');
-    final _results = adminBox.values
-        .where((term) => term.role.toLowerCase() == "admin")
+    final adminUsers = adminBox.values
+        .where((term) =>
+            term.role.toLowerCase() == "admin" ||
+            term.role.toLowerCase() == "administration")
         .toList();
-    final uname = _results.first.username;
-    final uphone = _results.first.phone;
-    final allAdminPaymentsInfo = _generateAdminPaymentSummary(
-        studentName.toString(),
-        studentSurname.toString(),
-        formattedDate,
-        uphone,
-        uname);
 
     final uuid = const Uuid();
 
@@ -596,7 +589,30 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
 
       debugPrint('New Payment Created: $newPayment');
     }
-    sendSms(allAdminPaymentsInfo, uphone);
+    for (var admin in adminUsers) {
+      final uname = admin.username;
+      final uphone = admin.phone;
+
+      final allAdminPaymentsInfo = _generateAdminPaymentSummary(
+          studentName.toString(),
+          studentSurname.toString(),
+          formattedDate,
+          uphone,
+          uname);
+
+      await Future.wait(
+        adminUsers.map((admin) async {
+          try {
+            print(
+                '📨 Sending admin info to ${admin.username} (${admin.phone})');
+            await sendSms(allAdminPaymentsInfo, admin.phone);
+          } catch (e) {
+            print(
+                "⚠️ Failed to send SMS to ${admin.username} (${admin.phone}): $e");
+          }
+        }),
+      );
+    }
     _showSnackBar('Student Payment Made SUCCESSFULLY.');
 
     _resetForm();
@@ -725,14 +741,12 @@ class _MakePaymentScreenState extends State<DuplicatedPaymentWithReceipt> {
                             onChanged: (query) {
                               setState(() {
                                 _searchResults = _students
-                                    .where((student) =>
-                                        (student.name.toLowerCase().contains(
-                                                query.toLowerCase()) ||
-                                            student.surname
-                                                .toLowerCase()
-                                                .contains(
-                                                    query.toLowerCase())) &&
-                                        student.terms!.contains(globalTermId))
+                                    .where((student) => (student.name
+                                            .toLowerCase()
+                                            .contains(query.toLowerCase()) ||
+                                        student.surname
+                                            .toLowerCase()
+                                            .contains(query.toLowerCase())))
                                     .toList();
                               });
                             },

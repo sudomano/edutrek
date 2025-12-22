@@ -61,18 +61,13 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
       // Delete the class itself
       await classesBox.delete(classToDelete.key);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Student and related records deleted successfully')),
-      );
+      _showDialog('Student and related records deleted successfully');
 
       setState(() {
         _foundStudents.remove(classToDelete);
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Student cannot be deleted')),
-      );
+      _showDialog('Student cannot be deleted');
     }
   }
 
@@ -133,15 +128,28 @@ class _DeleteStudentScreenState extends State<DeleteStudentScreen> {
       await studentsBox.delete(classRecord.key);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(
-              '${classesToDelete.length} Classes and related records deleted successfully')),
-    );
+    _showDialog(
+        '${classesToDelete.length} Classes and related records deleted successfully');
 
     setState(() {
       _foundStudents.clear();
     });
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Student Delete Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

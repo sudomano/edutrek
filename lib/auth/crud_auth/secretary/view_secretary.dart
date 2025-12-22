@@ -21,15 +21,13 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen> {
 
   Future<void> _loadUserBox() async {
     userBox = await Hive.openBox<User>('users');
-    setState(() {}); // Refresh the UI after loading the box
+    setState(() {}); // Refresh after loading
   }
 
   Future<void> _deleteSecretary(int index) async {
     await userBox.deleteAt(index);
-    setState(() {}); // Refresh the UI after deletion
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text(' account deleted successfully'),
-    ));
+    setState(() {});
+    _showDialog('User account was deleted successfully');
   }
 
   @override
@@ -37,52 +35,41 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen> {
     final loggedInUser = getLoggedInUser();
     final loggedInRole = loggedInUser.role.toLowerCase();
     final loggedInUsername = loggedInUser.username;
-    final role = loggedInUser.role;
-    final user = loggedInUser.username;
-    bool secretary = false;
-    bool admin = false;
-    bool teacher = false;
-    bool accountant = false;
-    bool guest = false;
-    bool subadmin = false;
 
-    if (role.toLowerCase() == "secretary") {
-      secretary = true;
-    } else if (role.toLowerCase() == "teacher") {
-      teacher = true;
-    } else if (role.toLowerCase() == "accountant") {
-      accountant = true;
-    } else if (role.toLowerCase() == "admin") {
-      admin = true;
-    } else if (role.toLowerCase() == "subadmin") {
-      subadmin = true;
-    } else {
-      guest = true;
-    }
+    final isAdmin = loggedInRole == 'admin';
+    final isAdministration = loggedInRole == 'administration';
+
     return Scaffold(
       appBar: const CustomAppBar(title: 'View Accounts'),
       body: Center(
         child: Container(
-          constraints: BoxConstraints(maxWidth: 600),
+          constraints: const BoxConstraints(maxWidth: 600),
           child: userBox == null
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
                   itemCount: userBox.length,
                   itemBuilder: (context, index) {
                     final user = userBox.getAt(index);
-                    // Skip null or invalid users
                     if (user == null) return Container();
 
-                    // Admin: See all users; Non-admin: See only their own account
-                    if (loggedInRole != 'admin' &&
+                    final role = user.role.toLowerCase();
+
+                    // 🔒 Skip showing admin or administration accounts in this list
+                    if (role == 'admin' || role == 'administration') {
+                      return Container();
+                    }
+
+                    // 🧭 Access control logic
+                    // Admin/Administration can see all other users
+                    // Others see only their own account
+                    if ((!isAdmin && !isAdministration) &&
                         user.username != loggedInUsername) {
                       return Container();
                     }
 
                     return ListTile(
                       title: Text(user.username),
-                      subtitle: Text(
-                          '${user.phone} - ${user.role} '), // Display role here
+                      subtitle: Text('${user.phone} - ${user.role}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -92,22 +79,25 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) =>
-                                      UpdateSecretaryScreen(index: index),
+                                  builder: (context) => UpdateSecretaryScreen(
+                                    index: index,
+                                    canEditRole: (isAdmin ||
+                                        isAdministration), // ✅ Correct
+                                  ),
                                 ),
                               );
                             },
                           ),
-                          if (admin)
+                          if (isAdmin || isAdministration)
                             IconButton(
                               icon: const Icon(Icons.delete),
                               onPressed: () {
                                 showDialog(
                                   context: context,
                                   builder: (context) => AlertDialog(
-                                    title: const Text('Delete Secretary'),
+                                    title: const Text('Delete User'),
                                     content: const Text(
-                                        'Are you sure you want to delete this secretary?'),
+                                        'Are you sure you want to delete this user account?'),
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(context),
@@ -131,6 +121,22 @@ class _ViewSecretaryScreenState extends State<ViewSecretaryScreen> {
                   },
                 ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 User Account Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
       ),
     );
   }

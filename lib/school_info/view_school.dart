@@ -1,31 +1,111 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:pdf/pdf.dart';
-// ignore: unused_import
-import 'package:flutter_pdfview/flutter_pdfview.dart';
-// ignore: unused_import
-import 'package:printing/printing.dart';
+
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
-import '../database/school_info.dart'; // Import the School model
+import 'package:zitf_system/reusable_codes/serializers/school_serializer.dart';
+import '../database/school_info.dart';
+import 'package:zitf_system/main.dart'; // for getDeviceRole, DeviceRole
 
-import 'package:path/path.dart' as path; // To handle file name extensions
-
-class ViewSchoolsScreen extends StatelessWidget {
+class ViewSchoolsScreen extends StatefulWidget {
   const ViewSchoolsScreen({super.key});
 
+  @override
+  State<ViewSchoolsScreen> createState() => _ViewSchoolsScreenState();
+}
+
+class _ViewSchoolsScreenState extends State<ViewSchoolsScreen> {
+  Future<List<School>> _schoolsFuture = Future.value([]);
+  DeviceRole? _role;
+  String? _hostIp;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    _role = await getDeviceRole();
+
+    final prefs = await SharedPreferences.getInstance();
+    _hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
+
+    setState(() {
+      _schoolsFuture = (_role == DeviceRole.host)
+          ? _fetchSchoolsFromHive()
+          : _fetchSchoolsFromServer();
+    });
+  }
+
+  Future<List<School>> _fetchSchoolsFromHive() async {
+    final box = await Hive.openBox<School>('school');
+    final schools = box.values.where((s) => s.termId != null).toList();
+    schools.sort((a, b) => (a.schoolName ?? '')
+        .toLowerCase()
+        .compareTo((b.schoolName ?? '').toLowerCase()));
+    return schools;
+  }
+
+  Future<List<School>> _fetchSchoolsFromServer() async {
+    if (_hostIp == null) {
+      print("Host IP is null, cannot fetch from server");
+      // Show alert in UI
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("⚠️ Host IP not set. Please configure connection."),
+          ),
+        );
+      });
+
+      return [];
+    }
+
+    try {
+      final url = Uri.parse('http://$_hostIp:8080/api/school');
+      final httpClient = HttpClient();
+      final request = await httpClient.getUrl(url);
+      final response = await request.close();
+
+      if (response.statusCode == 200) {
+        final jsonString = await response.transform(utf8.decoder).join();
+        final jsonList = jsonDecode(jsonString) as List;
+        return jsonList
+            .map((json) => schoolFromJson(Map<String, dynamic>.from(json)))
+            .toList();
+      } else {
+        throw Exception('Failed to load school data: ${response.statusCode}');
+      }
+    } catch (e) {
+      print("Error fetching school data: $e");
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error fetching from host: $e")),
+        );
+      });
+      return [];
+    }
+  }
+
   String capitalize(String value) {
+    if (value.isEmpty) return value;
     var result = value[0].toUpperCase();
     for (int i = 1; i < value.length; i++) {
       if (value[i - 1] == " ") {
-        result = result + value[i].toUpperCase();
+        result += value[i].toUpperCase();
       } else {
-        result = result + value[i];
+        result += value[i];
       }
     }
     return result;
@@ -41,7 +121,6 @@ class ViewSchoolsScreen extends StatelessWidget {
       'School Email'
     ];
 
-    // Filter schools by globalTermId
     final data = schools.where((school) => school.termId != null).map((school) {
       return [
         school.schoolName ?? '',
@@ -51,39 +130,29 @@ class ViewSchoolsScreen extends StatelessWidget {
       ];
     }).toList();
 
-    // Create a PDF page
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32), // Add margins for layout
+        margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
           return [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Title of the page
-                pw.Text('School Information',
-                    style: const pw.TextStyle(fontSize: 24)),
-                pw.SizedBox(height: 20),
-              ],
-            ),
-            // The table should now automatically split across multiple pages
+            pw.Text('School Information',
+                style: const pw.TextStyle(fontSize: 24)),
+            pw.SizedBox(height: 20),
             pw.Table.fromTextArray(
               headers: headers,
               data: data,
               cellStyle: const pw.TextStyle(fontSize: 10),
-              headerStyle: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              headerStyle:
+                  pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
               headerDecoration:
                   const pw.BoxDecoration(color: PdfColors.grey300),
               border: pw.TableBorder.all(color: PdfColors.black),
               columnWidths: {
-                0: const pw.FlexColumnWidth(), // Class Name column
-                1: const pw.FlexColumnWidth(), // Created On column
-                2: const pw.FlexColumnWidth(), // Current Term column
-                3: const pw.FlexColumnWidth(), // Current Term column
+                0: const pw.FlexColumnWidth(),
+                1: const pw.FlexColumnWidth(),
+                2: const pw.FlexColumnWidth(),
+                3: const pw.FlexColumnWidth(),
               },
             ),
           ];
@@ -97,51 +166,31 @@ class ViewSchoolsScreen extends StatelessWidget {
   Future<void> savePDFToFile(
       BuildContext context, Uint8List pdfBytes, String fileName) async {
     try {
-      // Request storage permission
       if (await Permission.storage.request().isGranted) {
-        // Get external storage directory
-        Directory? directory = await getExternalStorageDirectory();
-
-        if (directory != null) {
-          // Define the path to the Download folder
-          final downloadDir = Directory('/storage/emulated/0/Download');
-
-          // Create the directory if it doesn't exist
-          if (!await downloadDir.exists()) {
-            await downloadDir.create(recursive: true);
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Download directory created.")));
-          }
-
-          // Define the initial file path
-          String filePath = path.join(downloadDir.path, '$fileName.pdf');
-          int fileIndex = 1;
-
-          // Check if a file with the same name exists and add an index if necessary
-          while (await File(filePath).exists()) {
-            filePath = path.join(downloadDir.path, '$fileName-$fileIndex.pdf');
-            fileIndex++;
-          }
-
-          // Save the PDF file
-          final file = File(filePath);
-          await file.writeAsBytes(pdfBytes);
-
-          // Show success notification
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
-        } else {
-          // Show error notification
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text("Error: External storage directory not found.")));
+        final downloadDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadDir.exists()) {
+          await downloadDir.create(recursive: true);
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Download directory created.")));
         }
+
+        String filePath = path.join(downloadDir.path, '$fileName.pdf');
+        int fileIndex = 1;
+        while (await File(filePath).exists()) {
+          filePath = path.join(downloadDir.path, '$fileName-$fileIndex.pdf');
+          fileIndex++;
+        }
+
+        final file = File(filePath);
+        await file.writeAsBytes(pdfBytes);
+
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
       } else {
-        // Show permission denied notification
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("Permission denied for storage access.")));
       }
     } catch (e) {
-      // Show error notification
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text("Error saving PDF: $e")));
     }
@@ -149,157 +198,127 @@ class ViewSchoolsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_schoolsFuture == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Center(
-            child: Text(
-          'View School',
-          style: TextStyle(
-            fontSize: 14.0, // Adjust font size
-            fontWeight: FontWeight.normal, // Font weight
-            color: Colors.white, // Title color
-            letterSpacing: 1.2, // Slight letter spacing for elegance
+          child: Text(
+            'View School',
+            style: TextStyle(
+              fontSize: 14.0,
+              fontWeight: FontWeight.normal,
+              color: Colors.white,
+              letterSpacing: 1.2,
+            ),
           ),
-        )),
-        backgroundColor:
-            const Color.fromARGB(255, 38, 140, 191), // AppBar background color
-        elevation: 4.0, // Subtle shadow
+        ),
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+        elevation: 4.0,
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.picture_as_pdf,
-              color: Colors.white,
-            ),
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
             onPressed: () async {
-              // Generate the PDF
-              final box = await Hive.openBox<School>('school');
-              List<School> schools = box.values.toList();
-              Uint8List pdfBytes = await generateSchoolPDF(schools);
+              final schools = await _schoolsFuture;
+              final pdfBytes = await generateSchoolPDF(schools);
 
-              // Show the PDF preview and confirm if the user wants to save it
-              bool confirmSave =
+              final confirmSave =
                   await PDFPreviewUtil.showPDFPreview(context, pdfBytes);
-
               if (confirmSave) {
-                // Save the PDF after confirmation
                 await savePDFToFile(context, pdfBytes, 'school_report');
               }
             },
           ),
         ],
       ),
-      body: Container(
-        padding: const EdgeInsets.all(16.0),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color.fromARGB(255, 247, 250, 247),
-              Color.fromARGB(255, 252, 253, 253),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: FutureBuilder<List<School>>(
-          future: Hive.openBox<School>('school').then((box) {
-            var schools = box.values
-                .where((schoolItem) => schoolItem.termId != null)
-                .toList();
+      body: FutureBuilder<List<School>>(
+        future: _schoolsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasData) {
+            final schools = snapshot.data!;
+            if (schools.isEmpty) {
+              return const Center(child: Text('No school info found.'));
+            }
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = constraints.maxWidth;
+                final fontSize = maxWidth < 600 ? 12.0 : 14.0;
 
-            // Debug lines to print each record's termId
-
-            schools.sort((a, b) => (a.schoolName ?? '')
-                .toLowerCase()
-                .compareTo((b.schoolName ?? '').toLowerCase()));
-
-            return schools;
-          }),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
-            } else if (snapshot.hasData) {
-              final List<School> schools = snapshot.data!;
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxWidth = constraints.maxWidth;
-                  final fontSize = maxWidth < 600
-                      ? 12.0
-                      : 14.0; // Adjust font size based on device width
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: Center(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          headingRowHeight: 40,
-                          dataRowHeight: 60,
-                          columns: [
-                            DataColumn(
-                                label: Text('Id',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('Logo',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('School Name',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('School Address',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('School Phone Number',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('School Email',
-                                    style: TextStyle(fontSize: fontSize))),
-                          ],
-                          rows: schools.map((schoolItem) {
-                            return DataRow(cells: [
-                              DataCell(Text(schoolItem.id.toString(),
+                return SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: Center(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        headingRowHeight: 40,
+                        dataRowHeight: 60,
+                        columns: [
+                          DataColumn(
+                              label: Text('Id',
                                   style: TextStyle(fontSize: fontSize))),
-                              DataCell(
-                                schoolItem.schoolLogoPath != null
-                                    ? Image.file(
-                                        File(schoolItem.schoolLogoPath!),
-                                        width: 50,
-                                        height: 50,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : const Icon(Icons.image_not_supported,
-                                        size: 50,
-                                        color: Colors
-                                            .grey), // Placeholder for missing logo
-                              ),
-                              DataCell(Text(
-                                  toBeginningOfSentenceCase(
-                                      schoolItem.schoolName ?? ''),
+                          DataColumn(
+                              label: Text('Logo',
                                   style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(
-                                  toBeginningOfSentenceCase(
-                                      schoolItem.schoolAddress ?? ''),
+                          DataColumn(
+                              label: Text('School Name',
                                   style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(schoolItem.schoolPhoneNumber ?? '',
+                          DataColumn(
+                              label: Text('School Address',
                                   style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(schoolItem.schoolEmail ?? '',
+                          DataColumn(
+                              label: Text('School Phone Number',
                                   style: TextStyle(fontSize: fontSize))),
-                            ]);
-                          }).toList(),
-                        ),
+                          DataColumn(
+                              label: Text('School Email',
+                                  style: TextStyle(fontSize: fontSize))),
+                        ],
+                        rows: schools.map((schoolItem) {
+                          return DataRow(cells: [
+                            DataCell(Text(schoolItem.id.toString(),
+                                style: TextStyle(fontSize: fontSize))),
+                            DataCell(
+                              schoolItem.schoolLogoPath != null
+                                  ? Image.file(
+                                      File(schoolItem.schoolLogoPath!),
+                                      width: 50,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : const Icon(Icons.image_not_supported,
+                                      size: 50, color: Colors.grey),
+                            ),
+                            DataCell(Text(
+                                toBeginningOfSentenceCase(
+                                        schoolItem.schoolName ?? '') ??
+                                    '',
+                                style: TextStyle(fontSize: fontSize))),
+                            DataCell(Text(
+                                toBeginningOfSentenceCase(
+                                        schoolItem.schoolAddress ?? '') ??
+                                    '',
+                                style: TextStyle(fontSize: fontSize))),
+                            DataCell(Text(schoolItem.schoolPhoneNumber ?? '',
+                                style: TextStyle(fontSize: fontSize))),
+                            DataCell(Text(schoolItem.schoolEmail ?? '',
+                                style: TextStyle(fontSize: fontSize))),
+                          ]);
+                        }).toList(),
                       ),
                     ),
-                  );
-                },
-              );
-            } else {
-              return const Center(
-                child: Text('No school info found.'),
-              );
-            }
-          },
-        ),
+                  ),
+                );
+              },
+            );
+          } else {
+            return const Center(child: Text('No school info found.'));
+          }
+        },
       ),
     );
   }

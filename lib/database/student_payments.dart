@@ -48,6 +48,12 @@ class StudentPayment extends HiveObject {
   @HiveField(14)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  @HiveField(15)
+  String? username;
+
+  @HiveField(16)
+  String? role;
+
   StudentPayment({
     required this.studentName,
     required this.studentSurname,
@@ -64,6 +70,8 @@ class StudentPayment extends HiveObject {
     this.receiptNumber,
     this.studentRegNumber,
     this.modifiedFields,
+    this.username, // ✅ NEW
+    this.role, // ✅ NEW
   });
 
   StudentPayment copyWith({
@@ -82,6 +90,8 @@ class StudentPayment extends HiveObject {
     String? studentRegNumber,
     String? receiptNumber,
     List<String>? modifiedFields,
+    String? username, // ✅ NEW
+    String? role, // ✅ NEW
   }) {
     return StudentPayment(
       studentName: studentName ?? this.studentName,
@@ -99,6 +109,8 @@ class StudentPayment extends HiveObject {
       studentRegNumber: studentRegNumber ?? this.studentRegNumber,
       receiptNumber: receiptNumber ?? this.receiptNumber,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      username: username ?? this.username, // ✅
+      role: role ?? this.role, // ✅
     );
   }
 }

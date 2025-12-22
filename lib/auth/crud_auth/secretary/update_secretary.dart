@@ -6,8 +6,13 @@ import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 
 class UpdateSecretaryScreen extends StatefulWidget {
   final int index;
+  final bool canEditRole; // 👈 added flag
 
-  UpdateSecretaryScreen({required this.index});
+  const UpdateSecretaryScreen({
+    required this.index,
+    required this.canEditRole,
+    super.key,
+  });
 
   @override
   _UpdateSecretaryScreenState createState() => _UpdateSecretaryScreenState();
@@ -15,99 +20,104 @@ class UpdateSecretaryScreen extends StatefulWidget {
 
 class _UpdateSecretaryScreenState extends State<UpdateSecretaryScreen> {
   late User _secretary;
+  late Box<User> userBox;
+
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  String? _selectedRole;
+
   bool _isPasswordVisible = true;
+
+  final List<String> _roles = [
+    'sub-admin',
+    'secretary',
+    'accountant',
+    'teacher',
+    'administration'
+  ];
 
   @override
   void initState() {
     super.initState();
+    _initBox();
+  }
+
+  Future<void> _initBox() async {
+    userBox = await Hive.openBox<User>('users');
     _loadSecretaryData();
   }
 
-  Future<void> _loadSecretaryData() async {
-    var userBox = await Hive.openBox<User>('users');
+  void _loadSecretaryData() {
     _secretary = userBox.getAt(widget.index)!;
     _usernameController.text = _secretary.username;
     _passwordController.text = _secretary.password;
     _phoneController.text = _secretary.phone;
+    _emailController.text = _secretary.email ?? '';
+    _selectedRole = _secretary.role ?? 'secretary';
   }
 
   Future<void> _updateSecretary() async {
-    if (_formKey.currentState!.validate()) {
-      try {
-        var userBox = await Hive.openBox<User>('users');
-        _secretary = userBox.getAt(widget.index)!;
+    if (!_formKey.currentState!.validate()) return;
 
-        int? newId = _secretary.id;
+    try {
+      _secretary = userBox.getAt(widget.index)!;
 
-        List<String> modifiedFields = _secretary.modifiedFields ??
-            []; // Initialize with existing modified fields
+      List<String> modifiedFields = _secretary.modifiedFields ?? [];
 
-// Append new modifications without overwriting
-        if (_secretary.id != newId) {
-          if (!modifiedFields.contains('id')) {
-            modifiedFields.add('id');
-          }
+      void checkFieldChange(String field, String oldValue, String newValue) {
+        if (oldValue.toLowerCase() != newValue.toLowerCase() &&
+            !modifiedFields.contains(field)) {
+          modifiedFields.add(field);
         }
-        print(_secretary.id);
-        print(newId);
-
-        if (_secretary.username.toLowerCase() !=
-            _usernameController.text.toLowerCase()) {
-          if (!modifiedFields.contains('username')) {
-            modifiedFields.add('username');
-          }
-        }
-        print(_secretary.username.toLowerCase());
-        print(_usernameController.text.toLowerCase());
-
-        if (_secretary.password.toLowerCase() !=
-            _passwordController.text.toLowerCase()) {
-          if (!modifiedFields.contains('password')) {
-            modifiedFields.add('password');
-          }
-        }
-        print(_secretary.password.toLowerCase());
-        print(_passwordController.text.toLowerCase());
-
-        if (_secretary.phone.toLowerCase() !=
-            _phoneController.text.toLowerCase()) {
-          if (!modifiedFields.contains('phone')) {
-            modifiedFields.add('phone');
-          }
-        }
-        print(_secretary.phone.toLowerCase());
-        print(_phoneController.text.toLowerCase());
-
-        final code = _secretary.userCode;
-        _secretary.id = newId;
-        _secretary.username = _usernameController.text;
-        _secretary.password = _passwordController.text;
-        _secretary.phone = _phoneController.text;
-        _secretary.operationType = 'update';
-        _secretary.lastModified = DateTime.now();
-        _secretary.termId = globalTermId;
-        _secretary.syncStatus = false;
-        _secretary.userCode = code;
-        modifiedFields = modifiedFields;
-
-        await userBox.putAt(widget.index, _secretary);
-
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Secretary updated successfully'),
-        ));
-
-        Navigator.pop(context);
-        Navigator.pop(context);
-      } catch (e) {
-        print("Error updating secretary: $e");
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Failed to update secretary. Please try again.'),
-        ));
       }
+
+      checkFieldChange(
+          'username', _secretary.username, _usernameController.text);
+      checkFieldChange(
+          'password', _secretary.password, _passwordController.text);
+      checkFieldChange('phone', _secretary.phone, _phoneController.text);
+      checkFieldChange('email', _secretary.email ?? '', _emailController.text);
+
+      // 👇 Only track role if allowed to edit
+      if (widget.canEditRole) {
+        checkFieldChange('role', _secretary.role ?? '', _selectedRole ?? '');
+      }
+
+      final code = _secretary.userCode;
+
+      _secretary
+        ..username = _usernameController.text
+        ..password = _passwordController.text
+        ..phone = _phoneController.text
+        ..email = _emailController.text
+        ..operationType = 'update'
+        ..lastModified = DateTime.now()
+        ..termId = globalTermId
+        ..syncStatus = false
+        ..userCode = code
+        ..modifiedFields = modifiedFields;
+
+      // 👇 Only update role if editing is allowed
+      if (widget.canEditRole) {
+        _secretary.role = _selectedRole!;
+      }
+
+      await userBox.putAt(widget.index, _secretary);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Secretary updated successfully')),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      print("Error updating secretary: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Failed to update secretary. Please try again.')),
+      );
     }
   }
 
@@ -124,13 +134,13 @@ class _UpdateSecretaryScreenState extends State<UpdateSecretaryScreen> {
               controller: _usernameController,
               decoration: const InputDecoration(labelText: 'Username'),
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (value == null || value.isEmpty)
                   return 'Please enter a username';
-                }
                 return null;
               },
             ),
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _passwordController,
               decoration: InputDecoration(
@@ -150,24 +160,60 @@ class _UpdateSecretaryScreenState extends State<UpdateSecretaryScreen> {
               ),
               obscureText: !_isPasswordVisible,
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (value == null || value.isEmpty)
                   return 'Please enter a password';
-                }
                 return null;
               },
             ),
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _phoneController,
               decoration: const InputDecoration(labelText: 'Phone Number'),
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (value == null || value.isEmpty)
                   return 'Please enter a phone number';
+                if (!RegExp(r'^\d{10,}$').hasMatch(value)) {
+                  return 'Enter a valid phone number';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
+
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: 'Email Address'),
+              validator: (value) {
+                if (value == null || value.isEmpty)
+                  return 'Please enter an email';
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value)) {
+                  return 'Enter a valid email address';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 👇 Role Dropdown (disabled if user cannot edit role)
+            DropdownButtonFormField<String>(
+              value: _selectedRole,
+              decoration: InputDecoration(
+                labelText: 'Assigned Role',
+                enabled: widget.canEditRole,
+              ),
+              items: _roles.map((role) {
+                return DropdownMenuItem<String>(
+                  value: role,
+                  child: Text(role),
+                );
+              }).toList(),
+              onChanged: widget.canEditRole
+                  ? (value) => setState(() => _selectedRole = value)
+                  : null,
+            ),
+            const SizedBox(height: 24),
+
             ElevatedButton(
               onPressed: _updateSecretary,
               child: const Text('Update Secretary'),
@@ -183,6 +229,7 @@ class _UpdateSecretaryScreenState extends State<UpdateSecretaryScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 }

@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 
 part 'student.g.dart';
 
@@ -102,6 +103,18 @@ class Student extends HiveObject {
   @HiveField(33)
   List<String>? terms;
 
+  @HiveField(34)
+  List<ExceptionalStudents>? exceptions; // Link to exception entries
+
+  @HiveField(35)
+  bool? isNewComer;
+
+  @HiveField(36)
+  DateTime? isNewComerFrom;
+
+  @HiveField(37)
+  DateTime? isNewComerUntil;
+
   Student({
     required this.name,
     required this.surname,
@@ -134,6 +147,10 @@ class Student extends HiveObject {
     this.healthStauts,
     this.healthDetailedInformation,
     this.modifiedFields,
+    this.exceptions,
+    this.isNewComer,
+    this.isNewComerFrom,
+    this.isNewComerUntil,
     List<String>? terms,
   })  : presentDates = presentDates ?? [],
         absentDates = absentDates ?? [],
@@ -172,6 +189,10 @@ class Student extends HiveObject {
     String? healthDetailedInformation,
     List<String>? modifiedFields,
     List<String>? terms,
+    List<ExceptionalStudents>? exceptions,
+    bool? isNewComer,
+    DateTime? isNewComerFrom,
+    DateTime? isNewComerUntil,
   }) {
     return Student(
       name: name ?? this.name,
@@ -209,6 +230,10 @@ class Student extends HiveObject {
           healthDetailedInformation ?? this.healthDetailedInformation,
       modifiedFields: modifiedFields ?? this.modifiedFields,
       terms: terms ?? this.terms,
+      exceptions: exceptions ?? this.exceptions,
+      isNewComer: isNewComer ?? this.isNewComer,
+      isNewComerFrom: isNewComerFrom ?? this.isNewComerFrom,
+      isNewComerUntil: isNewComerUntil ?? this.isNewComerUntil,
     );
   }
 }

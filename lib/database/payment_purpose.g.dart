@@ -27,13 +27,15 @@ class PaymentPurposeAdapter extends TypeAdapter<PaymentPurpose> {
       associatedClasses: (fields[7] as List?)?.cast<String>(),
       purposeCode: fields[8] as String?,
       modifiedFields: (fields[9] as List?)?.cast<String>(),
+      exceptions: (fields[10] as List?)?.cast<ExceptionalStudents>(),
+      forNewcomersOnly: fields[11] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PaymentPurpose obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +55,11 @@ class PaymentPurposeAdapter extends TypeAdapter<PaymentPurpose> {
       ..writeByte(8)
       ..write(obj.purposeCode)
       ..writeByte(9)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(10)
+      ..write(obj.exceptions)
+      ..writeByte(11)
+      ..write(obj.forNewcomersOnly);
   }
 
   @override

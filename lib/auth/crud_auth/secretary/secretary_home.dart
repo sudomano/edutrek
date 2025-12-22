@@ -22,6 +22,8 @@ class SecretaryScreen extends StatelessWidget {
 
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
+
     return Scaffold(
       appBar: const CustomAppBar(title: 'Staff Panel'),
       body: Center(
@@ -43,7 +45,7 @@ class SecretaryScreen extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (admin || subadmin)
+                    if (admin || administration)
                       _buildElevatedCard(
                         context,
                         icon: Icons.add,

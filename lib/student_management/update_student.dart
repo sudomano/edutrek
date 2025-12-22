@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:multi_select_flutter/dialog/multi_select_dialog_field.dart';
+import 'package:multi_select_flutter/util/multi_select_item.dart';
 import 'package:zitf_system/database/classes.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/terms.dart';
@@ -38,6 +41,12 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
   final _previousSchoolPerformanceResultsController = TextEditingController();
   final _emergencyContactNameController = TextEditingController();
   final _emergencyContactNumberController = TextEditingController();
+  List<ExceptionalStudents> _selectedExceptions = [];
+  List<ExceptionalStudents> _exceptionalStudents = [];
+
+  bool _isNewComer = false;
+  DateTime? _isNewComerFrom;
+  DateTime? _isNewComerUntil;
 
   Student? _foundStudent;
 
@@ -51,6 +60,35 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
     super.initState();
     _loadClasses();
     _loadTerms(); // Load terms when the screen initializes
+    _loadExceptionalStudents();
+  }
+
+  void _loadExceptionalStudents() async {
+    final box =
+        await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+    final all = box.values.toList();
+
+    setState(() {
+      _exceptionalStudents = all
+          .where((e) => e.exceptionStatus!.toLowerCase() == 'active')
+          .toList();
+    });
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Student Update Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadTerms() async {
@@ -84,15 +122,19 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
     });
 
     if (_matchingStudents.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No students found')),
-      );
+      _showDialog('No students found');
     }
   }
 
   void _selectStudent(Student student) async {
+    print("🟨 Selecting student: ${student.name}");
+
     setState(() {
       _foundStudent = student;
+      // 🔍 Check what comes from the student
+      print(
+          "📦 student.exceptions: ${student.exceptions?.map((e) => e.exceptionName).toList()}");
+
       _illnessInfoController.text =
           student.healthDetailedInformation.toString();
       _selectedValue = student.healthStauts.toString();
@@ -120,6 +162,14 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
           student.emergencyContactNumber.toString();
       // Preload the selected terms
 // Ensure _selectedTerms is assigned a valid list (handle null case)
+      // 🔹 Set exceptional and newcomer values from the existing student
+      _selectedExceptions = student.exceptions ?? [];
+      print(
+          "✅ _selectedExceptions after load: ${_selectedExceptions.map((e) => e.exceptionName).toList()}");
+
+      _isNewComer = student.isNewComer ?? false;
+      _isNewComerFrom = student.isNewComerFrom;
+      _isNewComerUntil = student.isNewComerUntil;
       _selectedTerms = List<String>.from(student.terms ?? []);
       _matchingStudents = [];
     });
@@ -260,6 +310,93 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
               _buildTextField('Illness Information', _illnessInfoController),
               const SizedBox(height: 20),
               // 🔹 Add Term Selection UI Here 🔹
+
+              const Center(
+                child: Text('Special Exceptions',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              MultiSelectDialogField<ExceptionalStudents>(
+                items: _exceptionalStudents
+                    .map((e) => MultiSelectItem(e, e.exceptionName.toString()))
+                    .toList(),
+                title: const Text("Select Exceptions"),
+                // ✅ Map _selectedExceptions by matching exceptionName from _exceptionalStudents
+                initialValue: _selectedExceptions
+                    .map((selected) {
+                      return _exceptionalStudents.firstWhere(
+                        (e) => e.exceptionName == selected.exceptionName,
+                        orElse: () =>
+                            ExceptionalStudents()..exceptionName = 'not found',
+                      );
+                    })
+                    .where((e) => e.exceptionName != 'not found')
+                    .toList(),
+                onConfirm: (values) {
+                  print(
+                      "🎯 Selected exceptions: ${values.map((e) => e.exceptionName).toList()}");
+
+                  setState(() {
+                    _selectedExceptions = values;
+                  });
+                },
+              ),
+              const SizedBox(height: 20),
+
+              CheckboxListTile(
+                title: const Text("Is Newcomer?"),
+                value: _isNewComer ?? false,
+                onChanged: (value) {
+                  setState(() {
+                    _isNewComer = value!;
+                    if (value == true) {
+                      Terms? currentTerm;
+
+                      final termsBox = Hive.box<Terms>('terms');
+                      final terms = termsBox.values
+                          .where((term) => term.termId == globalTermId);
+                      if (terms.isNotEmpty) {
+                        currentTerm = terms.first;
+                      }
+
+                      final now = DateTime.now();
+                      final termEnd = currentTerm?.endDate;
+                      final DateTime defaultUntilDate =
+                          (termEnd != null && termEnd.isAfter(now))
+                              ? termEnd
+                              : now.add(const Duration(days: 30));
+
+                      setState(() {
+                        _isNewComerFrom = now;
+                        _isNewComerUntil = defaultUntilDate;
+                      });
+                    } else {
+                      setState(() {
+                        _isNewComerFrom = null;
+                        _isNewComerUntil = null;
+                      });
+                    }
+                  });
+                },
+              ),
+
+              if (_isNewComer == true) ...[
+                _buildDateField('Newcomer From', _isNewComerFrom, (date) {
+                  // Optional: allow the user to override the default
+                  setState(() {
+                    _isNewComerFrom = date;
+                  });
+                }),
+                _buildDateField('Newcomer Until', _isNewComerUntil, (date) {
+                  if (date != null && date.isAfter(DateTime(1900))) {
+                    setState(() {
+                      _isNewComerUntil = date;
+                    });
+                  } else {
+                    _showDialog('Newcomer Until must be in the future');
+                  }
+                }),
+              ],
               const SizedBox(height: 20),
               const Center(
                 child: Text('Select Terms (Update if necessary)',
@@ -433,7 +570,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
             context: context,
             initialDate: selectedDate ?? DateTime.now(),
             firstDate: DateTime(1900),
-            lastDate: DateTime.now(),
+            lastDate: DateTime(2100),
           );
           if (selected != null) {
             onDateSelected(selected);
@@ -507,9 +644,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
       );
 
       if (currentStudent.id == -1) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error: Student not found')),
-        );
+        _showDialog('Error: Student not found');
         return;
       }
 
@@ -717,6 +852,35 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         }
       }
 
+      if (student.exceptions != null) {
+        if (!modifiedFields.contains('exceptions')) {
+          modifiedFields.add('exceptions');
+        }
+      }
+
+      if (student.exceptions != _selectedExceptions) {
+        if (!modifiedFields.contains('exceptions')) {
+          modifiedFields.add('exceptions');
+        }
+      }
+      if (student.isNewComer != _isNewComer) {
+        if (!modifiedFields.contains('isNewComer')) {
+          modifiedFields.add('isNewComer');
+        }
+      }
+
+      if (student.isNewComerFrom != _isNewComerFrom) {
+        if (!modifiedFields.contains('isNewComerFrom')) {
+          modifiedFields.add('isNewComerFrom');
+        }
+      }
+
+      if (student.isNewComerUntil != _isNewComerUntil) {
+        if (!modifiedFields.contains('isNewComerUntil')) {
+          modifiedFields.add('isNewComerUntil');
+        }
+      }
+
       final updatedStudent = Student(
         id: id,
         name: name,
@@ -769,6 +933,12 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         healthDetailedInformation: _illnessInfoController.text.isEmpty
             ? null
             : _illnessInfoController.text, // Set operationType to 'update'
+        // ... existing fields ...
+        exceptions: _selectedExceptions, // AList<ExceptionalStudents>
+        isNewComer: _isNewComer,
+        isNewComerFrom: _isNewComerFrom,
+        isNewComerUntil: _isNewComerUntil,
+        // ...
         modifiedFields: modifiedFields,
         terms: List<String>.from(_selectedTerms), // ✅ Save Updated Terms Here
       );
@@ -805,9 +975,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
           existingStudent.age != '1970' &&
           existingStudent.phoneNumber != '' &&
           existingStudent.paymentStatus != '') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Student already exists')),
-        );
+        _showDialog('Student already exists');
         return;
       }
       final key = box.keys.firstWhere((k) => box.get(k) == student);
@@ -818,9 +986,8 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
       // Update records in the studentPayments model where termId == globalTermId
       // Your logic for fetching the global term ID
-
       final paymentsToUpdate = paymentBox.values.where((payment) {
-        return payment.termId == globalTermId &&
+        return student.terms!.contains(payment.termId) &&
             payment.studentName.toLowerCase() == student.name.toLowerCase() &&
             payment.studentSurname.toLowerCase() ==
                 student.surname.toLowerCase() &&
@@ -832,7 +999,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
           studentName: updatedStudent.name,
           studentSurname: updatedStudent.surname,
           studentClass: updatedStudent.class_,
-          termId: globalTermId, // Retain the globalTermId
+          termId: payment.termId, // 🔁 Retain each termId
           syncStatus: false, // Set syncStatus to false
           lastModified: DateTime.now(), // Set lastModified to current datetime
           operationType: 'update', // Set operationType to 'update'
@@ -845,9 +1012,7 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Student Updated Successfully')),
-      );
+      _showDialog('Student Updated Successfully');
 
       setState(() {
         _foundStudent = null;
@@ -897,6 +1062,10 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
         // Reset form validation state
         _formKey.currentState?.reset();
+        _selectedExceptions = [];
+        _isNewComer = false;
+        _isNewComerFrom = null;
+        _isNewComerUntil = null;
       });
     }
   }

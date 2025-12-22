@@ -33,14 +33,22 @@ class User extends HiveObject {
 
   @HiveField(9)
   String? operationType; // Nullable field for 'create', 'update', or 'delete'
+
   @HiveField(10)
   int? id;
+
   @HiveField(11)
   bool? isLogged = false;
+
   @HiveField(12)
   String? userCode; // Nullable field for 'create', 'update', or 'delete'
+
   @HiveField(13)
   List<String>? modifiedFields; // Tracks fields that were modified
+
+  @HiveField(14)
+  String? email;
+
   User({
     required this.username,
     required this.password,
@@ -56,6 +64,7 @@ class User extends HiveObject {
     this.isLogged,
     this.userCode,
     this.modifiedFields,
+    this.email,
   });
 
   User copyWith({
@@ -73,6 +82,7 @@ class User extends HiveObject {
     bool? isLogged = false,
     String? userCode,
     List<String>? modifiedFields,
+    String? email,
   }) {
     return User(
       username: username ?? this.username,
@@ -89,6 +99,7 @@ class User extends HiveObject {
       isLogged: isLogged ?? this.isLogged,
       userCode: userCode ?? this.userCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      email: email ?? this.email,
     );
   }
 }

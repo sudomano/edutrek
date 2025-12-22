@@ -45,6 +45,7 @@ class _MyPageState extends State<SchoolHomeScreen> {
     final teacher = loggedInUser.role.toLowerCase() == 'teacher';
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     final isLargeScreen =
         MediaQuery.of(context).size.width > 600; // Example threshold
@@ -119,7 +120,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                             crossAxisSpacing: crossAxisSpacing,
                                             padding: const EdgeInsets.all(8),
                                             children: [
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
 
                                                 // Elevated cards with icons
                                                 const ElevatedCard(
@@ -129,7 +132,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   target: CreateSchool(),
                                                   isLargeScreen: true,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 const ElevatedCard(
                                                   icon: Icons.view_list,
                                                   text:
@@ -137,7 +142,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   target: ViewSchoolsScreen(),
                                                   isLargeScreen: true,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 _buildElevatedCardWithDialog(
                                                   context,
                                                   icon: Icons.update,
@@ -146,7 +153,7 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   isLargeScreen:
                                                       true, // Flag to check screen size
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin || administration)
                                                 const ElevatedCard(
                                                   icon: Icons.delete,
                                                   text:
@@ -158,7 +165,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                           )
                                         : Column(
                                             children: [
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
 
                                                 // Elevated cards with icons
                                                 const ElevatedCard(
@@ -167,7 +176,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   target: CreateSchool(),
                                                   isLargeScreen: false,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 const ElevatedCard(
                                                   icon: Icons.view_list,
                                                   text:
@@ -175,7 +186,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   target: ViewSchoolsScreen(),
                                                   isLargeScreen: false,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 _buildElevatedCardWithDialog(
                                                   context,
                                                   icon: Icons.update,
@@ -184,7 +197,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   isLargeScreen:
                                                       false, // Flag to check screen size
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 const ElevatedCard(
                                                   icon: Icons.delete,
                                                   text:
@@ -192,7 +207,9 @@ class _MyPageState extends State<SchoolHomeScreen> {
                                                   target: DeleteSchoolScreen(),
                                                   isLargeScreen: false,
                                                 ),
-                                              if (admin || subadmin)
+                                              if (admin ||
+                                                  administration ||
+                                                  subadmin)
                                                 const ElevatedCard(
                                                   icon: Icons.home,
                                                   text: 'Go to Home Page',

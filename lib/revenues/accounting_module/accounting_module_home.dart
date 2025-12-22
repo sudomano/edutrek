@@ -41,6 +41,7 @@ class _MyPageState extends State<AccountingModuleHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Advanced Accounting'),
@@ -133,14 +134,18 @@ class _MyPageState extends State<AccountingModuleHome> {
                                               target: AssetEntriesHome(),
                                               isLargeScreen: true,
                                             ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.money,
                                                 text: 'Incomes Statement',
                                                 target: FinancialHome(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.money_off,
                                                 text:
@@ -168,14 +173,18 @@ class _MyPageState extends State<AccountingModuleHome> {
                                               target: AssetEntriesHome(),
                                               isLargeScreen: false,
                                             ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.money,
                                                 text: 'Incomes Statement',
                                                 target: FinancialHome(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.money_off,
                                                 text:

@@ -1,14 +1,20 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
+import 'package:zitf_system/main.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart'; // Import the School model
-import 'package:path/path.dart' as path; // For handling file paths
+import 'package:path/path.dart' as path;
+import 'package:zitf_system/reusable_codes/serializers/school_serializer.dart'; // For handling file paths
+
+import 'package:http/http.dart' as http;
 
 class CreateSchool extends StatefulWidget {
   const CreateSchool({super.key});
@@ -23,8 +29,35 @@ class _CreateSchoolState extends State<CreateSchool> {
   final _schoolAddressController = TextEditingController();
   final _schoolPhoneNumberController = TextEditingController();
   final _schoolEmailController = TextEditingController();
+  DeviceRole? _role;
+  String? _hostIp;
 
   String? _schoolLogoPath; // To store the selected image path
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _role = stringToDeviceRole(prefs.getString('device_role') ?? '');
+      _hostIp = prefs.getString('host_ip');
+    });
+  }
+
+  DeviceRole? stringToDeviceRole(String role) {
+    switch (role) {
+      case 'client':
+        return DeviceRole.client;
+      case 'host':
+        return DeviceRole.host;
+      default:
+        return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,14 +120,10 @@ class _CreateSchoolState extends State<CreateSchool> {
           _schoolLogoPath = newFilePath; // Save the new file path
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logo Image Selected!')),
-        );
+        await _showDialog('Logo Image Selected!');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      await _showDialog('Could not pick image: $e');
     }
   }
 
@@ -129,70 +158,190 @@ class _CreateSchoolState extends State<CreateSchool> {
   void _submit() async {
     if (_formKey.currentState!.validate()) {
       final newPkValue = uuid.v4();
+      final prefs = await SharedPreferences.getInstance();
 
       final schoolName = _schoolNameController.text;
       final schoolAddress = _schoolAddressController.text;
       final schoolPhoneNumber = _schoolPhoneNumberController.text;
       final schoolEmail = _schoolEmailController.text;
       final schoolCode = newPkValue;
+      int newId = await getNextId();
 
-      final box = await Hive.openBox<School>('school');
+      List<String> modifiedFields = [];
+      modifiedFields.add('schoolName');
+      modifiedFields.add('schoolAddress');
+      modifiedFields.add('schoolPhoneNumber');
+      modifiedFields.add('schoolEmail');
+      modifiedFields.add('termId');
+      modifiedFields.add('id');
+      modifiedFields.add('schoolCode');
 
-      if (box.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  'Only One School Is Allowed For This System. You Can Now Only Update!')),
-        );
-        Future.delayed(const Duration(seconds: 3), () {});
-      } else {
-        final existingSchools = box.values.cast<School>().where(
-              (s) => s.schoolName == schoolName,
-            );
-        School? existingSchool =
-            existingSchools.isNotEmpty ? existingSchools.first : null;
+      if (_role == null) {
+        await _showDialog("⚠️ Device role not configured. Cannot proceed.");
+        return;
+      }
+      if (_role == DeviceRole.client) {
+        final schoolToSend = <Map<String, dynamic>>[];
 
-        if (existingSchool != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('School already exists')),
+        schoolToSend.add({
+          "id": newId,
+          "schoolName": schoolName.trim().toLowerCase(),
+          "schoolCode": schoolCode.trim(),
+          "schoolAddress": schoolAddress,
+          "schoolPhoneNumber": schoolPhoneNumber,
+          "schoolEmail": schoolEmail,
+          "termId": globalTermId,
+          "schoolLogoPath": _schoolLogoPath,
+          "syncStatus": false,
+          "lastModified": DateTime.now().toIso8601String(),
+          "operationType": "create",
+          "modifiedFields": [
+            "id",
+            "schoolName",
+            "schoolCode",
+            "schoolAddress",
+            "schoolPhoneNumber",
+            "schoolEmail",
+            "termId",
+          ],
+        });
+
+        final hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
+        final uri = Uri.parse('http://$hostIp:8080/api/school/bulk');
+
+        try {
+          final response = await http.post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({"schools": schoolToSend}), // ✅ Aligns with server
           );
-          return;
+
+          if (response.statusCode == 200) {
+            final Map<String, dynamic> responseData = jsonDecode(response.body);
+            final List<dynamic> feedback = responseData['feedback'] ?? [];
+
+            int insertedCount = responseData['insertedCount'] ?? 0;
+
+            if (feedback.isEmpty) {
+              await _showDialog("⚠️ No feedback received from host.");
+              return;
+            }
+
+            // Build feedback UI string
+            StringBuffer resultBuffer = StringBuffer();
+            for (var entry in feedback) {
+              final code = entry['schoolCode'] ?? 'unknown';
+              final status = entry['status'] ?? 'unknown';
+              final message =
+                  entry['message'] ?? entry['reason'] ?? 'No message';
+
+              String icon = switch (status) {
+                "success" => "✅",
+                "skipped" => "⏭️",
+                "failed" => "❌",
+                _ => "🔹"
+              };
+
+              resultBuffer.writeln("$icon [$code]: $message");
+            }
+
+            await showDialog(
+              context: context,
+              builder: (ctx) {
+                return AlertDialog(
+                  title: const Text("🧾 School Submission Feedback"),
+                  content: SingleChildScrollView(
+                    child: Text(resultBuffer.toString()),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text("OK"),
+                    ),
+                  ],
+                );
+              },
+            );
+
+            if (insertedCount > 0) {
+              Navigator.pop(context); // Close the form if something was saved
+            }
+          } else {
+            await _showDialog("❌ Host rejected School info: ${response.body}");
+          }
+        } catch (e) {
+          await _showDialog("❌ Failed to send school info to host.");
+          print("school info send error: $e");
         }
-        int newId = await getNextId();
+      }
+      if (_role == DeviceRole.host) {
+        final box = await Hive.openBox<School>('school');
+        if (box.isNotEmpty) {
+          await _showDialog(
+              'Only One School Is Allowed For This System. You Can Now Only Update!');
+          Future.delayed(const Duration(seconds: 3), () {});
+          return;
+        } else {
+          final existingSchools = box.values.cast<School>().where(
+                (s) => s.schoolName == schoolName,
+              );
+          School? existingSchool =
+              existingSchools.isNotEmpty ? existingSchools.first : null;
 
-        List<String> modifiedFields = [];
-        modifiedFields.add('schoolName');
-        modifiedFields.add('schoolAddress');
-        modifiedFields.add('schoolPhoneNumber');
-        modifiedFields.add('schoolEmail');
-        modifiedFields.add('termId');
-        modifiedFields.add('id');
+          if (existingSchool != null) {
+            await _showDialog('School already exists');
+            return;
+          }
+          final newSchool = School(
+            id: newId,
+            schoolName: schoolName.toLowerCase(),
+            schoolCode: schoolCode,
+            schoolAddress: schoolAddress,
+            schoolPhoneNumber: schoolPhoneNumber,
+            schoolEmail: schoolEmail,
+            termId: globalTermId,
+            // Set the termId from globalTermId
+            syncStatus: false, // Set syncStatus to false
+            lastModified:
+                DateTime.now(), // Set lastModified to current datetime
+            operationType: 'create', // Set operationType to 'create'
+            schoolLogoPath: _schoolLogoPath, // Store the logo path
+            modifiedFields: modifiedFields,
+          );
 
-        final newSchool = School(
-          id: newId,
-          schoolName: schoolName.toLowerCase(),
-          schoolCode: schoolCode,
-          schoolAddress: schoolAddress,
-          schoolPhoneNumber: schoolPhoneNumber,
-          schoolEmail: schoolEmail,
-          termId: globalTermId,
-          // Set the termId from globalTermId
-          syncStatus: false, // Set syncStatus to false
-          lastModified: DateTime.now(), // Set lastModified to current datetime
-          operationType: 'create', // Set operationType to 'create'
-          schoolLogoPath: _schoolLogoPath, // Store the logo path
-          modifiedFields: modifiedFields,
-        );
+          await box.add(newSchool); // Add the new school to the Hive box
 
-        await box.add(newSchool); // Add the new school to the Hive box
+          await _showDialog('School Added Successfully');
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('School Added Successfully')),
-        );
-
-        Navigator.pop(context); // Return to the previous screen
+          Navigator.pop(context); // Return to the previous screen
+        }
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _schoolNameController.dispose();
+    _schoolAddressController.dispose();
+    _schoolPhoneNumberController.dispose();
+    _schoolEmailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 School Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<int> getNextId() async {
@@ -203,14 +352,5 @@ class _CreateSchoolState extends State<CreateSchool> {
         .map((e) => e.id ?? 0)
         .reduce((curr, next) => curr > next ? curr : next);
     return currentMaxId + 1;
-  }
-
-  @override
-  void dispose() {
-    _schoolNameController.dispose();
-    _schoolAddressController.dispose();
-    _schoolPhoneNumberController.dispose();
-    _schoolEmailController.dispose();
-    super.dispose();
   }
 }

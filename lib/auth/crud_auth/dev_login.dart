@@ -23,7 +23,40 @@ class _DeveloperLoginScreenState extends State<DeveloperLoginScreen> {
       if (enteredUsername.toLowerCase() == storedUsername?.toLowerCase() &&
           enteredPassword.toLowerCase() == storedPassword?.toLowerCase()) {
         // Navigate to the home page
-        Navigator.pushReplacementNamed(context, '/homedeveloper');
+        showDialog(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text("Developer Action"),
+              content: const Text("What would you like to do?"),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // close dialog
+                    Navigator.pushReplacementNamed(context, '/homedeveloper');
+                  },
+                  child: const Text("Proceed to Home"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // close dialog
+                    Navigator.pushNamed(
+                        context, '/devicesettings'); // Device Role Settings
+                  },
+                  child: const Text("Update Device Role"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // close dialog
+                    Navigator.pushNamed(
+                        context, '/ipsettings'); // Device Role Settings
+                  },
+                  child: const Text("Update Ip Address"),
+                ),
+              ],
+            );
+          },
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Invalid username or password')),
@@ -41,67 +74,72 @@ class _DeveloperLoginScreenState extends State<DeveloperLoginScreen> {
         centerTitle: true,
         elevation: 2,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Developer Login',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: const Color.fromARGB(255, 241, 240, 242),
-                      fontWeight: FontWeight.bold,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Developer Login',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: const Color.fromARGB(255, 241, 240, 242),
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 24),
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
                     ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 24),
-              TextFormField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your username';
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your password';
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _login,
-                child: Text('Login'),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: const Color.fromARGB(255, 249, 248, 252),
-                  textStyle: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your username';
+                      }
+                      return null;
+                    },
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                  SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your password';
+                      }
+                      return null;
+                    },
                   ),
-                ),
+                  SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _login,
+                    child: Text('Login'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: const Color.fromARGB(255, 249, 248, 252),
+                      textStyle: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

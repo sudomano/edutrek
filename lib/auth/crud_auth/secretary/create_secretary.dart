@@ -15,6 +15,7 @@ class _CreateSecretaryAccountScreenState
     extends State<CreateSecretaryAccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
 
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -26,7 +27,8 @@ class _CreateSecretaryAccountScreenState
     'sub-admin',
     'secretary',
     'accountant',
-    'teacher'
+    'teacher',
+    'administration'
   ];
   String _selectedRole = 'secretary'; // Default selected role
 
@@ -47,14 +49,12 @@ class _CreateSecretaryAccountScreenState
       try {
         var userBox = await Hive.openBox<User>('users');
         // Check if a user with the same username or phone number already exists
-        bool userExists = userBox.values
-            .any((user) => user.username == _usernameController.text);
+        bool userExists = userBox.values.any((user) =>
+            user.email?.trim().toLowerCase() ==
+            _emailController.text.trim().toLowerCase());
 
         if (userExists) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'An account with the same username or code  already exists'),
-          ));
+          _showDialog('An account with the same email address already exists');
           return; // Stop the account creation process
         }
 
@@ -65,6 +65,7 @@ class _CreateSecretaryAccountScreenState
 
         List<String> modifiedFields = [];
         modifiedFields.add('username');
+        modifiedFields.add('email');
         modifiedFields.add('userCode');
         modifiedFields.add('password');
         modifiedFields.add('role');
@@ -77,6 +78,7 @@ class _CreateSecretaryAccountScreenState
         User newUser = User(
           id: newId,
           username: _usernameController.text,
+          email: _emailController.text,
           userCode: newPkValue,
           password: _passwordController.text,
           role: _selectedRole.toLowerCase(), // Use selected role
@@ -92,12 +94,11 @@ class _CreateSecretaryAccountScreenState
 
         await userBox.add(newUser); // Add new secretary user to the database
 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Account created successfully'),
-        ));
+        _showDialog('User Account created successfully');
 
         // Clear fields after successful creation
         _usernameController.clear();
+        _emailController.clear();
         _passwordController.clear();
         _phoneController.clear();
         setState(() {
@@ -106,10 +107,8 @@ class _CreateSecretaryAccountScreenState
           _selectedRole = 'secretary'; // Reset role to default
         });
       } catch (e) {
-        print("Error creating  account: $e");
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: const Text('Failed to create  account. Please try again.'),
-        ));
+        debugPrint("Error creating  account: $e");
+        _showDialog('Failed to create  account. Please try again.');
       }
     }
   }
@@ -129,6 +128,16 @@ class _CreateSecretaryAccountScreenState
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'Please enter a username';
+                }
+                return null;
+              },
+            ),
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: 'Email Address'),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email address';
                 }
                 return null;
               },
@@ -200,6 +209,22 @@ class _CreateSecretaryAccountScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 User Creation Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
       ),
     );
   }

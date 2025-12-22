@@ -365,12 +365,12 @@ class WelcomePage extends StatelessWidget {
                         ),
                         elevation: 10,
                       ),
-                      child: Text(
+                      child: const Text(
                         'Go to Dashboard',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: const Color.fromARGB(255, 0, 37, 79),
+                          color: Color.fromARGB(255, 0, 37, 79),
                         ),
                       ),
                     ),

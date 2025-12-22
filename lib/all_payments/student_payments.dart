@@ -10,6 +10,7 @@ import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:zitf_system/reusable_codes/widget_builders/build_elevated_card.dart';
 import 'package:zitf_system/student_payments/delete_paid_student.dart';
 import 'package:zitf_system/student_payments/make_student_payment.dart';
+import 'package:zitf_system/student_payments/receipt_history_page.dart';
 import 'package:zitf_system/student_payments/update_student_payments.dart';
 import 'package:zitf_system/student_payments/view_all_paid_students.dart';
 
@@ -40,6 +41,7 @@ class _MyPageState extends State<MakePayment> {
     final teacher = loggedInUser?.role.toLowerCase() == 'teacher';
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Payments'),
@@ -63,13 +65,13 @@ class _MyPageState extends State<MakePayment> {
                         double crossAxisSpacing = 16.0;
 
                         if (constraints.maxWidth >= 1200) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 1000) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 800) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 600) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 400) {
                           crossAxisCount = 3;
                         } else if (constraints.maxWidth >= 300) {
@@ -118,7 +120,10 @@ class _MyPageState extends State<MakePayment> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -127,7 +132,10 @@ class _MyPageState extends State<MakePayment> {
                                                 target: MakePaymentScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.list,
                                                 text: 'View Student Payments',
@@ -135,14 +143,24 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.print,
+                                                text: 'Re-Print Receipts',
+                                                target: ReceiptHistoryPage(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.update,
                                                 text: 'Update Student Payments',
                                                 target: UpdatePaymentScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
@@ -154,7 +172,10 @@ class _MyPageState extends State<MakePayment> {
                                         )
                                       : Column(
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -163,7 +184,10 @@ class _MyPageState extends State<MakePayment> {
                                                 target: MakePaymentScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.list,
                                                 text: 'View Student Payments',
@@ -171,14 +195,24 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
+                                              const ElevatedCard(
+                                                icon: Icons.print,
+                                                text: ' Re-Print Receipts',
+                                                target: ReceiptHistoryPage(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.update,
                                                 text: 'Update Student Payments',
                                                 target: UpdatePaymentScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
@@ -186,7 +220,10 @@ class _MyPageState extends State<MakePayment> {
                                                     DeletePaidStudentBySurname(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.payment,
                                                 text: 'Go to Home Page',

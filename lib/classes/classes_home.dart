@@ -17,6 +17,8 @@ import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_h
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:zitf_system/reusable_codes/widget_builders/build_elevated_card.dart';
+import 'package:zitf_system/student_management/student_filter.dart';
+import 'package:zitf_system/student_payments/view_all_paid_students.dart';
 
 class ClassesHomeScreen extends StatefulWidget {
   const ClassesHomeScreen({super.key});
@@ -36,6 +38,22 @@ class _MyPageState extends State<ClassesHomeScreen> {
     onItemTapped(context, index); // Use the navigation logic
   }
 
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 School Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final loggedInUser = getLoggedInUser();
@@ -46,12 +64,34 @@ class _MyPageState extends State<ClassesHomeScreen> {
     final teacher = loggedInUser.role.toLowerCase() == 'teacher';
     final accountant = loggedInUser.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
 
     final isLargeScreen =
         MediaQuery.of(context).size.width > 600; // Example threshold
 
     return Scaffold(
-      appBar: const CustomAppBar(title: 'School Classes'),
+      appBar: CustomAppBar(
+        title: 'School Classes',
+        actions: [
+          Tooltip(
+            message: 'View Students',
+            child: IconButton(
+              icon: const Icon(
+                Icons.people_rounded,
+                color: Color.fromARGB(255, 255, 255, 255),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ViewStudentsScreenfilter(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           return Row(
@@ -127,7 +167,10 @@ class _MyPageState extends State<ClassesHomeScreen> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -136,28 +179,39 @@ class _MyPageState extends State<ClassesHomeScreen> {
                                                 target: CreateClass(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text: 'View All Classes',
                                                 target: ViewClassesScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.search,
                                                 text: 'Search Class',
                                                 target: SearchClassScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               _buildElevatedCardWithDialog(
                                                 context,
                                                 icon: Icons.update,
                                                 text: 'Update Class',
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Class',
@@ -168,7 +222,10 @@ class _MyPageState extends State<ClassesHomeScreen> {
                                         )
                                       : Column(
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -177,35 +234,49 @@ class _MyPageState extends State<ClassesHomeScreen> {
                                                 target: CreateClass(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text: 'View All Classes',
                                                 target: ViewClassesScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.search,
                                                 text: 'Search Class',
                                                 target: SearchClassScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               _buildElevatedCardWithDialog(
                                                 context,
                                                 icon: Icons.update,
                                                 text: 'Update Class',
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Class',
                                                 target: DeleteClassScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.home,
                                                 text: 'Go to Home Page',

@@ -49,6 +49,7 @@ class _MyPageState extends State<ProjectsMainHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
     return Scaffold(
       appBar: const CustomAppBar(title: 'Projects'),
       body: LayoutBuilder(
@@ -186,7 +187,9 @@ class _MyPageState extends State<ProjectsMainHome> {
                                               isLargeScreen:
                                                   false, // Flag to check screen size
                                             ),
-                                            if (admin || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Projects',

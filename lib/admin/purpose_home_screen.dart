@@ -41,6 +41,7 @@ class _MyPageState extends State<PurposeHome> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
     return Scaffold(
       appBar: const CustomAppBar(title: 'Payments'),
       body: LayoutBuilder(
@@ -117,7 +118,10 @@ class _MyPageState extends State<PurposeHome> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -128,7 +132,10 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     true, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.attach_money,
                                                 text: 'Make Student Payments',
@@ -137,7 +144,10 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     true, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text:
@@ -146,10 +156,13 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     true, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
-                                                text: 'Arrears / Pre-Payments',
+                                                text: 'Payments & Arrears',
                                                 target: ArrearsAndPrepayments(),
                                                 isLargeScreen:
                                                     true, // Flag to check screen size
@@ -158,7 +171,10 @@ class _MyPageState extends State<PurposeHome> {
                                         )
                                       : Column(
                                           children: [
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -169,7 +185,10 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     false, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.attach_money,
                                                 text: 'Make Student Payments',
@@ -178,7 +197,10 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     false, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text:
@@ -187,15 +209,21 @@ class _MyPageState extends State<PurposeHome> {
                                                 isLargeScreen:
                                                     false, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.people,
-                                                text: 'Arrears / Pre-Payments',
+                                                text: 'Payments & Arrears',
                                                 target: ArrearsAndPrepayments(),
                                                 isLargeScreen:
                                                     false, // Flag to check screen size
                                               ),
-                                            if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin)
                                               const ElevatedCard(
                                                 icon: Icons.payment,
                                                 text: 'Go to Home Page',

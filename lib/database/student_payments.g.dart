@@ -32,13 +32,15 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       receiptNumber: fields[13] as String?,
       studentRegNumber: fields[12] as String?,
       modifiedFields: (fields[14] as List?)?.cast<String>(),
+      username: fields[15] as String?,
+      role: fields[16] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, StudentPayment obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.studentName)
       ..writeByte(1)
@@ -68,7 +70,11 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       ..writeByte(13)
       ..write(obj.receiptNumber)
       ..writeByte(14)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(15)
+      ..write(obj.username)
+      ..writeByte(16)
+      ..write(obj.role);
   }
 
   @override

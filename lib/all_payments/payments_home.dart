@@ -43,6 +43,8 @@ class _MyPageState extends State<Createpayments> {
 
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
+    final administration = loggedInUser.role.toLowerCase() == 'administration';
+
     return Scaffold(
       appBar: const CustomAppBar(title: 'Purposes'),
       body: LayoutBuilder(
@@ -132,7 +134,10 @@ class _MyPageState extends State<Createpayments> {
                                     crossAxisSpacing: crossAxisSpacing,
                                     padding: const EdgeInsets.all(8),
                                     children: [
-                                      if (admin || secretary || subadmin)
+                                      if (admin ||
+                                          administration ||
+                                          secretary ||
+                                          subadmin)
 
                                         // Elevated cards with icons
                                         const ElevatedCard(
@@ -141,14 +146,17 @@ class _MyPageState extends State<Createpayments> {
                                           target: AddPaymentPurposeScreen(),
                                           isLargeScreen: true,
                                         ),
-                                      if (admin || secretary || subadmin)
+                                      if (admin ||
+                                          administration ||
+                                          secretary ||
+                                          subadmin)
                                         const ElevatedCard(
                                           icon: Icons.list,
                                           text: 'View All Payment Purposes',
                                           target: ViewPaymentPurposesScreen(),
                                           isLargeScreen: true,
                                         ),
-                                      if (admin || secretary || subadmin)
+                                      if (admin || administration)
                                         const ElevatedCard(
                                           icon: Icons.update,
                                           text: 'Update Payment Purpose',
@@ -156,7 +164,7 @@ class _MyPageState extends State<Createpayments> {
                                               SelectPaymentPurposeToUpdate(),
                                           isLargeScreen: true,
                                         ),
-                                      if (admin || subadmin)
+                                      if (admin)
                                         const ElevatedCard(
                                           icon: Icons.delete,
                                           text: 'Delete Payment Purpose',
@@ -167,7 +175,10 @@ class _MyPageState extends State<Createpayments> {
                                   )
                                 : Column(
                                     children: [
-                                      if (admin || secretary || subadmin)
+                                      if (admin ||
+                                          administration ||
+                                          secretary ||
+                                          subadmin)
 
                                         // Elevated cards with icons
                                         const ElevatedCard(
@@ -176,14 +187,17 @@ class _MyPageState extends State<Createpayments> {
                                           target: AddPaymentPurposeScreen(),
                                           isLargeScreen: false,
                                         ),
-                                      if (admin || secretary || subadmin)
+                                      if (admin ||
+                                          administration ||
+                                          secretary ||
+                                          subadmin)
                                         const ElevatedCard(
                                           icon: Icons.list,
                                           text: 'View All Payment Purposes',
                                           target: ViewPaymentPurposesScreen(),
                                           isLargeScreen: false,
                                         ),
-                                      if (admin || secretary || subadmin)
+                                      if (admin || administration)
                                         const ElevatedCard(
                                           icon: Icons.update,
                                           text: 'Update Payment Purpose',
@@ -191,7 +205,7 @@ class _MyPageState extends State<Createpayments> {
                                               SelectPaymentPurposeToUpdate(),
                                           isLargeScreen: false,
                                         ),
-                                      if (admin || subadmin)
+                                      if (admin)
                                         const ElevatedCard(
                                           icon: Icons.delete,
                                           text: 'Delete Payment Purpose',
@@ -199,7 +213,10 @@ class _MyPageState extends State<Createpayments> {
                                               SelectPaymentPurposeToDelete(),
                                           isLargeScreen: false,
                                         ),
-                                      if (admin || secretary || subadmin)
+                                      if (admin ||
+                                          administration ||
+                                          secretary ||
+                                          subadmin)
                                         const ElevatedCard(
                                           icon: Icons.payment,
                                           text: 'Go to Home Page',

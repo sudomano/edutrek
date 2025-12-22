@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 
 part 'payment_purpose.g.dart';
 
@@ -35,6 +36,12 @@ class PaymentPurpose extends HiveObject {
   @HiveField(9)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  @HiveField(10)
+  List<ExceptionalStudents>? exceptions; // Link to exception entries
+
+  @HiveField(11)
+  bool? forNewcomersOnly; // Whether this payment is only for newcomers
+
   PaymentPurpose({
     required this.id,
     required this.paymentPurpose,
@@ -46,6 +53,8 @@ class PaymentPurpose extends HiveObject {
     this.associatedClasses, // Can be null initially
     this.purposeCode,
     this.modifiedFields,
+    this.exceptions,
+    this.forNewcomersOnly, // ✅ NEW
   });
 
   PaymentPurpose copyWith({
@@ -59,6 +68,8 @@ class PaymentPurpose extends HiveObject {
     List<String>? associatedClasses,
     String? purposeCode,
     List<String>? modifiedFields,
+    List<ExceptionalStudents>? exceptions,
+    bool? forNewcomersOnly, // ✅ NEW
   }) {
     return PaymentPurpose(
       id: id ?? this.id,
@@ -71,6 +82,8 @@ class PaymentPurpose extends HiveObject {
       associatedClasses: associatedClasses ?? this.associatedClasses,
       purposeCode: purposeCode ?? this.purposeCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      exceptions: exceptions ?? this.exceptions,
+      forNewcomersOnly: forNewcomersOnly ?? this.forNewcomersOnly,
     );
   }
 }
