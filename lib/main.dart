@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,23 +30,24 @@ import 'package:zitf_system/database/teachers.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/entry_point/app_bootstrap_layer_1/hive_bootstrap.dart';
+import 'package:zitf_system/entry_point/host_services_layer_4/host_bootstrap.dart';
+import 'package:zitf_system/entry_point/host_services_layer_4/host_runner.dart';
+import 'package:zitf_system/entry_point/host_services_layer_4/host_seed.dart';
 import 'package:zitf_system/export_import_backup_data/export_import_home.dart';
 import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_final.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/projects/projects_home.dart';
 import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_user_when_app_in_background.dart';
-import 'package:zitf_system/server/alfred_server.dart';
-import 'package:zitf_system/server/save_Ip_To_Shared_prefs.dart';
-import 'package:zitf_system/server/save_gateway_to_shared_prefs.dart';
+
 import 'package:zitf_system/settings/developer_options/developer_home.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/device_role_settings.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/ip_address_settings.dart';
 import 'package:zitf_system/terms/term_switcher.dart';
 import 'package:zitf_system/welcome/welcome_admin.dart';
 import 'package:zitf_system/welcome/welcome_secretary.dart';
-import 'package:path/path.dart' as p;
-import 'package:shelf/shelf.dart';
-import 'package:shelf/shelf_io.dart' as io;
+
+import 'package:flutter/foundation.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -56,12 +55,34 @@ enum DeviceRole { host, client }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  if (Platform.isWindows) {
-    await initHiveWithCustomPath();
-  } else {
+  // 🌐 WEB: skip device role selection completely
+  if (kIsWeb) {
     await Hive.initFlutter();
+
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+
+    runApp(
+      MyApp(
+        role: DeviceRole.client, // implicit
+        isLoggedIn: isLoggedIn,
+      ),
+    );
+    return;
   }
+
+  final role = await getDeviceRole();
+
+  if (role == null) {
+    await Hive.initFlutter(); // temporary minimal init
+    runApp(const MaterialApp(
+      home: RoleSelectionScreen(isLoggedIn: false),
+    ));
+    return;
+  }
+
+  await HiveBootstrap.initialize(role);
+
 // Hive initialization for host
   try {
     await Hive.openBox('financial_position_box');
@@ -92,40 +113,21 @@ void main() async {
   Hive.registerAdapter(PaymentLogAdapter());
 
   final prefs = await SharedPreferences.getInstance();
-  final role = await getDeviceRole();
 
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-  if (role == null) {
-    runApp(MaterialApp(home: RoleSelectionScreen(isLoggedIn: isLoggedIn)));
-    return;
-  }
-  if (role == DeviceRole.host) {
-    await HiveService.openAllBoxes();
-    await startAlfredServer();
-    saveLocalIpToPrefs();
-// Start Alfred server
-  }
-  await HiveService.openAllBoxes();
-  saveGatewayToPrefs();
-  _initializeDefaultTerm();
 
-  var userBox = Hive.box<User>('users');
-  if (userBox.isEmpty) {
-    var defaultAdminUser = User(
-      username: 'SUDOMANOadmin',
-      password: 'SUDOMANO@codedatapool@admin',
-      role: 'admin',
-      securityQuestions: ['good day', 'good year', 'good bank'],
-      securityAnswers: ['SUDOMANO', '1961', 'STEWARD'],
-      phone: '0773309607',
-      id: 1,
-      termId: 'defaultTermId',
-      syncStatus: false,
-      lastModified: DateTime.now(),
-      operationType: 'create',
-      userCode: 'admin',
-    );
-    userBox.add(defaultAdminUser);
+  await HiveService.openCoreBoxes();
+
+  if (role == DeviceRole.host) {
+    await HiveService.openHostOnlyBoxes();
+  }
+
+  if (role == DeviceRole.host) {
+    await HiveService.openHostOnlyBoxes();
+    await HostSeed.run();
+    await startHostIfSupported(() async {
+      await HostBootstrap.start();
+    });
   }
 
   // Initialize SharedPreferences with developer credentials
@@ -136,7 +138,13 @@ void main() async {
 }
 
 class HiveService {
-  static Future<void> openAllBoxes() async {
+  static Future<void> openCoreBoxes() async {
+    await Hive.openBox<User>('users');
+    await Hive.openBox<School>('school');
+    await Hive.openBox<Terms>('terms');
+  }
+
+  static Future<void> openHostOnlyBoxes() async {
     await Hive.openBox<DomainRecord>('domainBox');
     await Hive.openBox<TeacherPaymentsPurposes>('teacher_payments_purposes');
     await Hive.openBox<PaymentPurpose>('payment_purposes');
@@ -145,10 +153,8 @@ class HiveService {
     await Hive.openBox<TeacherPayment>('teacher_payments');
     await Hive.openBox<Student>('students');
     await Hive.openBox<Withdrawal>('withdrawals');
-    await Hive.openBox<User>('users');
     await Hive.openBox<Teachers>('teachers');
-    await Hive.openBox<School>('school');
-    await Hive.openBox<Terms>('terms');
+
     await Hive.openBox<Account>('account');
     await Hive.openBox<Asset>('asset');
     await Hive.openBox<Project>('projects');
@@ -185,27 +191,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     setState(() {});
   }
 
-  void _showRoleInfoDialog(DeviceRole role) {
-    String roleName = role == DeviceRole.host ? "HOST" : "CLIENT";
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Role Already Selected"),
-        content: Text(
-          "This device is already set as $roleName.\n\n"
-          "You can change the device role later from Developer Settings.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRoleButton({
     required IconData icon,
     required Color color,
@@ -223,9 +208,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           child: ElevatedButton.icon(
             onPressed: () async {
               await setDeviceRole(role);
-              if (role == DeviceRole.host || role == DeviceRole.client) {
-                await HiveService.openAllBoxes();
-              }
+
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
@@ -337,31 +320,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         ),
       ),
     );
-  }
-}
-
-Future<void> initializeHiveForRole(DeviceRole role) async {
-  if (role == DeviceRole.client) return; // skip Hive
-
-  await _initializeDefaultTerm();
-
-  final userBox = Hive.box<User>('users');
-  if (userBox.isEmpty) {
-    var defaultAdminUser = User(
-      username: 'SUDOMANOadmin',
-      password: 'SUDOMANO@codedatapool@admin',
-      role: 'admin',
-      securityQuestions: ['good day', 'good year', 'good bank'],
-      securityAnswers: ['SUDOMANO', '1961', 'STEWARD'],
-      phone: '0773309607',
-      id: 1,
-      termId: 'defaultTermId',
-      syncStatus: false,
-      lastModified: DateTime.now(),
-      operationType: 'create',
-      userCode: 'admin',
-    );
-    userBox.add(defaultAdminUser);
   }
 }
 
@@ -493,47 +451,6 @@ void clearTeachersBox() async {
   await box.clear();
 }
 
-Future<void> _initializeDefaultTerm() async {
-  var termsBox = await Hive.openBox<Terms>('terms');
-  // Search for an open term
-
-  var openedTerms = termsBox.values.where((term) => term.status == 'Opened');
-  Terms? openedTerm = openedTerms.isNotEmpty ? openedTerms.first : null;
-
-  if (termsBox.isEmpty) {
-    // Terms box is empty, create a default term
-    String defaultTermId = "defaultTermId";
-    String defaultTermName = "Default Term";
-    DateTime defaultStartDate = DateTime.now();
-    int id = 1;
-
-    Terms defaultTerm = Terms(
-      id: id,
-      termId: defaultTermId,
-      termName: defaultTermName,
-      startDate: defaultStartDate,
-      isActive: false,
-      status: 'Opened',
-      operationType: 'create',
-      syncStatus: false,
-      lastModified: DateTime.now(),
-    );
-
-    // Set the global term ID
-
-    // Save the default term in the box
-    await termsBox.put(defaultTerm.termId, defaultTerm);
-    globalTermId ??= defaultTermId;
-
-    // Notify the user
-  } else if (openedTerm != null) {
-    // Found an opened term, assign its ID to the global term ID
-    globalTermId = openedTerm.termId;
-    print(
-        "Found an opened term: ${openedTerm.termId}. Assigned as global term ID.");
-  }
-}
-
 class PopScope extends StatelessWidget {
   final Widget child;
   final Future<bool> Function() onBackPress;
@@ -550,23 +467,4 @@ class PopScope extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<void> initHiveWithCustomPath() async {
-  String exeName = Platform.resolvedExecutable
-      .split(Platform.pathSeparator)
-      .last
-      .replaceAll('.exe', '');
-
-  // Optional: use env or args instead of exe name
-  final hivePath =
-      p.join(Platform.environment['APPDATA'] ?? '.', 'Edutrek', exeName);
-
-  final hiveDir = Directory(hivePath);
-  if (!hiveDir.existsSync()) {
-    hiveDir.createSync(recursive: true);
-  }
-
-  await Hive.initFlutter(hivePath);
-  print("Hive initialized at: $hivePath");
 }
