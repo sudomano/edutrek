@@ -31,4 +31,4 @@ jobs:
           username: edutrekholdings
           password: "Nqia&X9%FJKV"
           local-dir: build/web/
-          server-dir: /home3/edutrekholdings/public_html/
+          server-dir: /public_html/
