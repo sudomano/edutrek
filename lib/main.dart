@@ -37,6 +37,7 @@ import 'package:zitf_system/entry_point/host_services_layer_4/host_seed.dart';
 import 'package:zitf_system/export_import_backup_data/export_import_home.dart';
 import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_final.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
+import 'package:zitf_system/landing_tet_page.dart';
 import 'package:zitf_system/projects/projects_home.dart';
 import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_user_when_app_in_background.dart';
 
@@ -382,7 +383,7 @@ class _MyAppState extends State<MyApp> {
         initialRoute: widget.isLoggedIn ? '/home' : '/login',
         routes: {
           '/login': (context) => LoginScreen(),
-          '/home': (context) => const HomeScreen(),
+          '/home': (context) => const LandingTestPage(),
           '/homedeveloper': (context) => ViewSecurityScreen(),
           '/forgot': (context) => ForgottenPasswordScreen(),
           '/admin': (context) => EditSecurityScreen(),
