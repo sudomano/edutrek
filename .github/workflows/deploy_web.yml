@@ -27,8 +27,8 @@ jobs:
       - name: Deploy to cPanel via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ftp.edutrekholdings.co.zw
+          username: edutrekholdings
+          password: "Nqia&X9%FJKV"
           local-dir: build/web/
-          server-dir: ${{ secrets.FTP_TARGET }}
+          server-dir: /home3/edutrekholdings/public_html/
