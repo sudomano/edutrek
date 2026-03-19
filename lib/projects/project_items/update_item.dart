@@ -10,41 +10,85 @@ class UpdateProjectItemForm extends StatefulWidget {
   const UpdateProjectItemForm({super.key, required this.index});
 
   @override
-  _UpdateProjectItemFormState createState() => _UpdateProjectItemFormState();
+  State<UpdateProjectItemForm> createState() => _UpdateProjectItemFormState();
 }
 
 class _UpdateProjectItemFormState extends State<UpdateProjectItemForm> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
 
-  // Controllers
+  String? _selectedProjectCode;
+  String _itemType = 'goods';
+  bool _trackStock = true;
+  bool _active = true;
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
-  bool _isStudentFee = false;
-
-  String? _selectedProjectCode; // Dropdown selection for project code
   late ProjectItem currentItem;
 
   @override
   void initState() {
     super.initState();
 
-    // Load the current item from the Hive box
+    final projectBox = Hive.box<Project>('projects');
     final itemBox = Hive.box<ProjectItem>('projectItems');
+
     currentItem = itemBox.getAt(widget.index)!;
 
-    // Populate the text fields with the current item information
-    _nameController.text = currentItem.name;
-    _amountController.text = currentItem.amount.toString();
-    _isStudentFee = currentItem.isStudentFee;
+    // ✅ SET THIS FIRST
     _selectedProjectCode = currentItem.projectCode;
+
+    debugPrint(
+      '🧩 Editing ProjectItem: '
+      'itemCode=${currentItem.projectItemCode}, '
+      'projectCode=$_selectedProjectCode',
+    );
+
+    Project? project;
+
+    try {
+      project = projectBox.values.firstWhere(
+        (p) {
+          debugPrint(
+            '🔍 Checking project: '
+            'code=${p.projectCode}, '
+            'status=${p.status}',
+          );
+          return p.projectCode == _selectedProjectCode;
+        },
+      );
+    } catch (e) {
+      debugPrint(
+        '⚠️ Project NOT FOUND for projectCode=$_selectedProjectCode',
+      );
+      project = null;
+    }
+
+    // ✅ SAFE guards (NO crash)
+    if (project == null) {
+      debugPrint('❌ Orphaned ProjectItem detected');
+      _itemType = 'goods';
+      _trackStock = true;
+    } else if (project.status.toLowerCase() == 'deleted') {
+      debugPrint(
+        '🚫 ProjectItem belongs to DELETED project '
+        '(code=${project.projectCode})',
+      );
+      _itemType = 'goods';
+      _trackStock = true;
+    } else {
+      _itemType = project.projectType == 'sales' ? 'goods' : 'service';
+      _trackStock = _itemType == 'goods';
+    }
+
+    _nameController.text = currentItem.name ?? '';
+    _active = currentItem.active ?? true;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Fetch all available projects for the dropdown
-    final projectBox = Hive.box<Project>('projects');
-    final projects = projectBox.values.toList();
+    final projects = Hive.box<Project>('projects')
+        .values
+        .where((p) => p.status.toLowerCase() == 'active')
+        .toList();
 
     return CenteredFormContainer(
       title: 'Update Project Item',
@@ -52,65 +96,63 @@ class _UpdateProjectItemFormState extends State<UpdateProjectItemForm> {
         key: _formKey,
         child: ListView(
           children: [
-            // Select Project
             DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Select Project'),
               value: _selectedProjectCode,
+              decoration: const InputDecoration(labelText: 'Project'),
               items: projects
-                  .map((project) => DropdownMenuItem(
-                        value: project.projectCode,
-                        child: Text(project.name),
-                      ))
+                  .map(
+                    (p) => DropdownMenuItem(
+                      value: p.projectCode,
+                      child: Text(p.name),
+                    ),
+                  )
                   .toList(),
-              onChanged: (newValue) {
+              onChanged: (v) {
                 setState(() {
-                  _selectedProjectCode = newValue;
+                  _selectedProjectCode = v;
+                  final project =
+                      projects.firstWhere((p) => p.projectCode == v);
+                  // Update itemType according to projectType
+                  _itemType =
+                      project.projectType == 'sales' ? 'goods' : 'service';
+                  _trackStock = _itemType == 'goods';
                 });
               },
-              validator: (value) {
-                if (value == null) {
-                  return 'Please select a project';
-                }
-                return null;
-              },
+              validator: (v) => v == null ? 'Select project' : null,
             ),
-
-            // Item Name
-            _buildTextField('Item Name', _nameController),
-
-            // Project Item Code
-
-            // Amount
             TextFormField(
-              controller: _amountController,
-              decoration: const InputDecoration(labelText: 'Amount'),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter an amount';
-                }
-                if (double.tryParse(value) == null) {
-                  return 'Please enter a valid number';
-                }
-                return null;
-              },
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Item Name'),
+              validator: (v) =>
+                  v == null || v.isEmpty ? 'Enter item name' : null,
             ),
-
-            // Is Student Fee Checkbox
-            CheckboxListTile(
-              title: const Text('Is this a student fee?'),
-              value: _isStudentFee,
-              onChanged: (value) {
-                setState(() {
-                  _isStudentFee = value!;
-                });
-              },
+            DropdownButtonFormField<String>(
+              value: _itemType,
+              decoration: const InputDecoration(labelText: 'Item Type'),
+              items: [
+                DropdownMenuItem(
+                  value: _itemType,
+                  child: Text(_itemType == 'goods' ? 'Goods' : 'Service'),
+                ),
+              ],
+              onChanged: null, // Read-only
             ),
-
+            SwitchListTile(
+              title: const Text('Track Stock'),
+              value: _trackStock,
+              onChanged: _itemType == 'service'
+                  ? null
+                  : (v) => setState(() => _trackStock = v),
+            ),
+            SwitchListTile(
+              title: const Text('Active'),
+              value: _active,
+              onChanged: (v) => setState(() => _active = v),
+            ),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _updateProjectItem,
-              child: const Text('Update Project Item'),
+              child: const Text('Update Item'),
             ),
           ],
         ),
@@ -118,69 +160,48 @@ class _UpdateProjectItemFormState extends State<UpdateProjectItemForm> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.white,
-      ),
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please enter $label';
-        }
-        return null;
-      },
-    );
-  }
-
   void _updateProjectItem() async {
-    if (_formKey.currentState!.validate()) {
-      final itemBox = Hive.box<ProjectItem>('projectItems');
+    if (!_formKey.currentState!.validate()) return;
 
-      // Check if an item with the same code exists (excluding the current item)
-      final existingItems = itemBox.values.cast<ProjectItem>().where(
-            (item) =>
-                item.name.toLowerCase() == _nameController.text.toLowerCase() &&
-                item != currentItem,
-          );
+    final itemBox = Hive.box<ProjectItem>('projectItems');
 
-      if (existingItems.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Project Item with this code already exists')),
-        );
-        return;
-      }
+    final duplicate = itemBox.values.any(
+      (i) =>
+          i.projectItemCode != currentItem.projectItemCode &&
+          i.projectCode == _selectedProjectCode &&
+          (i.name?.toLowerCase() ?? '') == _nameController.text.toLowerCase(),
+    );
 
-      // Update the current item
-      final updatedItem = currentItem.copyWith(
-        projectItemCode: currentItem.projectItemCode,
-        projectCode: _selectedProjectCode!,
-        name: _nameController.text,
-        amount: double.parse(_amountController.text),
-        isStudentFee: _isStudentFee,
-        syncStatus: false,
-        lastModified: DateTime.now(),
-        operationType: 'update',
-      );
-
-      // Save the updated item to Hive
-      await itemBox.putAt(widget.index, updatedItem);
-
+    if (duplicate) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Project Item updated successfully!')),
+        const SnackBar(content: Text('Item already exists for this project')),
       );
-
-      Navigator.pop(context);
+      return;
     }
+
+    final updatedItem = currentItem.copyWith(
+      projectCode: _selectedProjectCode,
+      name: _nameController.text.trim(),
+      itemType: _itemType,
+      trackStock: _itemType == 'goods' ? _trackStock : false,
+      active: _active,
+      syncStatus: false,
+      lastModified: DateTime.now(),
+      operationType: 'update',
+    );
+
+    await itemBox.putAt(widget.index, updatedItem);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Project Item updated successfully')),
+    );
+
+    Navigator.pop(context);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _amountController.dispose();
     super.dispose();
   }
 }

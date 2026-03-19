@@ -12,7 +12,7 @@ import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+//import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
@@ -42,6 +42,7 @@ import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/users_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/withdrawals_serializer.dart';
 import 'package:zitf_system/school_info/school_validator.dart';
+import 'package:zitf_system/server/routes/student_factory.dart';
 import 'package:zitf_system/terms/term_validator.dart';
 
 import '../database/school_info.dart'; // Your School model
@@ -63,7 +64,7 @@ late final Box<Asset> _assetBox;
 late final Box<Project> _projectBox;
 late final Box<ProjectItem> _projectItemBox;
 late final Box<DailyActivity> _dailyActivityBox;
-late final Box<ProjectStudentPayment> _projectStudentPaymentBox;
+//late final Box<ProjectStudentPayment> _projectStudentPaymentBox;
 late final Box<ExceptionalStudents> _exceptionalStudentsBox;
 
 Future<void> startAlfredServer() async {
@@ -96,8 +97,8 @@ Future<void> startAlfredServer() async {
   _projectBox = await Hive.openBox<Project>('projects');
   _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
   _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-  _projectStudentPaymentBox =
-      await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+  //_projectStudentPaymentBox =
+  //  await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
   _exceptionalStudentsBox =
       await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
 
@@ -176,7 +177,7 @@ Future<void> startAlfredServer() async {
   ////////////////////////////////projectStudentPayments api////////////////////
 
   //***********************get projectStudentPayments method *********************/
-  app.get("/api/projectStudentPayments", (req, res) async {
+  /* app.get("/api/projectStudentPayments", (req, res) async {
     try {
       final projectStudentPaymentsJsonList = _projectStudentPaymentBox.values
           .where((schoolItem) => schoolItem.projectStudentPaymentCode != null)
@@ -191,10 +192,10 @@ Future<void> startAlfredServer() async {
       return {"error": "Failed to fetch projectStudentPayments info"};
     }
   });
-
+*/
   //************************* POST /api/projectStudentPayments/bulk ************************/
 
-  app.post("/api/projectStudentPayments/bulk", (req, res) async {
+  /* app.post("/api/projectStudentPayments/bulk", (req, res) async {
     try {
       final contentType = req.headers.contentType?.mimeType;
 
@@ -247,7 +248,7 @@ Future<void> startAlfredServer() async {
       };
     }
   });
-
+*/
   ////////////////////////////////dailyActivities api////////////////////
 
   //***********************get dailyActivities method *********************/
@@ -1150,9 +1151,55 @@ Future<void> startAlfredServer() async {
       };
     }
   });
+
+  bool isStudentEligibleForRegister(Student s, DateTime registerDate) {
+    // Must be enrolled
+    if (s.enrollmentStatus != 'active') return false;
+
+    // Must belong to a term
+    if (s.termId == null) return false;
+
+    // If new comer, respect allowed range
+    if (s.isNewComer == true) {
+      if (s.isNewComerFrom != null &&
+          registerDate.isBefore(s.isNewComerFrom!)) {
+        return false;
+      }
+
+      if (s.isNewComerUntil != null &&
+          registerDate.isAfter(s.isNewComerUntil!)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  Map<String, bool> resolveAttendanceState(Student s, DateTime registerDate) {
+    final dayKey = DateTime(
+      registerDate.year,
+      registerDate.month,
+      registerDate.day,
+    );
+
+    final isPresent = s.presentDates.any((d) =>
+        d.year == dayKey.year &&
+        d.month == dayKey.month &&
+        d.day == dayKey.day);
+
+    final isAbsent = s.absentDates.any((d) =>
+        d.year == dayKey.year &&
+        d.month == dayKey.month &&
+        d.day == dayKey.day);
+
+    return {
+      'isPresent': isPresent,
+      'isAbsent': isAbsent,
+    };
+  }
+
   ///////////
-  ///
-  ///
+
   ///************************ GET all students ************************
   bool deepMatchStudent(Student s, String query) {
     if (query.trim().isEmpty) return true;
@@ -1173,6 +1220,172 @@ Future<void> startAlfredServer() async {
     // Every part of the search query must match **at least one field**
     return parts.every((part) => fields.any((field) => field.contains(part)));
   }
+
+  app.get("/api/students/registers", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+
+      final selectedClass = req.uri.queryParameters['class']?.trim();
+
+      final dateParam = req.uri.queryParameters['date'];
+      final registerDate =
+          dateParam != null ? DateTime.parse(dateParam) : DateTime.now();
+
+      debugPrint(
+          '📘 /api/students | class=$selectedClass | date=$registerDate | search="$search"');
+
+      final students = _studentsBox.values
+          .where((s) => s.termId != null)
+          .where((s) => selectedClass == null || s.class_ == selectedClass)
+          .where((s) => deepMatchStudent(s, search))
+          .where((s) => isStudentEligibleForRegister(s, registerDate))
+          .toList();
+
+      const maxResults = 100;
+
+      final response = students.take(maxResults).map((s) {
+        final attendance = resolveAttendanceState(s, registerDate);
+
+        return {
+          ...studentsToJson(s),
+          'register': {
+            'date': registerDate.toIso8601String(),
+            'isPresent': attendance['isPresent'],
+            'isAbsent': attendance['isAbsent'],
+            'canMark': true,
+          }
+        };
+      }).toList();
+
+      debugPrint('✅ Register-ready students: ${response.length}');
+
+      return response;
+    } catch (e) {
+      print("❌ Error serving register students: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch register-ready students"};
+    }
+  });
+
+  DateTime normalizeDate(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  bool sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  app.put('/api/students/:studentId/register', (req, res) async {
+    try {
+      final studentId = req.params['studentId'];
+      final body = await req.bodyAsJsonMap;
+
+      final dateStr = body['date'];
+      final status = body['status'];
+
+      if (dateStr == null || status == null) {
+        res.statusCode = 400;
+        return {'error': 'date and status are required'};
+      }
+
+      final index = _studentsBox.values.toList().indexWhere(
+            (s) => s.studentIdNumber == studentId,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {'error': 'Student not found'};
+      }
+
+      final student = _studentsBox.getAt(index)!;
+      final date = normalizeDate(DateTime.parse(dateStr));
+
+      // Remove existing marks for the day
+      student.presentDates.removeWhere((d) => sameDay(d, date));
+      student.absentDates.removeWhere((d) => sameDay(d, date));
+
+      // Apply status
+      if (status == 'present') {
+        student.presentDates.add(date);
+        student.isPresent = true;
+      } else if (status == 'absent') {
+        student.absentDates.add(date);
+        student.isPresent = false;
+      } else if (status != 'clear') {
+        res.statusCode = 400;
+        return {'error': 'Invalid status value'};
+      }
+
+      // Sync metadata
+      student.lastModified = DateTime.now();
+      student.syncStatus = false; // dirty
+      student.operationType = 'attendance';
+
+      await student.save();
+
+      return {
+        'success': true,
+        'studentId': student.studentIdNumber,
+        'date': date.toIso8601String(),
+        'status': status,
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        'error': 'Failed to mark register',
+        'details': e.toString(),
+      };
+    }
+  });
+
+  app.post("/api/register/mark/bulk", (req, res) async {
+    try {
+      final body = await req.bodyAsJsonMap;
+
+      final String className = body['className'];
+      final String termId = body['termId'];
+      final DateTime date = DateTime.parse(body['date']);
+      final List records = body['records'];
+
+      final studentsBox = await Hive.openBox<Student>('students');
+
+      // 🔒 PREVENT DOUBLE MARKING
+      final alreadyMarked = studentsBox.values.any((s) =>
+          s.class_ == className &&
+          s.terms!.contains(termId) &&
+          (s.presentDates.contains(date) || s.absentDates.contains(date)));
+
+      if (alreadyMarked) {
+        res.statusCode = 409;
+        return {"error": "Attendance already marked for this class and date"};
+      }
+
+      // ✅ APPLY ATTENDANCE
+      for (final record in records) {
+        final studentId = record['studentId'];
+        final bool isPresent = record['isPresent'];
+
+        final student = studentsBox.values.firstWhere(
+          (s) => s.studentIdNumber == studentId,
+          orElse: () => throw Exception("Student not found: $studentId"),
+        );
+
+        if (isPresent) {
+          student.presentDates.add(date);
+          student.absentDates.remove(date);
+        } else {
+          student.absentDates.add(date);
+          student.presentDates.remove(date);
+        }
+
+        await student.save();
+      }
+
+      return {"status": "success", "marked": records.length};
+    } catch (e) {
+      print("❌ Bulk register error: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to mark attendance"};
+    }
+  });
 
   app.get("/api/students", (req, res) async {
     try {
@@ -1254,6 +1467,170 @@ Future<void> startAlfredServer() async {
       };
     }
   });
+
+  app.post("/api/students/bulk/single", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (body['students'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected a list under the 'students' key"
+        };
+      }
+
+      final List inserted = [];
+      final List skipped = [];
+
+      for (final item in body['students']) {
+        try {
+          final student = createStudentFromClientJson(
+            json: Map<String, dynamic>.from(item),
+            studentsBox: _studentsBox,
+          );
+
+          await _studentsBox.add(student);
+          inserted.add(studentsToJson(student));
+        } catch (e) {
+          skipped.add({
+            "data": item,
+            "reason": e.toString(),
+          });
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": inserted.length,
+        "skippedCount": skipped.length,
+        "insertedStudents": inserted,
+        "skippedStudents": skipped,
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk students",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  app.post("/api/students/single", (req, res) async {
+    try {
+      final payload = await req.bodyAsJsonMap;
+
+      final student = createStudentFromClientJson(
+        json: payload,
+        studentsBox: _studentsBox,
+      );
+
+      await _studentsBox.add(student);
+
+      return {
+        "success": true,
+        "student": studentsToJson(student),
+      };
+    } catch (e) {
+      res.statusCode = 409;
+      return {
+        "error": e.toString(),
+      };
+    }
+  });
+
+  //******************** PUT /api/students/:studentId ********************
+  app.put('/api/students/:studentId', (req, res) async {
+    try {
+      final studentId = req.params['studentId'];
+
+      final body = await req.bodyAsJsonMap;
+
+      final index = _studentsBox.values.toList().indexWhere(
+            (s) => s.studentIdNumber == studentId,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {'error': 'Student not found'};
+      }
+
+      // FULL DESERIALIZATION
+      final incomingStudent = studentsFromJson(body);
+
+      final updatedStudent = incomingStudent.copyWith(
+        syncStatus: true,
+        operationType: null,
+        lastModified: DateTime.now(),
+      );
+
+      await _studentsBox.putAt(index, updatedStudent);
+
+      return {
+        'success': true,
+        'student': studentsToJson(updatedStudent),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        'error': 'Failed to update student',
+        'details': e.toString(),
+      };
+    }
+  });
+
+//******************** PUT /api/students/bulk ********************
+  app.put('/api/students/bulk', (req, res) async {
+    try {
+      final body = await req.bodyAsJsonMap;
+
+      final List<dynamic> students = body['students'];
+
+      final List<Student> updatedStudents = [];
+
+      for (final item in students) {
+        try {
+          final incoming = studentsFromJson(item);
+
+          final index = _studentsBox.values.toList().indexWhere(
+                (s) => s.studentIdNumber == incoming.studentIdNumber,
+              );
+
+          if (index == -1) continue;
+
+          final serverStudent = incoming.copyWith(
+            syncStatus: true,
+            operationType: null,
+            lastModified: DateTime.now(),
+          );
+
+          await _studentsBox.putAt(index, serverStudent);
+          updatedStudents.add(serverStudent);
+        } catch (e) {
+          print('❌ Skipped malformed update: $e');
+        }
+      }
+
+      return {
+        'success': true,
+        'updatedCount': updatedStudents.length,
+        'students': updatedStudents.map(studentsToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {'error': e.toString()};
+    }
+  });
+
   ////////////////////////////////teacherPayments api////////////////////
 
   //***********************get teacherPayments method *********************/

@@ -4,40 +4,44 @@ import 'package:zitf_system/database/projects/project_model.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 
 class UpdateProjects extends StatefulWidget {
-  final int index;
-
-  const UpdateProjects({super.key, required this.index});
+  final dynamic hiveKey; // Hive key instead of index
+  const UpdateProjects({super.key, required this.hiveKey});
 
   @override
-  _UpdateSchoolScreenState createState() => _UpdateSchoolScreenState();
+  State<UpdateProjects> createState() => _UpdateProjectsState();
 }
 
-class _UpdateSchoolScreenState extends State<UpdateProjects> {
+class _UpdateProjectsState extends State<UpdateProjects> {
   final _formKey = GlobalKey<FormState>();
-  final _projectNameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _statusController = TextEditingController(); // For status
-  final _createdAtController = TextEditingController();
-  String currentProjectCode = ''; // For start date
-  bool _isActive = true; // For active status
 
-  late Project currentSchool;
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  late Project currentProject;
+
+  bool _isActive = true;
+  bool _studentPayable = false;
+
+  String _projectType = 'sales';
+  String _participationType = 'optional';
+
+  final List<String> _modifiedFields = [];
 
   @override
   void initState() {
     super.initState();
-    final Box<Project> box = Hive.box<Project>('projects');
 
-    // Load the current school from the Hive box
-    currentSchool = box.getAt(widget.index)!;
+    final box = Hive.box<Project>('projects');
 
-    // Populate the text fields with the current school information
-    _projectNameController.text = currentSchool.name;
-    _descriptionController.text = currentSchool.description ?? '';
-    _statusController.text = currentSchool.status;
-    _createdAtController.text =
-        currentSchool.createdAt.toLocal().toString().split(' ')[0];
-    currentProjectCode = currentSchool.projectCode;
+    currentProject = box.get(widget.hiveKey)!;
+
+    _nameController.text = currentProject.name;
+    _descriptionController.text = currentProject.description ?? '';
+
+    _isActive = currentProject.status.toLowerCase() == 'active';
+    _studentPayable = currentProject.studentPayable ?? false;
+    _projectType = currentProject.projectType;
+    _participationType = currentProject.participationType;
   }
 
   @override
@@ -48,35 +52,58 @@ class _UpdateSchoolScreenState extends State<UpdateProjects> {
         key: _formKey,
         child: ListView(
           children: [
-            _buildTextField('Project Name', _projectNameController),
-            const SizedBox(height: 20),
-            _buildTextField('Description', _descriptionController),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              title: const Text('Status'),
-              value: _isActive,
-              onChanged: (bool value) {
-                final box = Hive.openBox<Project>('projects');
-
-                setState(() {
-                  _isActive = value;
-                  _statusController.text =
-                      _isActive ? 'Active' : 'Closed'; // Update status
-                });
+            _readOnlyField('Project Code', currentProject.projectCode),
+            const SizedBox(height: 16),
+            _buildTextField('Project Name', _nameController),
+            const SizedBox(height: 16),
+            _buildTextField(
+              'Description',
+              _descriptionController,
+              maxLines: 3,
+              isRequired: false,
+            ),
+            const SizedBox(height: 16),
+            _buildDropdown(
+              label: 'Project Type',
+              value: _projectType,
+              items: const ['sales', 'services'],
+              onChanged: (val) {
+                _projectType = val!;
+                _modifiedFields.add('projectType');
               },
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            _buildDropdown(
+              label: 'Participation Type',
+              value: _participationType,
+              items: const ['compulsory', 'optional'],
+              onChanged: (val) {
+                _participationType = val!;
+                _modifiedFields.add('participationType');
+              },
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Project Status'),
+              subtitle: Text(_isActive ? 'active' : 'closed'),
+              value: _isActive,
+              onChanged: (value) {
+                setState(() => _isActive = value);
+                _modifiedFields.add('status');
+              },
+            ),
+            SwitchListTile(
+              title: const Text('Student Payable'),
+              value: _studentPayable,
+              onChanged: (value) {
+                setState(() => _studentPayable = value);
+                _modifiedFields.add('studentPayable');
+              },
+            ),
+            const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _updateSchool,
-              style: ElevatedButton.styleFrom(
-                foregroundColor: const Color.fromARGB(255, 15, 15, 15),
-                backgroundColor: Color.fromARGB(255, 251, 252, 254),
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text('Update'),
+              onPressed: _updateProject,
+              child: const Text('Update Project'),
             ),
           ],
         ),
@@ -84,89 +111,113 @@ class _UpdateSchoolScreenState extends State<UpdateProjects> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller) {
+  // ---------------- HELPERS ----------------
+
+  Widget _readOnlyField(String label, String value) {
     return TextFormField(
-      controller: controller,
+      initialValue: value,
+      enabled: false,
       decoration: InputDecoration(
         labelText: label,
-        filled: true,
-        fillColor: Colors.white,
+        disabledBorder: const OutlineInputBorder(),
       ),
+    );
+  }
+
+  Widget _buildTextField(
+    String label,
+    TextEditingController controller, {
+    int maxLines = 1,
+    bool isRequired = true,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(labelText: label),
       validator: (value) {
-        if (value == null || value.isEmpty) {
+        if (isRequired && (value == null || value.trim().isEmpty)) {
           return 'Please enter $label';
         }
         return null;
       },
+      onChanged: (_) => _modifiedFields.add(label.toLowerCase()),
     );
   }
 
-  void _updateSchool() async {
-    if (_formKey.currentState!.validate()) {
-      final box = Hive.box<Project>('projects');
+  Widget _buildDropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      decoration: InputDecoration(labelText: label),
+      items: items
+          .map(
+            (e) => DropdownMenuItem(
+              value: e,
+              child: Text(e.toUpperCase()),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
 
-      // Get the updated values from the text fields
-      final name = _projectNameController.text.toLowerCase();
-      final description = _descriptionController.text;
-      final status = _statusController.text;
-      DateTime createdAt;
+  // ---------------- UPDATE LOGIC ----------------
 
-      try {
-        createdAt = DateTime.parse(_createdAtController.text);
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid created date format')),
-        );
-        return;
-      }
+  void _updateProject() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      final existingSchools = box.values.cast<Project>().where(
-            (s) => ((s.name.toLowerCase() == name &&
-                s.projectCode.toLowerCase() !=
-                    currentProjectCode.toLowerCase())),
-          );
-      Project? existingSchool =
-          existingSchools.isNotEmpty ? existingSchools.first : null;
+    final box = Hive.box<Project>('projects');
+    final newName = _nameController.text.trim();
 
-      // Ensure the user isn't updating to a name that already exists
-      if (existingSchool != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Project with this Project Name already exists')),
-        );
-        return;
-      }
+    // Prevent duplicate names (excluding self)
+    final duplicate = box.values.any(
+      (p) =>
+          p.name.toLowerCase() == newName.toLowerCase() &&
+          p.projectCode != currentProject.projectCode,
+    );
 
-      // Create the updated school object using copyWith to preserve unchanged fields
-      final updatedSchool = currentSchool.copyWith(
-        name: name,
-        description: description,
-        status: status,
-        createdAt: createdAt,
-        syncStatus: false,
-        updatedAt: DateTime.now(),
-        lastModified: DateTime.now(),
-        operationType: 'update',
-      );
-
-      // Update the school in Hive at the specific index
-      box.putAt(widget.index, updatedSchool);
-
+    if (duplicate) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Project Updated Successfully')),
+        const SnackBar(
+          content: Text('Project with this name already exists'),
+        ),
       );
-
-      Navigator.pop(context);
+      return;
     }
+
+    final updatedProject = currentProject.copyWith(
+      name: newName,
+      description: _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim(),
+      status: _isActive ? 'active' : 'closed',
+      projectType: _projectType,
+      participationType: _participationType,
+      studentPayable: _studentPayable,
+      updatedAt: DateTime.now(),
+      lastModified: DateTime.now(),
+      syncStatus: false,
+      operationType: 'update',
+      modifiedFields: _modifiedFields.toSet().toList(),
+    );
+
+    await box.put(widget.hiveKey, updatedProject); // ✅ safe update by key
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Project updated successfully')),
+    );
+
+    Navigator.pop(context);
   }
 
   @override
   void dispose() {
-    _createdAtController.dispose();
+    _nameController.dispose();
     _descriptionController.dispose();
-    _projectNameController.dispose();
-    _statusController.dispose();
-
     super.dispose();
   }
 }

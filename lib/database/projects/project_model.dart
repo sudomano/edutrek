@@ -34,6 +34,17 @@ class Project extends HiveObject {
   @HiveField(9)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  /// sales | service | mixed
+  @HiveField(10)
+  String projectType;
+
+  /// optional / compulsory
+  @HiveField(11)
+  String participationType;
+
+  @HiveField(12)
+  bool? studentPayable;
+
   Project({
     required this.projectCode,
     required this.name,
@@ -45,6 +56,9 @@ class Project extends HiveObject {
     this.lastModified,
     this.operationType,
     this.modifiedFields,
+    required this.projectType,
+    required this.participationType,
+    this.studentPayable,
   });
 
   Project copyWith({
@@ -58,6 +72,9 @@ class Project extends HiveObject {
     DateTime? lastModified,
     String? operationType,
     List<String>? modifiedFields,
+    String? projectType,
+    String? participationType,
+    bool? studentPayable,
   }) {
     return Project(
       projectCode: projectCode ?? this.projectCode,
@@ -70,6 +87,9 @@ class Project extends HiveObject {
       lastModified: lastModified ?? this.lastModified,
       operationType: operationType ?? this.operationType,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      projectType: projectType ?? this.projectType,
+      participationType: participationType ?? this.participationType,
+      studentPayable: studentPayable ?? this.studentPayable,
     );
   }
 }

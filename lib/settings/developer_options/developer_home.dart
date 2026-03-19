@@ -6,7 +6,6 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
@@ -30,6 +29,7 @@ import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:zitf_system/settings/developer_options/assign_missing_terms.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs.dart';
+import 'package:zitf_system/settings/developer_options/domainConfigs/currencies/payment_mthods_screen.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/ip_address_settings.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/reset_app.dart';
 import 'package:zitf_system/settings/developer_options/remove_duplicates.dart';
@@ -324,6 +324,35 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                       icon: const Icon(Icons.key, size: 24, color: Colors.blue),
                       label: const Text(
                         'Remove Duplicates',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const PaymentMethodsSettingsScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.payments,
+                          size: 24, color: Colors.blue),
+                      label: const Text(
+                        'Payment Methods',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -716,19 +745,6 @@ class _SyncClassesPageState extends State<DeveloperHome> {
 
     if (models.contains('DailyActivity')) {
       final box = await Hive.openBox<DailyActivity>('dailyActivities');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
-    }
-
-    if (models.contains('ProjectStudentPayment')) {
-      final box =
-          await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
       for (var key in box.keys) {
         final item = box.get(key);
         if (item != null) {

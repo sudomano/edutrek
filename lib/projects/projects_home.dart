@@ -1,17 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; // Custom fonts
 
-import 'package:zitf_system/admin/home_screen.dart';
-import 'package:zitf_system/all_payments/payment_purpose/add_payment_purpose.dart';
-import 'package:zitf_system/all_payments/payment_purpose/delete_complete.dart';
-import 'package:zitf_system/all_payments/payment_purpose/delete_payment_purpose.dart';
-import 'package:zitf_system/all_payments/payment_purpose/update_payment_purpose.dart';
-import 'package:zitf_system/all_payments/payment_purpose/view_payment_purpose.dart';
+import 'package:zitf_system/projects/project_batching/batching_home_screen.dart';
 import 'package:zitf_system/projects/project_items/project_items_home.dart';
 import 'package:zitf_system/projects/projects_main/projects_main_home.dart';
 import 'package:zitf_system/projects/student_project_payments/student_project_payments_home.dart';
-import 'package:zitf_system/projects/student_project_payments/view_student_project_payment.dart';
-import 'package:zitf_system/projects/totals/totals.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 
 import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
@@ -130,7 +122,7 @@ class _MyPageState extends State<ProjectsHome> {
                                             // Elevated cards with icons
                                             ElevatedCard(
                                               icon: Icons.work_outline_outlined,
-                                              text: 'All Projects',
+                                              text: 'Main Projects',
                                               target: ProjectsMainHome(),
                                               isLargeScreen: true,
                                             ),
@@ -139,6 +131,13 @@ class _MyPageState extends State<ProjectsHome> {
                                               icon: Icons.trolley,
                                               text: 'Project Items',
                                               target: ProjectItemsHome(),
+                                              isLargeScreen: true,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.trolley,
+                                              text: 'Item Pricing & Batching',
+                                              target:
+                                                  SelectProjectItemForBatch(),
                                               isLargeScreen: true,
                                             ),
                                             ElevatedCard(
@@ -152,7 +151,7 @@ class _MyPageState extends State<ProjectsHome> {
                                               icon: Icons.payments_outlined,
                                               text: 'Totals',
                                               target:
-                                                  ViewStudentProjectPayment(),
+                                                  SelectProjectItemForBatch(),
                                               isLargeScreen: true,
                                             ),
                                           ],
@@ -162,7 +161,7 @@ class _MyPageState extends State<ProjectsHome> {
                                             // Elevated cards with icons
                                             ElevatedCard(
                                               icon: Icons.work_outline_outlined,
-                                              text: 'All Projects',
+                                              text: 'Main Projects',
                                               target: ProjectsMainHome(),
                                               isLargeScreen: false,
                                             ),
@@ -171,6 +170,13 @@ class _MyPageState extends State<ProjectsHome> {
                                               icon: Icons.trolley,
                                               text: 'Project Items',
                                               target: ProjectItemsHome(),
+                                              isLargeScreen: false,
+                                            ),
+                                            ElevatedCard(
+                                              icon: Icons.payments_outlined,
+                                              text: 'Item Pricing & Batching',
+                                              target:
+                                                  SelectProjectItemForBatch(),
                                               isLargeScreen: false,
                                             ),
                                             ElevatedCard(
@@ -184,7 +190,7 @@ class _MyPageState extends State<ProjectsHome> {
                                               icon: Icons.payments_outlined,
                                               text: 'Totals',
                                               target:
-                                                  ViewStudentProjectPayment(),
+                                                  SelectProjectItemForBatch(),
                                               isLargeScreen: false,
                                             ),
                                           ],

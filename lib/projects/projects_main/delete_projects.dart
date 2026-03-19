@@ -1,211 +1,134 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/school_info.dart';
-import 'package:zitf_system/global%20files/global_term_id.dart'; // Import global term ID
 
 class DeleteProjects extends StatefulWidget {
   const DeleteProjects({Key? key}) : super(key: key);
 
   @override
-  _DeleteSchoolScreenState createState() => _DeleteSchoolScreenState();
+  State<DeleteProjects> createState() => _DeleteProjectsState();
 }
 
-class _DeleteSchoolScreenState extends State<DeleteProjects> {
+class _DeleteProjectsState extends State<DeleteProjects> {
   final _formKey = GlobalKey<FormState>();
-  final _searchController =
-      TextEditingController(); // Controller for the search input
-  List<Project> _foundSchools = []; // List of found schools for display
+  final _searchController = TextEditingController();
 
-  void _searchSchool() async {
-    final box = await Hive.openBox<Project>('projects'); // Open School Hive box
-    final schools = box.values.toList(); // Get all schools from the box
-    final searchTerm = _searchController.text.toLowerCase(); // Search term
+  List<Project> _foundProjects = [];
 
-    // Filter schools by search term and global term ID
-    final schoolsWithName = schools
-        .where((school) => school.name.toLowerCase().startsWith(searchTerm))
-        .toList();
+  void _searchProjects() {
+    final box = Hive.box<Project>('projects');
+    final searchTerm = _searchController.text.toLowerCase();
 
-    // Sort alphabetically by school name
-    schoolsWithName.sort((a, b) => a.name.compareTo(b.name.toString()));
+    final results = box.values
+        .where((p) =>
+            p.status.toLowerCase() != 'deleted' &&
+            p.name.toLowerCase().contains(searchTerm))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    setState(() => _foundProjects = results);
+  }
+
+  Future<void> _softDeleteProject(Project project) async {
+    project
+      ..status = 'deleted'
+      ..syncStatus = false
+      ..operationType = 'delete'
+      ..lastModified = DateTime.now()
+      ..updatedAt = DateTime.now()
+      ..modifiedFields = ['status'];
+
+    await project.save(); // 🔥 THIS is the missing piece
 
     setState(() {
-      _foundSchools = schoolsWithName;
+      _foundProjects.removeWhere((p) => p.projectCode == project.projectCode);
     });
-  }
-
-  void _deleteSchool(Project schoolToDelete) async {
-    final box = await Hive.openBox<Project>('projects');
-    if (schoolToDelete.projectCode != null) {
-      await box
-          .delete(schoolToDelete.key); // Delete the school if termId matches
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Project Deleted Successfully')),
-      );
-
-      setState(() {
-        _foundSchools.remove(schoolToDelete); // Remove from the UI list
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Project cannot be deleted')),
-      );
-    }
-  }
-
-  void _confirmDeleteAllSchools() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete All Projects'),
-          content: const Text(
-              'Are you sure you want to delete all Projects? This action cannot be undone.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: _deleteAllSchools,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Delete All'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _deleteAllSchools() async {
-    final box = await Hive.openBox<Project>('projects');
-    // Filter schools by global term ID
-    final schoolsToDelete =
-        box.values.cast<Project>().where((s) => s.projectCode != null).toList();
-
-    for (var school in schoolsToDelete) {
-      await box
-          .delete(school.key); // Delete all schools with the matching term ID
-    }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content:
-              Text('${schoolsToDelete.length} Project Deleted Successfully')),
+      const SnackBar(content: Text('Project deleted successfully')),
     );
+  }
 
-    setState(() {
-      _foundSchools.clear();
-      Navigator.pop(context); // Clear the displayed list
-    });
-    Navigator.pop(context);
+  void _confirmDelete(Project project) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Project'),
+        content: Text(
+          'Are you sure you want to delete "${project.name}"?\n\n'
+          'This action can be synced but not immediately undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              _softDeleteProject(project);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Delete Project',
-          style: const TextStyle(
-            fontSize: 14.0, // Adjust font size
-            fontWeight: FontWeight.normal, // Bold font
-            color: Colors.white, // Title color
-            letterSpacing: 1.2, // Slight letter spacing for elegance
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.delete_forever, color: Colors.red, // Title color
-            ),
-            onPressed: _confirmDeleteAllSchools,
-            tooltip: 'Delete All Projects',
-          ),
-        ],
-        backgroundColor: const Color.fromARGB(
-            255, 38, 140, 191), // Optional: Customize AppBar background color
-        elevation: 4.0,
-        // Optional: Add a subtle shadow
+        title: const Text('Delete Project'),
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
-          child: Center(
-            child: Container(
-              constraints: BoxConstraints(maxWidth: 600),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      labelText: 'Enter Project Name to Search',
-                      filled: true,
-                      fillColor: Colors.white
-                          .withOpacity(0.3), // Transparent background
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none, // No border
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter a Project Name';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Center(
-                    child: ElevatedButton(
-                      onPressed: _searchSchool,
-                      child: const Text('Search'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        textStyle: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (_foundSchools.isNotEmpty)
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _foundSchools.length,
-                        itemBuilder: (context, index) {
-                          final foundSchool = _foundSchools[index];
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  labelText: 'Search Project',
+                ),
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Enter project name' : null,
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () {
+                  if (_formKey.currentState!.validate()) {
+                    _searchProjects();
+                  }
+                },
+                child: const Text('Search'),
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: _foundProjects.isEmpty
+                    ? const Center(child: Text('No projects found'))
+                    : ListView.builder(
+                        itemCount: _foundProjects.length,
+                        itemBuilder: (_, index) {
+                          final project = _foundProjects[index];
                           return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            elevation: 5,
                             child: ListTile(
-                              contentPadding: const EdgeInsets.all(16),
-                              title: Text('Name: ${foundSchool.name}',
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold)),
-                              subtitle: Text('Status: ${foundSchool.status}',
-                                  style: const TextStyle(fontSize: 16)),
+                              title: Text(project.name),
+                              subtitle: Text('Status: ${project.status}'),
                               trailing: IconButton(
                                 icon:
                                     const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => _deleteSchool(foundSchool),
+                                onPressed: () => _confirmDelete(project),
                               ),
                             ),
                           );
                         },
                       ),
-                    ),
-                ],
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -214,7 +137,7 @@ class _DeleteSchoolScreenState extends State<DeleteProjects> {
 
   @override
   void dispose() {
-    _searchController.dispose(); // Dispose controller to avoid memory leaks
+    _searchController.dispose();
     super.dispose();
   }
 }

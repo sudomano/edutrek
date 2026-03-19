@@ -34,13 +34,21 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       modifiedFields: (fields[14] as List?)?.cast<String>(),
       username: fields[15] as String?,
       role: fields[16] as String?,
+      paymentMethodType: fields[17] == null ? 'cash' : fields[17] as String,
+      paymentMethodAmount: fields[18] == null ? 0.0 : fields[18] as double,
+      paymentReference: fields[19] == null ? '' : fields[19] as String,
+      mobileMoneyPhone: fields[20] == null ? '' : fields[20] as String,
+      mobileMoneyProvider: fields[21] == null ? '' : fields[21] as String,
+      bankAccountNumber: fields[22] == null ? '' : fields[22] as String,
+      bankAccountName: fields[23] == null ? '' : fields[23] as String,
+      changeGiven: fields[24] == null ? 0.0 : fields[24] as double,
     );
   }
 
   @override
   void write(BinaryWriter writer, StudentPayment obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(25)
       ..writeByte(0)
       ..write(obj.studentName)
       ..writeByte(1)
@@ -74,7 +82,23 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       ..writeByte(15)
       ..write(obj.username)
       ..writeByte(16)
-      ..write(obj.role);
+      ..write(obj.role)
+      ..writeByte(17)
+      ..write(obj.paymentMethodType)
+      ..writeByte(18)
+      ..write(obj.paymentMethodAmount)
+      ..writeByte(19)
+      ..write(obj.paymentReference)
+      ..writeByte(20)
+      ..write(obj.mobileMoneyPhone)
+      ..writeByte(21)
+      ..write(obj.mobileMoneyProvider)
+      ..writeByte(22)
+      ..write(obj.bankAccountNumber)
+      ..writeByte(23)
+      ..write(obj.bankAccountName)
+      ..writeByte(24)
+      ..write(obj.changeGiven);
   }
 
   @override

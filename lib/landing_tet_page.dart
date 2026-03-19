@@ -1,73 +1,66 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:zitf_system/auth/userdb.dart';
 
-class LandingTestPage extends StatefulWidget {
-  const LandingTestPage({super.key});
+class HomeLandingSection extends StatelessWidget {
+  final User loggedInUser;
+  final bool isLargeScreen;
 
-  @override
-  State<LandingTestPage> createState() => _LandingTestPageState();
-}
-
-class _LandingTestPageState extends State<LandingTestPage> {
-  String? username;
-  String? role;
-  String? userCode;
-  bool loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSession();
-  }
-
-  Future<void> _loadSession() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    setState(() {
-      username = prefs.getString('username');
-      role = prefs.getString('role');
-      userCode = prefs.getString('userCode');
-      loading = false;
-    });
-  }
+  const HomeLandingSection({
+    super.key,
+    required this.loggedInUser,
+    required this.isLargeScreen,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Landing Test Page'),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 64),
-            const SizedBox(height: 16),
-            const Text(
-              'Login Successful 🎉',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            Text('Username: ${username ?? "null"}'),
-            Text('Role: ${role ?? "null"}'),
-            Text('User Code: ${userCode ?? "null"}'),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.clear();
-                if (!mounted) return;
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      child: Card(
+        elevation: 3,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Welcome back 👋',
+                style: GoogleFonts.poppins(
+                  fontSize: isLargeScreen ? 22 : 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                loggedInUser.username,
+                style: GoogleFonts.poppins(
+                  fontSize: isLargeScreen ? 18 : 15,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Chip(
+                label: Text(
+                  loggedInUser.role.toUpperCase(),
+                  style: const TextStyle(color: Colors.white),
+                ),
+                backgroundColor: Colors.blue,
+              ),
+              const SizedBox(height: 12),
+              Divider(color: Colors.grey.shade300),
+              const SizedBox(height: 6),
+              Text(
+                'You are successfully logged in.',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

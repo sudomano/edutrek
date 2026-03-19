@@ -7,8 +7,6 @@ Map<String, dynamic> projectItemsToJson(ProjectItem i) => {
       'projectItemCode': i.projectItemCode,
       'projectCode': i.projectCode,
       'name': i.name,
-      'amount': i.amount,
-      'isStudentFee': i.isStudentFee,
       'syncStatus': i.syncStatus,
       'lastModified': i.lastModified?.toIso8601String(),
       'operationType': i.operationType,
@@ -20,12 +18,13 @@ ProjectItem projectItemsFromJson(Map<String, dynamic> json) => ProjectItem(
       projectItemCode: json['projectItemCode'],
       projectCode: json['projectCode'],
       name: json['name'],
-      amount: json['amount'],
-      isStudentFee: json['isStudentFee'],
       syncStatus: json['syncStatus'],
       lastModified: json['lastModified'] != null
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
       modifiedFields: parseStringList(json['modifiedFields']),
+      itemType: json['itemType'],
+      active: json['active'],
+      trackStock: json['trackStock'],
     );

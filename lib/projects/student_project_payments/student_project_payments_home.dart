@@ -10,6 +10,9 @@ import 'package:zitf_system/projects/project_items/view_item.dart';
 import 'package:zitf_system/projects/student_project_payments/create_student_project_payment.dart';
 import 'package:zitf_system/projects/student_project_payments/delete_student_project_payment.dart';
 import 'package:zitf_system/projects/student_project_payments/duplicated_payment_with_receipt.dart';
+import 'package:zitf_system/projects/student_project_payments/project_payment_screen.dart';
+import 'package:zitf_system/projects/student_project_payments/project_sales_screen.dart';
+import 'package:zitf_system/projects/student_project_payments/reprint%20project%20paymenents/reprint_payment_screen.dart';
 import 'package:zitf_system/projects/student_project_payments/update_student_project_payment.dart';
 import 'package:zitf_system/projects/student_project_payments/view_student_project_payment.dart';
 
@@ -72,13 +75,13 @@ class _MyPageState extends State<StudentProjectPaymentsHome> {
                         double crossAxisSpacing = 16.0;
 
                         if (constraints.maxWidth >= 1200) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 1000) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 800) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 600) {
-                          crossAxisCount = 4;
+                          crossAxisCount = 5;
                         } else if (constraints.maxWidth >= 400) {
                           crossAxisCount = 3;
                         } else if (constraints.maxWidth >= 300) {
@@ -126,106 +129,82 @@ class _MyPageState extends State<StudentProjectPaymentsHome> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            //if (admin || secretary || subadmin)
-
-                                            // Elevated cards with icons
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .view_comfortable_outlined,
-                                              text:
-                                                  'View Student Project Payment',
-                                              target:
-                                                  ViewStudentProjectPayment(),
-                                              isLargeScreen: true,
-                                            ),
-                                            //if (admin || secretary || subadmin)
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .create_new_folder_outlined,
-                                              text:
-                                                  'Create Student Project Payment',
-                                              target:
-                                                  DuplicatedPaymentWithReceipt(),
-                                              isLargeScreen: true,
-                                            ),
-                                            // if (admin || subadmin)
-                                            /* _buildElevatedCardWithDialog(
-                                                context,
-                                                icon: Icons.update,
-                                                text: 'Update Student Project Payment',
-                                                isLargeScreen:
-                                                    true, // Flag to check screen size
-                                              ),*/
-
-                                            // if (admin || subadmin)
-                                            ElevatedCard(
-                                              icon: Icons.update,
-                                              text:
-                                                  'Update Student Project Payment',
-                                              target:
-                                                  UpdateStudentPaymentForm(),
-                                              isLargeScreen: true,
-                                            ),
-                                            // if (admin || subadmin)
-                                            const ElevatedCard(
-                                              icon: Icons.delete,
-                                              text:
-                                                  'Delete Student Project Payment',
-                                              target:
-                                                  DeleteStudentProjectPayment(),
-                                              isLargeScreen: true,
-                                            ),
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .create_new_folder_outlined,
+                                                text: 'Make Project Payment',
+                                                target: ProjectPaymentScreen(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary ||
+                                                accountant)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text: 'View  Project Payment',
+                                                target:
+                                                    ProjectSalesViewScreen(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text:
+                                                    'Re-print  Project Payment',
+                                                target:
+                                                    ProjectReceiptDashboardPage(),
+                                                isLargeScreen: true,
+                                              ),
                                           ],
                                         )
                                       : Column(
                                           children: [
-                                            // Elevated cards with icons
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .view_comfortable_outlined,
-                                              text:
-                                                  'View Student Project Payment',
-                                              target:
-                                                  ViewStudentProjectPayment(),
-                                              isLargeScreen: false,
-                                            ),
-                                            //if (admin || secretary || subadmin)
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .create_new_folder_outlined,
-                                              text:
-                                                  'Create Student Project Payment',
-                                              target:
-                                                  const DuplicatedPaymentWithReceipt(),
-                                              isLargeScreen: false,
-                                            ),
-                                            /*_buildElevatedCardWithDialog(
-                                                context,
-                                                icon: Icons.update,
-                                                text: 'Update Student Project Payment',
-                                                isLargeScreen:
-                                                    false, // Flag to check screen size
-                                              ),*/
                                             if (admin ||
                                                 administration ||
-                                                subadmin)
-                                              ElevatedCard(
-                                                icon: Icons.update,
-                                                text:
-                                                    'Update Student Project Payment',
-                                                target:
-                                                    UpdateStudentPaymentForm(),
+                                                subadmin ||
+                                                secretary)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .create_new_folder_outlined,
+                                                text: 'Make Project Payment',
+                                                target: ProjectPaymentScreen(),
                                                 isLargeScreen: false,
                                               ),
                                             if (admin ||
                                                 administration ||
-                                                subadmin)
+                                                subadmin ||
+                                                secretary ||
+                                                accountant)
                                               const ElevatedCard(
-                                                icon: Icons.delete,
-                                                text:
-                                                    'Delete Student Project Payment',
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text: 'View Project Payment',
                                                 target:
-                                                    const DeleteStudentProjectPayment(),
+                                                    ProjectSalesViewScreen(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                subadmin ||
+                                                secretary)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text:
+                                                    'Re-print Project Payment',
+                                                target:
+                                                    ProjectReceiptDashboardPage(),
                                                 isLargeScreen: false,
                                               ),
                                           ],

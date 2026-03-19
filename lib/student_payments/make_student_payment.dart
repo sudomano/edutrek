@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/payment_receipts_log.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
+import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -24,6 +30,7 @@ import 'package:flutter/services.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/main.dart';
+import 'package:zitf_system/projects/student_project_payments/create_student_project_payment_backup.dart';
 import 'package:zitf_system/reusable_codes/bluetooth_helper_codes/bluetooth_tips_helper.dart';
 import 'package:uuid/data.dart';
 import 'package:uuid/uuid.dart';
@@ -46,7 +53,9 @@ class _CachedStudents {
 }
 
 class MakePaymentScreen extends StatefulWidget {
-  const MakePaymentScreen({Key? key}) : super(key: key);
+  const MakePaymentScreen({Key? key, this.transaction}) : super(key: key);
+
+  final ProjectSaleTransaction? transaction;
 
   @override
   _MakePaymentScreenState createState() => _MakePaymentScreenState();
@@ -113,6 +122,17 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
   Map<int?, User> _usersMap = {}; // quick lookup by id
   List<User>? _cachedServerUsers;
 
+  Student? _student;
+  Project? _project;
+  ProjectItem? _item;
+
+  ProductBatch? _selectedBatch;
+  BatchSellUnit? _selectedSellUnit;
+  int _quantity = 1;
+
+  late List<Student> _students;
+  late List<Project> _projects;
+  late List<ProjectItem> _items;
   String capitalize(String value) {
     var result = value[0].toUpperCase();
     for (int i = 1; i < value.length; i++) {
@@ -131,6 +151,25 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
   BluetoothDevice? _device;
   String tips = 'connect receipt priter';
   int? BluetoothStates;
+
+  String _paymentMethodType =
+      'cash'; // cash | mobile_money | bank_transfer | card | other
+  final String _currency = 'USD';
+  String? _provider;
+  double _amountPaid = 0;
+
+  final TextEditingController _pmAmountCtrl = TextEditingController();
+  final TextEditingController _pmReferenceCtrl = TextEditingController();
+  final TextEditingController _pmPhoneCtrl = TextEditingController();
+  final TextEditingController _pmAccountNumberCtrl = TextEditingController();
+  final TextEditingController _pmAccountNameCtrl = TextEditingController();
+
+  double get _totalEntered {
+    return _paymentPurposes.fold(
+      0.0,
+      (sum, p) => sum + (p['amount'] as double),
+    );
+  }
 
   Future<void> _showDialog(String message) async {
     await showDialog(
@@ -158,7 +197,35 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     fetchPaymentPurposes();
     fetchStudentPayments();
     fetchUsers(); // <-- NEW
+    _students = Hive.box<Student>('students').values.toList();
+    _projects = Hive.box<Project>('projects').values.toList();
+    _items = Hive.box<ProjectItem>('projectItems').values.toList();
 
+    final tx = widget.transaction;
+
+    if (tx != null) {
+      _student = Hive.box<Student>('students')
+          .values
+          .firstWhereOrNull((s) => s.studentIdNumber == tx.studentId);
+
+      _project = Hive.box<Project>('projects')
+          .values
+          .firstWhereOrNull((p) => p.projectCode == tx.projectCode);
+
+      _item = Hive.box<ProjectItem>('projectItems')
+          .values
+          .firstWhereOrNull((i) => i.projectItemCode == tx.projectItemCode);
+
+      _selectedBatch = Hive.box<ProductBatch>('product_batches')
+          .values
+          .firstWhereOrNull((b) => b.batchCode == tx.batchCode);
+
+      _selectedSellUnit = Hive.box<BatchSellUnit>('batch_sell_units')
+          .values
+          .firstWhereOrNull((u) => u.sellUnitCode == tx.sellUnitCode);
+
+      _quantity = tx.quantitySold;
+    }
     // Create a BluetoothHelper instance
     bluetoothHelper = BluetoothHelper();
 
@@ -181,6 +248,10 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     BluetoothHelper().bluetoothPrint.state.listen((state) {
       BluetoothStates = state;
+    });
+
+    _pmAmountCtrl.addListener(() {
+      setState(() {}); // refresh change display live
     });
   }
 
@@ -1075,6 +1146,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       _paymentAmountController.clear();
       _paymentAmount = null;
       _selectedPaymentPurpose = null;
+      _pmAmountCtrl.text = _totalEntered.toStringAsFixed(2);
     });
   }
 
@@ -1138,6 +1210,8 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                                 onPressed: () {
                                   setState(() {
                                     _paymentPurposes.remove(payment);
+                                    _pmAmountCtrl.text =
+                                        _totalEntered.toStringAsFixed(2);
                                   });
                                 },
                               ),
@@ -1183,7 +1257,11 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                     final prefs = await SharedPreferences.getInstance();
                     final termAggregation =
                         prefs.getBool('termAggregation') ?? false;
+                    final studentId =
+                        _selectedStudent!.studentIdNumber.toString();
 
+                    final projectDetails =
+                        buildStudentArrearsDetails(studentId);
                     // Build unified receipt using new engine
                     final List<LineText> list = buildReceiptLines(
                       schoolInfo: schoolInfo,
@@ -1194,6 +1272,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                       paymentDate: _paymentDate,
                       username: user,
                       arrearsData: arrearsData,
+                      projectArrears: projectDetails,
                       termAggregation: termAggregation,
                       isDuplicate: false, // <-- reprint flag
                     );
@@ -1228,7 +1307,11 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                             final prefs = await SharedPreferences.getInstance();
                             final termAggregation =
                                 prefs.getBool('termAggregation') ?? false;
+                            final studentId =
+                                _selectedStudent!.studentIdNumber.toString();
 
+                            final projectDetails =
+                                buildStudentArrearsDetails(studentId);
                             // Build unified receipt using new engine
                             final List<LineText> list = buildReceiptLines(
                               schoolInfo: schoolInfo,
@@ -1239,6 +1322,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                               paymentDate: _paymentDate,
                               username: user,
                               arrearsData: arrearsData,
+                              projectArrears: projectDetails,
                               termAggregation: termAggregation,
                               isDuplicate: false, // <-- reprint flag
                             );
@@ -1305,6 +1389,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     required DateTime paymentDate,
     required String username,
     required Map<String, dynamic> arrearsData,
+    List<ArrearsSummary>? projectArrears,
     required bool termAggregation,
     bool isDuplicate = true, // <--- NEW PARAM
   }) {
@@ -1313,7 +1398,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     // ---------------------- HEADER ----------------------
     list.add(LineText(
       type: LineText.TYPE_TEXT,
-      content: 'RECEIPT',
+      content: 'FEES RECEIPT',
       align: LineText.ALIGN_CENTER,
       linefeed: 1,
       fontZoom: 1,
@@ -1492,6 +1577,40 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       linefeed: 1,
     ));
 
+    // ---------------------- PROJECT ARREARS ----------------------
+
+    if (projectArrears != null && projectArrears.isNotEmpty) {
+      list.add(LineText(
+        type: LineText.TYPE_TEXT,
+        content: 'PROJECT ARREARS SECTION',
+        align: LineText.ALIGN_CENTER,
+        weight: 1,
+        linefeed: 1,
+      ));
+
+      double total = 0;
+
+      for (final s in projectArrears) {
+        list.add(LineText(
+          type: LineText.TYPE_TEXT,
+          content:
+              "${s.projectName} - ${s.itemName} : \$${s.arrears.toStringAsFixed(2)}",
+          align: LineText.ALIGN_LEFT,
+          linefeed: 1,
+        ));
+
+        total += s.arrears;
+      }
+
+      list.add(LineText(
+        type: LineText.TYPE_TEXT,
+        content: "TOTAL PROJECT ARREARS: \$${total.toStringAsFixed(2)}",
+        align: LineText.ALIGN_RIGHT,
+        weight: 1,
+        linefeed: 1,
+      ));
+    }
+
     // ---------------------- RECEIPT FOOTER ----------------------
     list.add(LineText(
       type: LineText.TYPE_TEXT,
@@ -1525,7 +1644,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     list.add(LineText(
       type: LineText.TYPE_TEXT,
-      content: "User: ${username.toUpperCase()}",
+      content: "Cashier: ${username.toUpperCase()}",
       align: LineText.ALIGN_RIGHT,
       linefeed: 1,
     ));
@@ -1813,6 +1932,11 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       0.0,
       (sum, p) => sum + (p['amount'] as double),
     );
+    final studentId = _selectedStudent!.studentIdNumber.toString();
+
+    final projectDetails = buildStudentArrearsDetails(studentId);
+
+    final projectSummary = buildProjectArrearsSummary(projectDetails);
 
     final allPaymentsInfo = (_paymentInfo ?? '') +
         'Total Paid: \$${totalPaid.toStringAsFixed(2)}' +
@@ -1842,6 +1966,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       '$studentName $studentSurname',
       _paymentPurposes,
       termsNameMap,
+      projectArrearsSummary: projectSummary, // 👈 inject cleanly
     );
     final allPaymentsInfonewag1 = buildAggregatedPaymentSummary1(
       (await _getSchoolInfo()).schoolName?.toUpperCase() ?? 'SCHOOL',
@@ -1849,6 +1974,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       '$studentName $studentSurname',
       _paymentPurposes,
       termsNameMap,
+      projectArrearsSummary: projectSummary, // 👈 inject cleanly
     );
     final allPaymentsInfonew = allPaymentsInfonewag +
         'Total Paid: \$${totalPaid.toStringAsFixed(2)}' +
@@ -1869,6 +1995,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       '$studentName $studentSurname',
       _paymentPurposes,
       termsNameMap,
+      projectArrearsSummary: projectSummary, // 👈 inject cleanly
     );
     final allPaymentsInfoadminnew = allPaymentsInfoadminnewg +
         'TOTAL PAID AMOUNT: \$${totalPaid.toStringAsFixed(2)}' +
@@ -1882,7 +2009,27 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     final loggedInUser = getLoggedInUser(); // your function
     final role = loggedInUser.role;
     final user = loggedInUser.username;
+// ✅ PAYMENT METHOD CALCULATION
+    final double amountReceived =
+        double.tryParse(_pmAmountCtrl.text.trim()) ?? 0.0;
 
+    final double totalEntered = _paymentPurposes.fold(
+      0.0,
+      (sum, p) => sum + (p['amount'] as double),
+    );
+
+    final double changeGiven =
+        amountReceived > totalEntered ? amountReceived - totalEntered : 0.0;
+
+    if (amountReceived <= 0) {
+      _showDialog("Please enter amount received.");
+      return;
+    }
+
+    if (amountReceived < totalEntered) {
+      _showDialog("Amount received cannot be less than total payment.");
+      return;
+    }
     if (_role == DeviceRole.client) {
       setState(() => _isProcessingPayment = true);
 
@@ -1906,6 +2053,14 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
           "syncStatus": false,
           "lastModified": DateTime.now().toIso8601String(),
           "operationType": "create",
+          "paymentMethodType": _paymentMethodType,
+          "paymentMethodAmount": amountReceived,
+          "paymentReference": _pmReferenceCtrl.text.trim(),
+          "mobileMoneyPhone": _pmPhoneCtrl.text.trim(),
+          "mobileMoneyProvider": _provider ?? '',
+          "bankAccountNumber": _pmAccountNumberCtrl.text.trim(),
+          "bankAccountName": _pmAccountNameCtrl.text.trim(),
+          "changeGiven": changeGiven,
           "modifiedFields": [
             "id",
             "receiptNumber",
@@ -1918,7 +2073,15 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
             "paymentDate",
             "termId",
             "username",
-            "role"
+            "role",
+            "paymentMethodType",
+            "paymentMethodAmount",
+            "paymentReference",
+            "mobileMoneyPhone",
+            "mobileMoneyProvider",
+            "bankAccountNumber",
+            "bankAccountName",
+            "changeGiven",
           ],
         });
       }
@@ -2020,6 +2183,14 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         modifiedFields.add('termId');
         modifiedFields.add('username');
         modifiedFields.add('role');
+        modifiedFields.add('paymentMethodType');
+        modifiedFields.add('paymentMethodAmount');
+        modifiedFields.add('paymentReference');
+        modifiedFields.add('mobileMoneyPhone');
+        modifiedFields.add('mobileMoneyProvider');
+        modifiedFields.add('bankAccountNumber');
+        modifiedFields.add('bankAccountName');
+        modifiedFields.add('changeGiven');
 
         final newPayment = StudentPayment(
           id: newId,
@@ -2038,6 +2209,14 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
           modifiedFields: modifiedFields,
           username: user, // ✅ added
           role: role, // ✅ added
+          paymentMethodType: _paymentMethodType,
+          paymentMethodAmount: amountReceived,
+          paymentReference: _pmReferenceCtrl.text.trim(),
+          mobileMoneyPhone: _pmPhoneCtrl.text.trim(),
+          mobileMoneyProvider: _provider ?? '',
+          bankAccountNumber: _pmAccountNumberCtrl.text.trim(),
+          bankAccountName: _pmAccountNameCtrl.text.trim(),
+          changeGiven: changeGiven,
         );
 
         paymentBox.add(newPayment);
@@ -2095,14 +2274,35 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     }
   }
 
+  String buildProjectArrearsSummary(List<ArrearsSummary> list) {
+    if (list.isEmpty) return "";
+
+    final buffer = StringBuffer();
+
+    double total = 0;
+
+    for (final s in list) {
+      buffer.writeln(
+          "${s.projectName} - ${s.itemName} : \$${s.arrears.toStringAsFixed(2)}");
+      total += s.arrears;
+    }
+
+    buffer.writeln("------------------------");
+    buffer.writeln("TOTAL PROJECT ARREARS: \$${total.toStringAsFixed(2)}");
+
+    return buffer.toString();
+  }
+
   String buildAggregatedPaymentSummary(
-    String schoolName,
-    String parentName,
-    String studentName,
-    List<Map<String, dynamic>>
-        payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
-    Map<String, String> termsMap, // termId -> termName
-  ) {
+      String schoolName,
+      String parentName,
+      String studentName,
+      List<Map<String, dynamic>>
+          payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
+      Map<String, String> termsMap,
+      {String? projectArrearsSummary} // 👈 NEW
+      // termId -> termName
+      ) {
     // Map of paymentPurpose → Map<cleanTermName, totalAmount>
     final Map<String, Map<String, double>> summary = {};
 
@@ -2134,18 +2334,27 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     buffer.write(parts.join(' and '));
     buffer.write('.');
+    if (projectArrearsSummary != null &&
+        projectArrearsSummary.trim().isNotEmpty) {
+      buffer.writeln('Project Arrears Section:');
+      buffer.writeln(projectArrearsSummary.trim());
 
+      buffer.write('.');
+      buffer.writeln('Fees Arrears section:');
+    }
     return buffer.toString();
   }
 
   String buildAggregatedPaymentSummary1(
-    String schoolName,
-    String parentName1,
-    String studentName,
-    List<Map<String, dynamic>>
-        payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
-    Map<String, String> termsMap, // termId -> termName
-  ) {
+      String schoolName,
+      String parentName1,
+      String studentName,
+      List<Map<String, dynamic>>
+          payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
+      Map<String, String> termsMap,
+      {String? projectArrearsSummary} // 👈 NEW
+      // termId -> termName
+      ) {
     // Map of paymentPurpose → Map<cleanTermName, totalAmount>
     final Map<String, Map<String, double>> summary = {};
 
@@ -2177,17 +2386,25 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     buffer.write(parts.join(' and '));
     buffer.write('.');
-
+    if (projectArrearsSummary != null &&
+        projectArrearsSummary.trim().isNotEmpty) {
+      buffer.writeln('Project Arrears Section:');
+      buffer.writeln(projectArrearsSummary.trim());
+      buffer.write('.');
+      buffer.writeln('Fees Arrears section:');
+    }
     return buffer.toString();
   }
 
   String buildAggregatedPaymentSummaryadmin(
-    String schoolName,
-    String studentName,
-    List<Map<String, dynamic>>
-        payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
-    Map<String, String> termsMap, // termId -> termName
-  ) {
+      String schoolName,
+      String studentName,
+      List<Map<String, dynamic>>
+          payments, // {'purpose': PaymentPurpose, 'amount': double, 'termId': String}
+      Map<String, String> termsMap,
+      {String? projectArrearsSummary} // 👈 NEW
+      // termId -> termName
+      ) {
     // Map of paymentPurpose → Map<cleanTermName, totalAmount>
     final Map<String, Map<String, double>> summary = {};
 
@@ -2219,7 +2436,13 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     buffer.write(parts.join(' and '));
     buffer.write('.');
-
+    if (projectArrearsSummary != null &&
+        projectArrearsSummary.trim().isNotEmpty) {
+      buffer.writeln('Project Arrears section:');
+      buffer.writeln(projectArrearsSummary.trim());
+      buffer.write('.');
+      buffer.writeln('Fees Arrears section:');
+    }
     return buffer.toString();
   }
 
@@ -2282,6 +2505,13 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
   void _resetForm() {
     _studentSearchController.clear();
+    _pmAmountCtrl.clear();
+    _pmReferenceCtrl.clear();
+    _pmPhoneCtrl.clear();
+    _pmAccountNumberCtrl.clear();
+    _pmAccountNameCtrl.clear();
+    _provider = '';
+    _paymentMethodType = 'cash';
     setState(() {
       _selectedStudent = null;
       _paymentPurposes.clear();
@@ -2519,55 +2749,250 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                          'Student: ${_selectedStudent!.name} ${_selectedStudent!.surname}'),
                                       const SizedBox(height: 10),
-                                      Text(
-                                          'Class: ${_selectedStudent!.class_}'),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                          '${_selectedStudent!.paymentStatus}: ${_selectedStudent!.phoneNumber}'),
-                                      if (_selectedStudent!
-                                                  .emergencyContactNumber !=
-                                              null &&
-                                          _selectedStudent!
-                                              .emergencyContactNumber!
-                                              .isNotEmpty)
-                                        Text(
-                                            '${_selectedStudent!.emergencyContactName}: ${_selectedStudent!.emergencyContactNumber}'),
-                                      const SizedBox(height: 10),
-                                      FutureBuilder<double>(
-                                        future: _totalArrearsFuture,
-                                        builder: (context, snapshot) {
-                                          if (snapshot.connectionState ==
-                                              ConnectionState.waiting) {
-                                            return const Text(
-                                              'Calculating total arrears...',
-                                              style: TextStyle(
-                                                  color: Colors.grey,
-                                                  fontStyle: FontStyle.italic),
+                                      if (_selectedStudent != null)
+                                        Builder(
+                                          builder: (_) {
+                                            final studentId = _selectedStudent!
+                                                .studentIdNumber
+                                                .toString();
+
+                                            // 🔹 PROJECT ARREARS
+                                            final projectArrearsDetails =
+                                                buildStudentArrearsDetails(
+                                                    studentId);
+
+                                            final totalProjectArrears =
+                                                projectArrearsDetails
+                                                    .fold<double>(
+                                              0,
+                                              (sum, e) => sum + e.arrears,
                                             );
-                                          } else if (snapshot.hasError) {
-                                            return Text(
-                                              'Error fetching arrears: ${snapshot.error}',
-                                              style: const TextStyle(
-                                                  color: Colors.red),
-                                            );
-                                          } else {
-                                            final total = snapshot.data ?? 0.0;
-                                            return Text(
-                                              'Total Arrears: \$${total.toStringAsFixed(2)}',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: total > 0
-                                                    ? Colors.redAccent
-                                                    : Colors.green,
+
+                                            return Card(
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 20),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    /// 👤 STUDENT INFO
+                                                    Text(
+                                                        'Student: ${_selectedStudent!.name} ${_selectedStudent!.surname}'),
+                                                    const SizedBox(height: 10),
+                                                    Text(
+                                                        'Class: ${_selectedStudent!.class_}'),
+                                                    const SizedBox(height: 10),
+                                                    Text(
+                                                        '${_selectedStudent!.paymentStatus}: ${_selectedStudent!.phoneNumber}'),
+
+                                                    if (_selectedStudent!
+                                                                .emergencyContactNumber !=
+                                                            null &&
+                                                        _selectedStudent!
+                                                            .emergencyContactNumber!
+                                                            .isNotEmpty)
+                                                      Text(
+                                                          '${_selectedStudent!.emergencyContactName}: ${_selectedStudent!.emergencyContactNumber}'),
+
+                                                    const Divider(height: 30),
+
+                                                    /// 💰 FEES ARREARS (Existing Future)
+                                                    FutureBuilder<double>(
+                                                      future:
+                                                          _totalArrearsFuture,
+                                                      builder:
+                                                          (context, snapshot) {
+                                                        if (snapshot
+                                                                .connectionState ==
+                                                            ConnectionState
+                                                                .waiting) {
+                                                          return const Text(
+                                                            'Calculating total arrears...',
+                                                            style: TextStyle(
+                                                                color:
+                                                                    Colors.grey,
+                                                                fontStyle:
+                                                                    FontStyle
+                                                                        .italic),
+                                                          );
+                                                        }
+
+                                                        if (snapshot.hasError) {
+                                                          return Text(
+                                                            'Error fetching arrears: ${snapshot.error}',
+                                                            style:
+                                                                const TextStyle(
+                                                                    color: Colors
+                                                                        .red),
+                                                          );
+                                                        }
+
+                                                        final feesArrears =
+                                                            snapshot.data ??
+                                                                0.0;
+
+                                                        final grandTotal =
+                                                            feesArrears +
+                                                                totalProjectArrears;
+
+                                                        return Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            /// 🏫 FEES ARREARS
+                                                            Text(
+                                                              'Fees Arrears: \$${feesArrears.toStringAsFixed(2)}',
+                                                              style: TextStyle(
+                                                                fontSize: 16,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: feesArrears >
+                                                                        0
+                                                                    ? Colors
+                                                                        .redAccent
+                                                                    : Colors
+                                                                        .green,
+                                                              ),
+                                                            ),
+
+                                                            const SizedBox(
+                                                                height: 8),
+
+                                                            /// 📦 PROJECT ARREARS
+                                                            if (totalProjectArrears >
+                                                                0)
+                                                              Text(
+                                                                'Project Arrears: \$${totalProjectArrears.toStringAsFixed(2)}',
+                                                                style:
+                                                                    const TextStyle(
+                                                                  fontSize: 16,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  color: Colors
+                                                                      .deepOrange,
+                                                                ),
+                                                              ),
+
+                                                            const SizedBox(
+                                                                height: 12),
+
+                                                            /// 🔥 GRAND TOTAL
+                                                            Text(
+                                                              'Total Outstanding: \$${grandTotal.toStringAsFixed(2)}',
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontSize: 18,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color:
+                                                                    Colors.red,
+                                                              ),
+                                                            ),
+
+                                                            const SizedBox(
+                                                                height: 16),
+
+                                                            /// 📋 PROJECT BREAKDOWN
+                                                            if (projectArrearsDetails
+                                                                .isNotEmpty)
+                                                              Column(
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .start,
+                                                                children: [
+                                                                  const Text(
+                                                                    'Project Breakdown:',
+                                                                    style:
+                                                                        TextStyle(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .bold,
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                      height:
+                                                                          8),
+                                                                  ...projectArrearsDetails
+                                                                      .map((s) {
+                                                                    return Card(
+                                                                      elevation:
+                                                                          1,
+                                                                      margin: const EdgeInsets
+                                                                          .symmetric(
+                                                                          vertical:
+                                                                              4),
+                                                                      child:
+                                                                          Padding(
+                                                                        padding: const EdgeInsets
+                                                                            .all(
+                                                                            8),
+                                                                        child:
+                                                                            Column(
+                                                                          crossAxisAlignment:
+                                                                              CrossAxisAlignment.start,
+                                                                          children: [
+                                                                            Text(
+                                                                              s.projectName,
+                                                                              style: const TextStyle(fontWeight: FontWeight.bold),
+                                                                            ),
+                                                                            Text('Item: ${s.itemName}'),
+                                                                            Text('Batch: ${s.batchName}'),
+                                                                            Text(
+                                                                              'Arrears: \$${s.arrears.toStringAsFixed(2)}',
+                                                                              style: const TextStyle(color: Colors.red),
+                                                                            ),
+                                                                            const SizedBox(height: 8),
+                                                                            Row(
+                                                                              mainAxisAlignment: MainAxisAlignment.end,
+                                                                              children: [
+                                                                                /// 🔹 PAY FULL
+                                                                                ElevatedButton(
+                                                                                  style: ElevatedButton.styleFrom(
+                                                                                    backgroundColor: Colors.redAccent,
+                                                                                  ),
+                                                                                  child: const Text("Pay Now"),
+                                                                                  onPressed: () {
+                                                                                    const ProjectPaymentScreen();
+                                                                                  },
+                                                                                ),
+
+                                                                                const SizedBox(width: 8),
+
+                                                                                /// 🔹 PAY PARTIAL
+                                                                                ElevatedButton(
+                                                                                  child: const Text("Pay Now"),
+                                                                                  onPressed: () {
+                                                                                    const ProjectPaymentScreen();
+                                                                                  },
+                                                                                ),
+                                                                              ],
+                                                                            )
+                                                                          ],
+                                                                        ),
+                                                                      ),
+                                                                    );
+                                                                  }),
+                                                                ],
+                                                              ),
+                                                          ],
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             );
-                                          }
-                                        },
-                                      ),
+                                          },
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -2930,6 +3355,8 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                                           onPressed: () {
                                             setState(() {
                                               _paymentPurposes.remove(payment);
+                                              _pmAmountCtrl.text = _totalEntered
+                                                  .toStringAsFixed(2);
                                             });
                                           },
                                         ),
@@ -2949,6 +3376,8 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 20),
+                            _paymentPurposeSection(),
                             const SizedBox(height: 20),
                             ElevatedButton(
                               onPressed: _confirmPayment,
@@ -3011,6 +3440,248 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
             ),
           ));
     }
+  }
+
+  Widget _paymentPurposeSection() {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(top: 24),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Payment Details',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+
+            /// PAYMENT METHOD
+            DropdownButtonFormField<String>(
+              value: _paymentMethodType,
+              decoration: const InputDecoration(labelText: 'Payment Method'),
+              items: const [
+                DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                DropdownMenuItem(
+                    value: 'mobile_money', child: Text('Mobile Money')),
+                DropdownMenuItem(
+                    value: 'bank_transfer', child: Text('Bank Transfer')),
+                DropdownMenuItem(value: 'card', child: Text('Card')),
+                DropdownMenuItem(value: 'other', child: Text('Other')),
+              ],
+              onChanged: (v) => setState(() => _paymentMethodType = v!),
+            ),
+            const SizedBox(height: 12),
+
+            TextFormField(
+              controller: _pmAmountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Amount Received ($_currency)',
+                hintText: _amountPaid.toStringAsFixed(2),
+              ),
+              onChanged: (value) {
+                final received = double.tryParse(value) ?? 0.0;
+
+                // ❌ Prevent underpayment
+                if (received < _totalEntered) {
+                  _pmAmountCtrl.text = _totalEntered.toStringAsFixed(2);
+                  _pmAmountCtrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: _pmAmountCtrl.text.length),
+                  );
+                }
+
+                setState(() {});
+              },
+            ),
+            if (_pmAmountCtrl.text.isNotEmpty)
+              Builder(
+                builder: (_) {
+                  final received =
+                      double.tryParse(_pmAmountCtrl.text.trim()) ?? 0.0;
+
+                  final change =
+                      received > _totalEntered ? received - _totalEntered : 0.0;
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.grey.shade100,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Payment Summary",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("Total Due"),
+                            Text(
+                              "$_currency ${_totalEntered.toStringAsFixed(2)}",
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("Amount Received"),
+                            Text(
+                              "$_currency ${received.toStringAsFixed(2)}",
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Change",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            Text(
+                              "$_currency ${change.toStringAsFixed(2)}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+            const SizedBox(height: 12),
+
+            /// ADDITIONAL DETAILS PER PAYMENT METHOD
+            if (_paymentMethodType != 'cash') ...[
+              TextFormField(
+                controller: _pmReferenceCtrl,
+                decoration: const InputDecoration(labelText: 'Reference'),
+              ),
+            ],
+
+            if (_paymentMethodType == 'mobile_money') ...[
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _pmPhoneCtrl,
+                decoration: const InputDecoration(labelText: 'Phone Number'),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Provider'),
+                onChanged: (v) => _provider = v.trim(),
+              ),
+            ],
+
+            if (_paymentMethodType == 'bank_transfer') ...[
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _pmAccountNumberCtrl,
+                decoration: const InputDecoration(labelText: 'Account Number'),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _pmAccountNameCtrl,
+                decoration: const InputDecoration(labelText: 'Account Name'),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double calculateArrears(String saleCode) {
+    final txBox = Hive.box<ProjectSaleTransaction>('project_sale_transactions');
+
+    final sale = txBox.values.firstWhere(
+      (t) => t.transactionCode == saleCode && t.createsObligation,
+    );
+
+    final subsequentPayments = txBox.values
+        .where(
+            (t) => t.parentTransactionCode == saleCode && t.settlesObligation)
+        .fold<double>(0, (sum, t) => sum + t.amountPaid);
+
+    final totalPaid = sale.amountPaid + subsequentPayments;
+
+    return (sale.totalAmount - totalPaid).clamp(0, double.infinity);
+  }
+
+  List<ArrearsSummary> buildStudentArrearsDetails(String studentId) {
+    final txBox = Hive.box<ProjectSaleTransaction>('project_sale_transactions');
+    final batchBox = Hive.box<ProductBatch>('product_batches');
+    final List<ProjectSaleTransaction> _cart = [];
+
+    final sales = txBox.values.where((t) =>
+        t.studentId == studentId && t.createsObligation && t.isDeleted != true);
+
+    return sales
+        .map((sale) {
+          final payments = txBox.values
+              .where((t) =>
+                  t.parentTransactionCode == sale.transactionCode &&
+                  t.settlesObligation &&
+                  t.isDeleted != true)
+              .fold<double>(0, (sum, t) => sum + t.amountPaid);
+
+          final totalPaid = sale.amountPaid + payments;
+          final arrears =
+              (sale.totalAmount - totalPaid).clamp(0, double.infinity);
+// 🔥 subtract cart payments for same parent sale
+          final cartPayments = _cart
+              .where((t) => t.parentTransactionCode == sale.transactionCode)
+              .fold<double>(0, (sum, t) => sum + t.amountPaid);
+
+          final adjustedArrears =
+              (arrears - cartPayments).clamp(0, double.infinity);
+
+          final project =
+              _projects.firstWhere((p) => p.projectCode == sale.projectCode);
+
+          final item = _items
+              .firstWhere((i) => i.projectItemCode == sale.projectItemCode);
+
+          final batch =
+              batchBox.values.firstWhere((b) => b.batchCode == sale.batchCode);
+
+          return ArrearsSummary(
+            transactionCode: sale.transactionCode,
+            projectName: project.name,
+            itemName: item.name ?? '',
+            batchName: batch.reference ?? '',
+            totalAmount: sale.totalAmount,
+            totalPaid: totalPaid + cartPayments,
+            arrears: adjustedArrears.toDouble(),
+          );
+        })
+        .where((s) => s.arrears > 0)
+        .toList();
   }
 
   Future<double> _computeTotalStudentArrears(Student student) async {
@@ -3644,4 +4315,24 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     _studentSearchController.dispose();
     super.dispose();
   }
+}
+
+class ArrearsSummary {
+  final String transactionCode;
+  final String projectName;
+  final String itemName;
+  final String batchName;
+  final double totalAmount;
+  final double totalPaid;
+  final double arrears;
+
+  ArrearsSummary({
+    required this.transactionCode,
+    required this.projectName,
+    required this.itemName,
+    required this.batchName,
+    required this.totalAmount,
+    required this.totalPaid,
+    required this.arrears,
+  });
 }

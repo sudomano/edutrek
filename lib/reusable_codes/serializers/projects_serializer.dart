@@ -31,4 +31,6 @@ Project projectsFromJson(Map<String, dynamic> json) => Project(
           : null,
       operationType: json['operationType'],
       modifiedFields: parseStringList(json['modifiedFields']),
+      projectType: json['projectType'],
+      participationType: json['participationType'],
     );

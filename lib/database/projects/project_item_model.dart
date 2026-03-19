@@ -5,19 +5,20 @@ part 'project_item_model.g.dart';
 @HiveType(typeId: 25)
 class ProjectItem extends HiveObject {
   @HiveField(0)
-  String projectItemCode;
+  String? projectItemCode; // nullable for safety
 
   @HiveField(1)
-  String projectCode;
+  String? projectCode;
 
   @HiveField(2)
-  String name; // e.g., "Lab Fee"
+  String? name; // nullable
 
+  /// goods | service
   @HiveField(3)
-  double amount;
+  String? itemType;
 
   @HiveField(4)
-  bool isStudentFee;
+  bool? active; // make nullable
 
   @HiveField(5)
   bool? syncStatus;
@@ -28,15 +29,20 @@ class ProjectItem extends HiveObject {
   @HiveField(7)
   String? operationType;
 
+  /// true if stock is tracked
   @HiveField(8)
-  List<String>? modifiedFields; // Tracks fields that were modified
+  bool? trackStock; // nullable
+
+  @HiveField(9)
+  List<String>? modifiedFields; // already nullable
 
   ProjectItem({
-    required this.projectItemCode,
-    required this.projectCode,
-    required this.name,
-    required this.amount,
-    required this.isStudentFee,
+    this.projectItemCode,
+    this.projectCode,
+    this.name,
+    this.itemType,
+    this.active,
+    this.trackStock,
     this.syncStatus,
     this.lastModified,
     this.operationType,
@@ -47,8 +53,9 @@ class ProjectItem extends HiveObject {
     String? projectItemCode,
     String? projectCode,
     String? name,
-    double? amount,
-    bool? isStudentFee,
+    String? itemType,
+    bool? active,
+    bool? trackStock,
     bool? syncStatus,
     DateTime? lastModified,
     String? operationType,
@@ -58,8 +65,9 @@ class ProjectItem extends HiveObject {
       projectItemCode: projectItemCode ?? this.projectItemCode,
       projectCode: projectCode ?? this.projectCode,
       name: name ?? this.name,
-      amount: amount ?? this.amount,
-      isStudentFee: isStudentFee ?? this.isStudentFee,
+      itemType: itemType ?? this.itemType,
+      active: active ?? this.active,
+      trackStock: trackStock ?? this.trackStock,
       syncStatus: syncStatus ?? this.syncStatus,
       lastModified: lastModified ?? this.lastModified,
       operationType: operationType ?? this.operationType,

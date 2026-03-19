@@ -11,10 +11,19 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/projects/packaging_level.dart';
+import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_item_price_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
+import 'package:zitf_system/database/projects/stock_unit_type.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
+//import 'package:zitf_system/database/projects/project_student_payment_model.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -62,8 +71,16 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
   Box<Project>? _projectBox;
   Box<ProjectItem>? _projectItemBox;
   Box<DailyActivity>? _dailyActivityBox;
-  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+  //Box<ProjectStudentPayment>? _projectStudentPaymentBox;
   Box<ExceptionalStudents>? _exceptionalStudentsBox;
+
+  Box<BatchUnit>? _batchUnitBox;
+  Box<ProductBatch>? _productBatchBox;
+  Box<ProjectItemPrice>? _projectItemPriceBox;
+  Box<ProjectSaleTransaction>? _projectSaleTransactionBox;
+  Box<BatchSellUnit>? _batchSellUnitBox;
+  Box<PaymentMethod>? _paymentMethodBox;
+  Box<ReceiptSnapshot>? _receiptSnapshotBox;
 
   bool _isImporting = false; // To track import status
 
@@ -96,10 +113,20 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     _projectBox = await Hive.openBox<Project>('projects');
     _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
     _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-    _projectStudentPaymentBox =
-        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+    // _projectStudentPaymentBox =
+    //   await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
     _exceptionalStudentsBox =
         await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+    _batchUnitBox = await Hive.openBox<BatchUnit>('batch_units');
+    _productBatchBox = await Hive.openBox<ProductBatch>('product_batches');
+    _projectItemPriceBox =
+        await Hive.openBox<ProjectItemPrice>('project_item_prices');
+    _projectSaleTransactionBox =
+        await Hive.openBox<ProjectSaleTransaction>('project_sale_transactions');
+    _batchSellUnitBox = await Hive.openBox<BatchSellUnit>('batch_sell_units');
+    _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
+    _receiptSnapshotBox =
+        await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
   }
 
   Future<void> importHiveData() async {
@@ -152,14 +179,27 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         await _deserializeAndSave(
             importData['projects'], _projectsFromJson, _projectBox);
         await _deserializeAndSave(importData['project_items'],
-            _project_itemsFromJson, _projectItemBox);
+            _projectItemsFromJson, _projectItemBox);
         await _deserializeAndSave(importData['daily_activities'],
             _daily_activitiesFromJson, _dailyActivityBox);
 
-        await _deserializeAndSave(importData['project_student_payments'],
-            _project_student_paymentsFromJson, _projectStudentPaymentBox);
         await _deserializeAndSave(importData['exceptions'], _exceptionsFromJson,
             _exceptionalStudentsBox);
+
+        await _deserializeAndSave(
+            importData['batch_units'], _batchUnitFromJson, _batchUnitBox);
+        await _deserializeAndSave(importData['product_batches'],
+            _productBatchFromJson, _productBatchBox);
+        await _deserializeAndSave(importData['project_item_prices'],
+            _projectItemPriceFromJson, _projectItemPriceBox);
+        await _deserializeAndSave(importData['project_sale_transactions'],
+            _projectSaleTransactionFromJson, _projectSaleTransactionBox);
+        await _deserializeAndSave(importData['batch_sell_units'],
+            _batchSellUnitFromJson, _batchSellUnitBox);
+        await _deserializeAndSave(importData['payment_methods'],
+            _paymentMethodFromJson, _paymentMethodBox);
+        await _deserializeAndSave(importData['receipt_snapshots'],
+            _receiptSnapshotFromJson, _receiptSnapshotBox);
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Data imported successfully.'),
@@ -195,8 +235,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     await _projectBox?.clear();
     await _projectItemBox?.clear();
     await _dailyActivityBox?.clear();
-    await _projectStudentPaymentBox?.clear();
     await _exceptionalStudentsBox?.clear();
+    await _batchUnitBox?.clear();
+    await _productBatchBox?.clear();
+    await _projectItemPriceBox?.clear();
+    await _projectSaleTransactionBox?.clear();
+    await _batchSellUnitBox?.clear();
+    await _paymentMethodBox?.clear();
+    await _receiptSnapshotBox?.clear();
   }
 
   Future<void> _deserializeAndSave<T>(List<dynamic>? data,
@@ -224,6 +270,188 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       return List<String>.from(value);
     }
     return [];
+  }
+
+  ProductBatch _productBatchFromJson(Map<String, dynamic> json) => ProductBatch(
+        batchCode: json['batchCode'],
+        productCode: json['productCode'],
+        reference: json['reference'],
+        baseUnitType: json['baseUnitType'] != null
+            ? StockUnitType.values
+                .firstWhere((e) => e.name == json['baseUnitType'])
+            : null,
+        baseUnit: json['baseUnit'],
+        baseUnitSize: (json['baseUnitSize'] as num?)?.toDouble(),
+        totalBaseUnits: (json['totalBaseUnits'] as num?)?.toDouble(),
+        remainingBaseUnits: (json['remainingBaseUnits'] as num?)?.toDouble(),
+        totalBuyingCost: (json['totalBuyingCost'] as num?)?.toDouble(),
+        purchaseDate: json['purchaseDate'] != null
+            ? DateTime.parse(json['purchaseDate'])
+            : null,
+        createdAt: json['createdAt'] != null
+            ? DateTime.parse(json['createdAt'])
+            : null,
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: parseStringList(json['modifiedFields']),
+        units: (json['units'] as List?)
+            ?.map((e) => _batchUnitFromJson(e))
+            .toList(),
+      );
+
+  BatchUnit _batchUnitFromJson(Map<String, dynamic> json) => BatchUnit(
+        level: PackagingLevel.values.firstWhere((e) => e.name == json['level']),
+        unitsPerPackage: (json['unitsPerPackage'] as num).toDouble(),
+        quantity: json['quantity'],
+        buyingPrice: (json['buyingPrice'] as num).toDouble(),
+      );
+
+  ProjectItemPrice _projectItemPriceFromJson(Map<String, dynamic> json) =>
+      ProjectItemPrice(
+        priceCode: json['priceCode'],
+        projectItemCode: json['projectItemCode'],
+        amount: (json['amount'] as num).toDouble(),
+        pricingType: json['pricingType'],
+        appliesTo: json['appliesTo'],
+        effectiveFrom: DateTime.parse(json['effectiveFrom']),
+        effectiveTo: json['effectiveTo'] != null
+            ? DateTime.parse(json['effectiveTo'])
+            : null,
+        syncStatus: json['syncStatus'],
+        lastModified: json['lastModified'] != null
+            ? DateTime.parse(json['lastModified'])
+            : null,
+        operationType: json['operationType'],
+        modifiedFields: parseStringList(json['modifiedFields']),
+      );
+
+  ProjectSaleTransaction _projectSaleTransactionFromJson(
+      Map<String, dynamic> json) {
+    return ProjectSaleTransaction(
+      transactionCode: json['transactionCode'],
+      studentId: json['studentId'],
+      projectCode: json['projectCode'],
+      projectItemCode: json['projectItemCode'],
+      batchCode: json['batchCode'],
+      sellUnitCode: json['sellUnitCode'],
+      sellUnitNameSnapshot: json['sellUnitNameSnapshot'],
+      quantitySold: json['quantitySold'],
+      unitSellingPrice: (json['unitSellingPrice'] as num).toDouble(),
+      totalAmount: (json['totalAmount'] as num).toDouble(),
+      baseUnitsPerSellUnit: (json['baseUnitsPerSellUnit'] as num).toDouble(),
+      totalBaseUnitsSold: (json['totalBaseUnitsSold'] as num).toDouble(),
+      baseUnit: json['baseUnit'],
+      baseUnitType: StockUnitType.values
+          .firstWhere((e) => e.name == json['baseUnitType']),
+      transactionDate: DateTime.parse(json['transactionDate']),
+      paymentMethod: json['paymentMethod'],
+      reference: json['reference'],
+      amountPaid: (json['amountPaid'] as num).toDouble(),
+      arrears: (json['arrears'] as num).toDouble(),
+      isDeleted: json['isDeleted'] ?? false,
+      deletedAt: (json['deletedAt'] as List?)
+              ?.map((e) => DateTime.parse(e))
+              .toList() ??
+          [],
+      restoredAt: (json['restoredAt'] as List?)
+              ?.map((e) => DateTime.parse(e))
+              .toList() ??
+          [],
+      deletedByUsers: (json['deletedByUsers'] as List?)?.cast<String>() ?? [],
+      restoredByUsers: (json['restoredByUsers'] as List?)?.cast<String>() ?? [],
+      paymentMethodCode: json['paymentMethodCode'],
+      methodType: json['methodType'],
+      amountPaidInPaymentMethod:
+          (json['amountPaidInPaymentMethod'] as num?)?.toDouble(),
+      currency: json['currency'],
+      provider: json['provider'],
+      referenceNumber: json['referenceNumber'],
+      phoneNumber: json['phoneNumber'],
+      accountNumber: json['accountNumber'],
+      accountName: json['accountName'],
+      paymentDatetransacted: json['paymentDatetransacted'] != null
+          ? DateTime.parse(json['paymentDatetransacted'])
+          : null,
+      isReversed: json['isReversed'],
+      lineTransactionCodes:
+          (json['lineTransactionCodes'] as List?)?.cast<String>(),
+      financialType: json['financialType'] ?? 'sale',
+      parentTransactionCode: json['parentTransactionCode'],
+      affectsStock: json['affectsStock'] ?? true,
+      createsObligation: json['createsObligation'] ?? false,
+      settlesObligation: json['settlesObligation'] ?? false,
+      syncStatus: json['syncStatus'],
+      lastModified: json['lastModified'] != null
+          ? DateTime.parse(json['lastModified'])
+          : null,
+      operationType: json['operationType'],
+      modifiedFields: parseStringList(json['modifiedFields']),
+    );
+  }
+
+  BatchSellUnit _batchSellUnitFromJson(Map<String, dynamic> json) {
+    return BatchSellUnit(
+      sellUnitCode: json["sell_unit_code"],
+      batchCode: json["batch_code"],
+      unitName: json["unit_name"],
+      quantityMultiplier: json["quantity_multiplier"] ?? 1,
+      sellingPrice: (json["selling_price"] as num).toDouble(),
+      active: json["active"] ?? true,
+      deletedAt: json["deleted_at"] != null
+          ? DateTime.tryParse(json["deleted_at"])
+          : null,
+      lastModified: json["last_modified"] != null
+          ? DateTime.tryParse(json["last_modified"])
+          : null,
+      operationType: json["operation_type"],
+      modifiedFields:
+          (json["modified_fields"] as List?)?.map((e) => e.toString()).toList(),
+      baseUnitsPerSellUnit:
+          (json["base_units_per_sell_unit"] as num?)?.toDouble(),
+      baseUnit: json["base_unit"],
+    );
+  }
+
+  PaymentMethod _paymentMethodFromJson(Map<String, dynamic> json) {
+    return PaymentMethod(
+      paymentMethodCode: json["payment_method_code"],
+      methodType: json["method_type"],
+      amount: (json["amount"] as num?)?.toDouble(),
+      currency: json["currency"],
+      provider: json["provider"],
+      reference: json["reference"],
+      phoneNumber: json["phone_number"],
+      accountNumber: json["account_number"],
+      accountName: json["account_name"],
+      paymentDate: json["payment_date"] != null
+          ? DateTime.tryParse(json["payment_date"])
+          : null,
+      isReversed: json["is_reversed"],
+      lastModified: json["last_modified"] != null
+          ? DateTime.tryParse(json["last_modified"])
+          : null,
+      operationType: json["operation_type"],
+    );
+  }
+
+  ReceiptSnapshot _receiptSnapshotFromJson(Map<String, dynamic> json) {
+    return ReceiptSnapshot(
+      receiptCode: json["receipt_code"],
+      receiptDate: DateTime.parse(json["receipt_date"]),
+      cashier: json["cashier"],
+      totalExpected: (json["total_expected"] as num).toDouble(),
+      totalPaid: (json["total_paid"] as num).toDouble(),
+      amountReceived: (json["amount_received"] as num).toDouble(),
+      change: (json["change_amount"] as num).toDouble(),
+      currency: json["currency"],
+      receiptLinesJson: List<Map<String, dynamic>>.from(json["receipt_lines"]),
+      isReprint: json["is_reprint"] ?? false,
+      studentName: json["student_name"],
+      studentClass: json["student_class"],
+    );
   }
 
 // JSON Deserialization method for ExceptionalStudents
@@ -666,14 +894,22 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             : null,
         operationType: json['operationType'],
         modifiedFields: parseStringList(json['modifiedFields']),
-      );
 
-  ProjectItem _project_itemsFromJson(Map<String, dynamic> json) => ProjectItem(
+        // ✅ NEW REQUIRED FIELDS
+        projectType: json['projectType'] ?? 'sales',
+        participationType: json['participationType'] ?? 'optional',
+        studentPayable: json['studentPayable'],
+      );
+  ProjectItem _projectItemsFromJson(Map<String, dynamic> json) => ProjectItem(
         projectItemCode: json['projectItemCode'],
         projectCode: json['projectCode'],
         name: json['name'],
-        amount: json['amount'],
-        isStudentFee: json['isStudentFee'],
+
+        // ✅ NEW FIELDS
+        itemType: json['itemType'],
+        active: json['active'],
+        trackStock: json['trackStock'],
+
         syncStatus: json['syncStatus'],
         lastModified: json['lastModified'] != null
             ? DateTime.parse(json['lastModified'])
@@ -690,23 +926,6 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         type: json['type'],
         description: json['description'],
         amount: json['amount'],
-        syncStatus: json['syncStatus'],
-        lastModified: json['lastModified'] != null
-            ? DateTime.parse(json['lastModified'])
-            : null,
-        operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
-      );
-
-  ProjectStudentPayment _project_student_paymentsFromJson(
-          Map<String, dynamic> json) =>
-      ProjectStudentPayment(
-        projectStudentPaymentCode: json['projectStudentPaymentCode'],
-        studentId: json['studentId'],
-        projectCode: json['projectCode'],
-        itemId: json['itemId'],
-        amountPaid: json['amountPaid'],
-        balance: json['balance'],
         syncStatus: json['syncStatus'],
         lastModified: json['lastModified'] != null
             ? DateTime.parse(json['lastModified'])

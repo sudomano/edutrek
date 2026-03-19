@@ -4,11 +4,10 @@ import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
-import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 
 class CreateProjectItemForm extends StatefulWidget {
   @override
-  _CreateProjectItemFormState createState() => _CreateProjectItemFormState();
+  State<CreateProjectItemForm> createState() => _CreateProjectItemFormState();
 }
 
 class _CreateProjectItemFormState extends State<CreateProjectItemForm> {
@@ -17,64 +16,58 @@ class _CreateProjectItemFormState extends State<CreateProjectItemForm> {
   // Controllers
 
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
-  bool _isStudentFee = false;
 
-  String? _selectedProjectCode; // Dropdown selection for project code
+  String? _selectedProjectCode;
+  String _itemType = 'goods'; // goods | service
+  bool _trackStock = true;
+  bool _active = true;
 
   void _saveProjectItem() async {
-    if (_formKey.currentState!.validate()) {
-      // Check if a project item with the same code exists
-      final itemBox = Hive.box<ProjectItem>('projectItems');
-      final existingItems = itemBox.values.cast<ProjectItem>().where(
-            (item) =>
-                item.name.toLowerCase() == _nameController.text.toLowerCase(),
-          );
-      if (existingItems.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Project Item with this Name already exists')),
-        );
-        return;
-      }
-      final projectItemCode = uuid.v4();
-      // Create new ProjectItem
-      final newItem = ProjectItem(
-        projectItemCode: projectItemCode,
-        projectCode: _selectedProjectCode!,
-        name: _nameController.text,
-        amount: double.parse(_amountController.text),
-        isStudentFee: _isStudentFee,
-        syncStatus: false,
-        lastModified: DateTime.now(),
-        operationType: 'create',
-      );
+    if (!_formKey.currentState!.validate()) return;
 
-      // Save to Hive
-      await itemBox.add(newItem);
+    final itemBox = Hive.box<ProjectItem>('projectItems');
 
-      // Show success message and clear the form
+    final exists = itemBox.values.any(
+      (i) =>
+          i.projectCode == _selectedProjectCode &&
+          (i.name?.toLowerCase() ?? '') == _nameController.text.toLowerCase() &&
+          (i.active ?? false),
+    );
+
+    if (exists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Project Item created successfully!')),
+        const SnackBar(content: Text('Item already exists for this project')),
       );
-
-      _formKey.currentState!.reset();
-      _nameController.clear();
-      _amountController.clear();
-      setState(() {
-        _isStudentFee = false;
-      });
-
-      // Optionally, navigate back
-      Navigator.pop(context);
+      return;
     }
+
+    final newItem = ProjectItem(
+      projectItemCode: uuid.v4(),
+      projectCode: _selectedProjectCode!,
+      name: _nameController.text.trim(),
+      itemType: _itemType,
+      active: _active,
+      trackStock: _itemType == 'goods' ? _trackStock : false,
+      syncStatus: false,
+      lastModified: DateTime.now(),
+      operationType: 'create',
+    );
+
+    await itemBox.add(newItem);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Project Item created successfully')),
+    );
+
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Fetch all available projects for the dropdown
-    final projectBox = Hive.box<Project>('projects');
-    final projects = projectBox.values.toList();
+    final projects = Hive.box<Project>('projects')
+        .values
+        .where((p) => p.status.toLowerCase() == 'active')
+        .toList();
 
     return CenteredFormContainer(
       title: 'New Project Item',
@@ -82,74 +75,67 @@ class _CreateProjectItemFormState extends State<CreateProjectItemForm> {
         key: _formKey,
         child: ListView(
           children: [
-            // Select Project
             DropdownButtonFormField<String>(
-              decoration: InputDecoration(labelText: 'Select Project'),
               value: _selectedProjectCode,
+              decoration: const InputDecoration(labelText: 'Project'),
               items: projects
-                  .map((project) => DropdownMenuItem(
-                        value: project.projectCode,
-                        child: Text(project.name),
-                      ))
+                  .map(
+                    (p) => DropdownMenuItem(
+                      value: p.projectCode,
+                      child: Text(p.name),
+                    ),
+                  )
                   .toList(),
-              onChanged: (newValue) {
+              onChanged: (v) {
                 setState(() {
-                  _selectedProjectCode = newValue;
+                  _selectedProjectCode = v;
+                  // Get the selected project
+                  final project =
+                      projects.firstWhere((p) => p.projectCode == v);
+                  // Set itemType based on projectType
+                  _itemType =
+                      project.projectType == 'sales' ? 'goods' : 'service';
+                  // TrackStock only relevant for goods
+                  _trackStock = _itemType == 'goods';
                 });
               },
-              validator: (value) {
-                if (value == null) {
-                  return 'Please select a project';
-                }
-                return null;
-              },
+              validator: (v) => v == null ? 'Select project' : null,
             ),
-
-            // Item Name
             TextFormField(
               controller: _nameController,
-              decoration: InputDecoration(labelText: 'Item Name'),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter an item name';
-                }
-                return null;
-              },
+              decoration: const InputDecoration(labelText: 'Item Name'),
+              validator: (v) =>
+                  v == null || v.isEmpty ? 'Enter item name' : null,
             ),
-            // Project Item Code
-
-            // Amount
-            TextFormField(
-              controller: _amountController,
-              decoration: InputDecoration(labelText: 'Amount'),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter an amount';
-                }
-                if (double.tryParse(value) == null) {
-                  return 'Please enter a valid number';
-                }
-                return null;
-              },
+            DropdownButtonFormField<String>(
+              value: _itemType,
+              decoration: const InputDecoration(labelText: 'Item Type'),
+              items: [
+                DropdownMenuItem(
+                  value: _itemType,
+                  child: Text(
+                    _itemType.toUpperCase(),
+                  ),
+                )
+              ],
+              onChanged: null, // Disabled: follows projectType
             ),
-
-            // Is Student Fee Checkbox
-            CheckboxListTile(
-              title: Text('Is this a student fee?'),
-              value: _isStudentFee,
-              onChanged: (value) {
-                setState(() {
-                  _isStudentFee = value!;
-                });
-              },
+            SwitchListTile(
+              title: const Text('Track Stock'),
+              value: _trackStock,
+              onChanged: _itemType == 'service'
+                  ? null
+                  : (v) => setState(() => _trackStock = v),
             ),
-
-            // Save Button
-            SizedBox(height: 20),
+            SwitchListTile(
+              title: const Text('Active'),
+              value: _active,
+              onChanged: (v) => setState(() => _active = v),
+            ),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _saveProjectItem,
-              child: Text('Save Project Item'),
+              child: const Text('Save Item'),
             ),
           ],
         ),

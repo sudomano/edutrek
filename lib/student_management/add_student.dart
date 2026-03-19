@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
+import 'package:zitf_system/main.dart';
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:zitf_system/reusable_codes/contact_utils/contact_utils.dart';
+import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart';
+import 'package:zitf_system/server/routes/class_factory.dart';
+import 'package:zitf_system/server/routes/exceptions_factory.dart';
+import 'package:zitf_system/server/routes/terms_factory.dart';
+import 'package:zitf_system/student_management/add_student_from_client.dart';
 
 class AddStudentScreen extends StatefulWidget {
   const AddStudentScreen({super.key});
@@ -17,6 +24,8 @@ class AddStudentScreen extends StatefulWidget {
   @override
   _AddStudentScreenState createState() => _AddStudentScreenState();
 }
+
+enum DeviceRole { host, client }
 
 class _AddStudentScreenState extends State<AddStudentScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -48,54 +57,156 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   List<String> _classes = [];
 
   // --- New: Variables for term selection ---
-  List<String> _availableTerms = [];
-  List<String> _selectedTerms = []; // Stores user-selected term IDs
+  List<Terms> _availableTerms = [];
+  List<String> _selectedTerms = [];
+  // Stores user-selected term IDs
 
   bool? _isNewComer;
   bool? _isExceptional;
   DateTime? _isNewComerFrom;
   DateTime? _isNewComerUntil;
 
+  Future<DeviceRole> _loadDeviceRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roleStr = prefs.getString('device_role');
+
+    if (roleStr == 'host') return DeviceRole.host;
+    return DeviceRole.client; // default safe
+  }
+
+  DeviceRole? _role;
+  bool _roleReady = false;
+
   @override
   void initState() {
     super.initState();
-    _loadClasses();
-    _loadTerms();
-    _loadExceptions();
-
-    _setInitialRegNumber();
+    _initializeDevice();
   }
 
-  void _loadExceptions() async {
-    final box =
-        await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
-    final all = box.values.toList();
+  Future<void> _initializeDevice() async {
+    final role = await _loadDeviceRole();
 
     setState(() {
-      _allExceptions = all
-          .where((e) => e.exceptionStatus!.toLowerCase() == 'active')
-          .toList();
+      _role = role;
+      _roleReady = true;
     });
+
+    // 🔐 SAFE: role is now known
+    await _loadTerms();
+    await _loadClasses();
+    _loadExceptions();
+    await _setInitialRegNumber();
+  }
+
+  Future<void> _loadExceptions() async {
+    if (!_roleReady || globalTermId == null) return;
+
+    if (_role == DeviceRole.host) {
+      // HOST → Hive
+      final box =
+          await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+
+      setState(() {
+        _allExceptions = box.values
+            .where((e) =>
+                e.exceptionStatus != null &&
+                e.exceptionStatus!.toLowerCase() == 'active' &&
+                e.terms!.contains(globalTermId))
+            .toList();
+      });
+    } else {
+      // CLIENT → HOST API ONLY
+      try {
+        final exceptions =
+            await ExceptionalStudentApiService.fetchActiveExceptions(
+                globalTermId!);
+
+        setState(() {
+          _allExceptions = exceptions;
+        });
+      } catch (e) {
+        setState(() => _allExceptions = []);
+
+        _showDialog(
+          'Unable to load exceptions from host.\n'
+          'You cannot add students while offline.',
+        );
+      }
+    }
   }
 
   Future<void> _loadTerms() async {
-    final termsBox = await Hive.openBox<Terms>('terms');
-    setState(() {
-      _availableTerms =
-          termsBox.values.map((term) => term.termId).toSet().toList();
-      _selectedTerms =
-          List.from(_availableTerms); // Select all terms by default
-    });
+    if (!_roleReady) return;
+
+    final now = DateTime.now();
+
+    if (_role == DeviceRole.host) {
+      final termsBox = await Hive.openBox<Terms>('terms');
+      final terms = termsBox.values.toList();
+      final sorted = sortTermsByStatusAndStartDate(terms);
+
+      setState(() {
+        _availableTerms = sorted;
+
+        // ✅ SELECT ONLY NON-EXPIRED TERMS
+        _selectedTerms = sorted
+            .where((t) => t.endDate != null && t.endDate!.isAfter(now))
+            .map((t) => t.termId!)
+            .toList();
+      });
+    } else {
+      try {
+        final terms = await TermApiService.fetchTerms();
+        final sorted = sortTermsByStatusAndStartDate(terms);
+
+        setState(() {
+          _availableTerms = sorted;
+
+          // ✅ SELECT ONLY NON-EXPIRED TERMS
+          _selectedTerms = sorted
+              .where((t) => t.endDate != null && t.endDate!.isAfter(now))
+              .map((t) => t.termId!)
+              .toList();
+        });
+      } catch (e) {
+        setState(() {
+          _availableTerms = [];
+          _selectedTerms = [];
+        });
+
+        _showDialog(
+          'Unable to load terms from host.\n'
+          'You cannot add students while offline.',
+        );
+      }
+    }
   }
 
   Future<void> _loadClasses() async {
-    final box = await Hive.openBox<Classes>('classes');
-    setState(() {
-      _classes = box.values
-          .where((c) => c.terms!.contains(globalTermId))
-          .map((c) => c.className)
-          .toList();
-    });
+    if (!_roleReady || globalTermId == null) return;
+
+    if (_role == DeviceRole.host) {
+      // HOST → Hive
+      final box = await Hive.openBox<Classes>('classes');
+      setState(() {
+        _classes = box.values
+            .where((c) => c.terms!.contains(globalTermId))
+            .map((c) => c.className)
+            .toList();
+      });
+    } else {
+      // CLIENT → API ONLY
+      try {
+        final classes = await ClassApiService.fetchClasses(globalTermId!);
+        setState(() => _classes = classes);
+      } catch (e) {
+        setState(() => _classes = []);
+        _showDialog(
+          'Unable to load classes from host.\n'
+          'You cannot add students while offline.',
+        );
+      }
+    }
   }
 
   Future<void> _setInitialRegNumber() async {
@@ -371,21 +482,55 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         ? const Text('No terms available')
         : Column(
             children: _availableTerms.map((term) {
+              final isExpired = term.endDate != null &&
+                  term.endDate!.isBefore(DateTime.now());
+
               return CheckboxListTile(
-                title: Text(term),
-                value: _selectedTerms.contains(term),
+                title: Text(
+                  term.termName ?? term.termId!,
+                  style: TextStyle(
+                    color: isExpired ? Colors.grey : null,
+                    decoration: isExpired ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                subtitle: term.endDate != null
+                    ? Text('Ends: ${term.endDate!.toLocal()}')
+                    : null,
+                value: _selectedTerms.contains(term.termId),
                 onChanged: (selected) {
                   setState(() {
                     if (selected == true) {
-                      _selectedTerms.add(term);
+                      _selectedTerms.add(term.termId!);
                     } else {
-                      _selectedTerms.remove(term);
+                      _selectedTerms.remove(term.termId);
                     }
                   });
                 },
               );
             }).toList(),
           );
+  }
+
+  List<Terms> sortTermsByStatusAndStartDate(List<Terms> terms) {
+    final now = DateTime.now();
+
+    terms.sort((a, b) {
+      final aExpired = a.endDate != null && a.endDate!.isBefore(now);
+      final bExpired = b.endDate != null && b.endDate!.isBefore(now);
+
+      // ✅ Active terms first
+      if (aExpired != bExpired) {
+        return aExpired ? 1 : -1;
+      }
+
+      // ✅ Same group → sort by startDate
+      final aStart = a.startDate ?? DateTime(1900);
+      final bStart = b.startDate ?? DateTime(1900);
+
+      return bStart.compareTo(aStart); // newest first
+    });
+
+    return terms;
   }
 
   Widget _buildTextField(String label, TextEditingController controller,
@@ -875,8 +1020,32 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           isNewComerUntil: _isNewComerUntil,
         );
 
-        box.add(newStudent); // Add the student
-        await saveParentContact(newStudent); // 👈 Auto save parent contact
+        if (_role == DeviceRole.host) {
+          box.add(newStudent); // Add the student
+          await saveParentContact(newStudent);
+        } // 👈 Auto save parent contact
+// 🔁 If client device, attempt immediate host sync
+        // 🔁 CLIENT → HOST IMMEDIATE SYNC
+        // 🔁 CLIENT IMMEDIATE SYNC ONLY
+        else {
+          try {
+            final response = await StudentApiService.sendStudents([
+              studentsToJson(newStudent), // send full student object
+            ]);
+
+            final inserted = response['insertedStudents'] as List;
+            if (inserted.isNotEmpty) {
+              _showDialog('Student was successfully synced to host.');
+              debugPrint('✅ Student synced to host');
+            } else {
+              _showDialog('Student could not be synced. Check details.');
+              debugPrint('⚠️ Host accepted request but returned no data');
+            }
+          } catch (e) {
+            _showDialog('Failed to sync student. Host may be unreachable.');
+            debugPrint('⚠️ Host unreachable, client does NOT save locally: $e');
+          }
+        }
 
         _showDialog('Student Was Added Successfully');
 

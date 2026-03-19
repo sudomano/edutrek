@@ -54,6 +54,30 @@ class StudentPayment extends HiveObject {
   @HiveField(16)
   String? role;
 
+  @HiveField(17, defaultValue: 'cash')
+  String paymentMethodType;
+
+  @HiveField(18, defaultValue: 0.0)
+  double paymentMethodAmount;
+
+  @HiveField(19, defaultValue: '')
+  String paymentReference;
+
+  @HiveField(20, defaultValue: '')
+  String mobileMoneyPhone;
+
+  @HiveField(21, defaultValue: '')
+  String mobileMoneyProvider;
+
+  @HiveField(22, defaultValue: '')
+  String bankAccountNumber;
+
+  @HiveField(23, defaultValue: '')
+  String bankAccountName;
+
+  @HiveField(24, defaultValue: 0.0)
+  double changeGiven;
+
   StudentPayment({
     required this.studentName,
     required this.studentSurname,
@@ -72,6 +96,14 @@ class StudentPayment extends HiveObject {
     this.modifiedFields,
     this.username, // ✅ NEW
     this.role, // ✅ NEW
+    this.paymentMethodType = 'cash',
+    this.paymentMethodAmount = 0.0,
+    this.paymentReference = '',
+    this.mobileMoneyPhone = '',
+    this.mobileMoneyProvider = '',
+    this.bankAccountNumber = '',
+    this.bankAccountName = '',
+    this.changeGiven = 0.0,
   });
 
   StudentPayment copyWith({
@@ -92,6 +124,15 @@ class StudentPayment extends HiveObject {
     List<String>? modifiedFields,
     String? username, // ✅ NEW
     String? role, // ✅ NEW
+
+    String? paymentMethodType,
+    double? paymentMethodAmount,
+    String? paymentReference,
+    String? mobileMoneyPhone,
+    String? mobileMoneyProvider,
+    String? bankAccountNumber,
+    String? bankAccountName,
+    double? changeGiven,
   }) {
     return StudentPayment(
       studentName: studentName ?? this.studentName,
@@ -111,6 +152,14 @@ class StudentPayment extends HiveObject {
       modifiedFields: modifiedFields ?? this.modifiedFields,
       username: username ?? this.username, // ✅
       role: role ?? this.role, // ✅
+      paymentMethodType: paymentMethodType ?? this.paymentMethodType,
+      paymentMethodAmount: paymentMethodAmount ?? this.paymentMethodAmount,
+      paymentReference: paymentReference ?? this.paymentReference,
+      mobileMoneyPhone: mobileMoneyPhone ?? this.mobileMoneyPhone,
+      mobileMoneyProvider: mobileMoneyProvider ?? this.mobileMoneyProvider,
+      bankAccountNumber: bankAccountNumber ?? this.bankAccountNumber,
+      bankAccountName: bankAccountName ?? this.bankAccountName,
+      changeGiven: changeGiven ?? this.changeGiven,
     );
   }
 }

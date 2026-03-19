@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -31,7 +32,7 @@ Future<void> assignPrimaryKeysToModels() async {
   final teachersBox = await Hive.openBox<Teachers>('teachers');
   final schoolBox = await Hive.openBox<School>('school');
   final termsBox = await Hive.openBox<Terms>('terms');
-
+  final batchUnitsBox = await Hive.openBox<BatchUnit>('batch_units');
   // Process each box
   await _processBox(teacherPaymentsPurposesBox, 'purposeCode');
   await _processBox(paymentPurposeBox, 'purposeCode');
@@ -44,6 +45,7 @@ Future<void> assignPrimaryKeysToModels() async {
   await _processBox(teachersBox, 'IdNumber');
   await _processBox(schoolBox, 'schoolCode');
   await _processBox(termsBox, 'termId');
+  await _processBox(batchUnitsBox, 'unitBatchCode');
 }
 
 Future<void> _processBox<T>(Box<T> box, String primaryKeyField) async {
@@ -52,7 +54,7 @@ Future<void> _processBox<T>(Box<T> box, String primaryKeyField) async {
 
     if (record != null) {
       final pkValue = _getPrimaryKeyValue(record, primaryKeyField);
-      if (pkValue == null || pkValue.isEmpty) {
+      if (pkValue == null || pkValue.toString().isEmpty) {
         // Generate a new UUID for the primary key
         final newPkValue = uuid.v4();
 
@@ -60,7 +62,6 @@ Future<void> _processBox<T>(Box<T> box, String primaryKeyField) async {
         final updatedRecord =
             _setPrimaryKeyValue(record, primaryKeyField, newPkValue);
         await box.put(key, updatedRecord);
-        print('Primary key updated for key: $key, new value: $newPkValue');
       }
     }
   }
@@ -70,6 +71,8 @@ dynamic _getPrimaryKeyValue(dynamic record, String primaryKeyField) {
   // Access primary key value based on model type
   if (record is TeacherPaymentsPurposes) {
     return record.purposeCode;
+  } else if (record is BatchUnit) {
+    return record.unitBatchCode;
   } else if (record is PaymentPurpose) {
     return record.purposeCode;
   } else if (record is Classes) {
@@ -99,6 +102,8 @@ dynamic _setPrimaryKeyValue(
   // Update primary key value based on model type
   if (record is TeacherPaymentsPurposes) {
     return record.copyWith(purposeCode: newValue);
+  } else if (record is BatchUnit) {
+    return record.copyWith(unitBatchCode: newValue);
   } else if (record is PaymentPurpose) {
     return record.copyWith(purposeCode: newValue);
   } else if (record is Classes) {

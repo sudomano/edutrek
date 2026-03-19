@@ -1,7 +1,3 @@
-// ignore_for_file: non_constant_identifier_names
-
-// ignore_for_file: non_constant_identifier_names
-
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,10 +9,17 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
+import 'package:zitf_system/database/projects/packaging_level.dart';
+import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_item_price_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 import 'package:zitf_system/database/terms.dart';
@@ -35,6 +38,7 @@ import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_h
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:zitf_system/database/projects/stock_unit_type.dart';
 
 class ClassesFinal extends StatefulWidget {
   const ClassesFinal({super.key});
@@ -73,8 +77,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Box<Project>? _projectBox;
   Box<ProjectItem>? _projectItemBox;
   Box<DailyActivity>? _dailyActivityBox;
-  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
   Box<ExceptionalStudents>? _exceptionalStudentsBox;
+
+  Box<BatchUnit>? _batchUnitBox;
+  Box<ProductBatch>? _productBatchBox;
+  Box<ProjectItemPrice>? _projectItemPriceBox;
+  Box<ProjectSaleTransaction>? _projectSaleTransactionBox;
+  Box<BatchSellUnit>? _batchSellUnitBox;
+  Box<PaymentMethod>? _paymentMethodBox;
+  Box<ReceiptSnapshot>? _receiptSnapshotBox;
 
   bool _isSyncing = false;
   bool _isSyncings = false;
@@ -117,10 +128,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     _projectBox = await Hive.openBox<Project>('projects');
     _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
     _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-    _projectStudentPaymentBox =
-        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
     _exceptionalStudentsBox =
         await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+
+    _batchUnitBox = await Hive.openBox<BatchUnit>('batch_units');
+    _productBatchBox = await Hive.openBox<ProductBatch>('product_batches');
+    _projectItemPriceBox =
+        await Hive.openBox<ProjectItemPrice>('project_item_prices');
+    _projectSaleTransactionBox =
+        await Hive.openBox<ProjectSaleTransaction>('project_sale_transactions');
+    _batchSellUnitBox = await Hive.openBox<BatchSellUnit>('batch_sell_units');
+    _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
+    _receiptSnapshotBox =
+        await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
   }
 
   Future<void> _loadExistingConfig() async {
@@ -142,80 +162,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<List<ExceptionalStudents>> _fetchExceptionsForCreate() async {
-    List<ExceptionalStudents> createExceptions = _exceptionalStudentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.exceptionId != null)
-        .toList();
-
-    return createExceptions;
-  }
-
-  Future<List<Classes>> _fetchClassesForCreate() async {
-    List<Classes> createClasses = _classesBox!.values
-        .where((cls) => cls.syncStatus == false && cls.classCode != null)
-        .toList();
-
-    return createClasses;
-  }
-
-  Future<List<School>> _fetch_schoolForCreate() async {
-    List<School> createSchools = _schoolBox!.values
-        .where((cls) => cls.syncStatus == false && cls.schoolCode != null)
-        .toList();
-
-    return createSchools;
-  }
-
-  Future<List<Terms>> _fetch_termsForCreate() async {
-    List<Terms> createTerms = _termsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.termId != null)
-        .toList();
-
-    return createTerms;
-  }
-
-  Future<List<Withdrawal>> _fetch_withdrawalsForCreate() async {
-    List<Withdrawal> createWithdrawal = _withdrawalsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.withdrawalCode != null)
-        .toList();
-    return createWithdrawal;
-  }
-
-  Future<List<Student>> _fetch_studentsForCreate() async {
-    List<Student> createStudent = _studentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.studentIdNumber != null)
-        .toList();
-    return createStudent;
-  }
-
-  Future<List<User>> _fetch_usersForCreate() async {
-    List<User> createUser = _usersBox!.values
-        .where((cls) => cls.syncStatus == false && cls.userCode != null)
-        .toList();
-    return createUser;
-  }
-
-  Future<List<PaymentPurpose>> _fetch_paymentPurposesForCreate() async {
-    List<PaymentPurpose> createPaymentPurpose = _payment_purposesBox!.values
-        .where((cls) => cls.syncStatus == false && cls.purposeCode != null)
-        .toList();
-    return createPaymentPurpose;
-  }
-
-  Future<List<StudentPayment>> _fetch_studentPaymentsForCreate() async {
-    List<StudentPayment> createStudentPayment = _student_paymentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.receiptNumber != null)
-        .toList();
-    return createStudentPayment;
-  }
-
-  Future<List<Teachers>> _fetch_teachersForCreate() async {
-    List<Teachers> createTeachers = _teachersBox!.values
-        .where((cls) => cls.syncStatus == false && cls.IdNumber != null)
-        .toList();
-    return createTeachers;
-  }
-
   // Sync models to MySQL
   Future<void> _syncModels() async {
     try {
@@ -229,6 +175,86 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _createExceptionInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateExceptionInMySQL(cls);
+        }
+      }
+
+      List<BatchUnit> createBatchUnits = _batchUnitBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+
+      for (BatchUnit cls in createBatchUnits) {
+        if (cls.operationType == 'create') {
+          await _createBatchUnitInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateBatchUnitInMySQL(cls);
+        }
+      }
+
+      List<ProductBatch> createProductBatches = _productBatchBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (ProductBatch cls in createProductBatches) {
+        if (cls.operationType == 'create') {
+          await _createProductBatchInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateProductBatchInMySQL(cls);
+        }
+      }
+
+      List<ProjectItemPrice> createProjectItemPrices = _projectItemPriceBox!
+          .values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (ProjectItemPrice cls in createProjectItemPrices) {
+        if (cls.operationType == 'create') {
+          await _createProjectItemPriceInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateProjectItemPriceInMySQL(cls);
+        }
+      }
+
+      List<ProjectSaleTransaction> createProjectSaleTransactions =
+          _projectSaleTransactionBox!.values
+              .where((cls) => cls.syncStatus == false)
+              .toList();
+      for (ProjectSaleTransaction cls in createProjectSaleTransactions) {
+        if (cls.operationType == 'create') {
+          await _createProjectSaleTransactionInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateProjectSaleTransactionInMySQL(cls);
+        }
+      }
+
+      List<BatchSellUnit> createBatchSellUnits = _batchSellUnitBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (BatchSellUnit cls in createBatchSellUnits) {
+        if (cls.operationType == 'create') {
+          await _createBatchSellUnitInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateBatchSellUnitInMySQL(cls);
+        }
+      }
+
+      List<PaymentMethod> createPaymentMethods = _paymentMethodBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (PaymentMethod cls in createPaymentMethods) {
+        if (cls.operationType == 'create') {
+          await _createPaymentMethodInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updatePaymentMethodInMySQL(cls);
+        }
+      }
+
+      List<ReceiptSnapshot> createReceiptSnapshots = _receiptSnapshotBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (ReceiptSnapshot cls in createReceiptSnapshots) {
+        if (cls.operationType == 'create') {
+          await _createReceiptSnapshotInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updateReceiptSnapshotInMySQL(cls);
         }
       }
 
@@ -415,23 +441,151 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       }
 
       // Sync ProjectStudentPayments
-      List<ProjectStudentPayment> createProjectPayments =
-          _projectStudentPaymentBox!.values
-              .where((p) => p.syncStatus == false)
-              .toList();
-      for (ProjectStudentPayment p in createProjectPayments) {
-        if (p.operationType == 'create') {
-          await _createProjectStudentPaymentInMySQL(p);
-        } else if (p.operationType == 'update') {
-          await _updateProjectStudentPaymentInMySQL(p);
-        }
-      }
     } catch (e) {
       print('Error syncing models: $e');
     }
   }
 
 // JSON Serialization method for ExceptionalStudents
+
+  Map<String, dynamic> _productBatchToJsonLocal(ProductBatch b) => {
+        'batchCode': b.batchCode,
+        'productCode': b.productCode,
+        'reference': b.reference,
+        'baseUnitType': b.baseUnitType?.name,
+        'baseUnit': b.baseUnit,
+        'baseUnitSize': b.baseUnitSize,
+        'totalBaseUnits': b.totalBaseUnits,
+        'remainingBaseUnits': b.remainingBaseUnits,
+        'totalBuyingCost': b.totalBuyingCost,
+        'purchaseDate': b.purchaseDate?.toIso8601String(),
+        'createdAt': b.createdAt?.toIso8601String(),
+        'units': b.units?.map((u) => _batchUnitToJson(u)).toList(),
+      };
+
+// ============================================================
+// 🔷 BATCH UNIT JSON HELPERS
+// ============================================================
+
+  Map<String, dynamic> _batchUnitToJson(BatchUnit u) => {
+        'level': u.level.name,
+        'unitsPerPackage': u.unitsPerPackage,
+        'quantity': u.quantity,
+        'buyingPrice': u.buyingPrice,
+        'unitBatchCode': u.unitBatchCode,
+      };
+
+  Map<String, dynamic> _projectItemPriceToJsonLocal(ProjectItemPrice p) => {
+        'priceCode': p.priceCode,
+        'projectItemCode': p.projectItemCode,
+        'amount': p.amount,
+        'pricingType': p.pricingType,
+        'appliesTo': p.appliesTo,
+        'effectiveFrom': p.effectiveFrom.toIso8601String(),
+        'effectiveTo': p.effectiveTo?.toIso8601String(),
+      };
+
+  Map<String, dynamic> _projectSaleTransactionToJson(
+          ProjectSaleTransaction t) =>
+      {
+        'transactionCode': t.transactionCode,
+        'studentId': t.studentId,
+        'projectCode': t.projectCode,
+        'projectItemCode': t.projectItemCode,
+        'batchCode': t.batchCode,
+        'sellUnitCode': t.sellUnitCode,
+        'sellUnitNameSnapshot': t.sellUnitNameSnapshot,
+        'quantitySold': t.quantitySold,
+        'unitSellingPrice': t.unitSellingPrice,
+        'totalAmount': t.totalAmount,
+        'baseUnitsPerSellUnit': t.baseUnitsPerSellUnit,
+        'totalBaseUnitsSold': t.totalBaseUnitsSold,
+        'baseUnit': t.baseUnit,
+        'baseUnitType': t.baseUnitType.name,
+        'transactionDate': t.transactionDate.toIso8601String(),
+        'paymentMethod': t.paymentMethod,
+        'reference': t.reference,
+        'amountPaid': t.amountPaid,
+        'arrears': t.arrears,
+
+        // 🔴 Soft delete
+        'isDeleted': t.isDeleted,
+        'deletedAt': t.deletedAt?.map((e) => e.toIso8601String()).toList(),
+        'restoredAt': t.restoredAt?.map((e) => e.toIso8601String()).toList(),
+        'deletedByUsers': t.deletedByUsers,
+        'restoredByUsers': t.restoredByUsers,
+
+        // 💳 Payment breakdown
+        'paymentMethodCode': t.paymentMethodCode,
+        'methodType': t.methodType,
+        'amountPaidInPaymentMethod': t.amountPaidInPaymentMethod,
+        'currency': t.currency,
+        'provider': t.provider,
+        'referenceNumber': t.referenceNumber,
+        'phoneNumber': t.phoneNumber,
+        'accountNumber': t.accountNumber,
+        'accountName': t.accountName,
+        'paymentDatetransacted': t.paymentDatetransacted?.toIso8601String(),
+
+        // 🔁 Audit
+        'isReversed': t.isReversed,
+        'lineTransactionCodes': t.lineTransactionCodes,
+        'financialType': t.financialType,
+        'parentTransactionCode': t.parentTransactionCode,
+        'affectsStock': t.affectsStock,
+        'createsObligation': t.createsObligation,
+        'settlesObligation': t.settlesObligation,
+      };
+
+  Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit u) {
+    return {
+      "sellUnitCode": u.sellUnitCode,
+      "batchCode": u.batchCode,
+      "unitName": u.unitName,
+      "quantityMultiplier": u.quantityMultiplier,
+      "sellingPrice": u.sellingPrice,
+      "active": u.active,
+      "deletedAt": u.deletedAt?.toIso8601String(),
+      "packagingLevel": u.packagingLevel?.name,
+      "baseUnitsPerSellUnit": u.baseUnitsPerSellUnit,
+      "baseUnit": u.baseUnit,
+      "baseUnitType": u.baseUnitType?.name,
+    };
+  }
+
+  Map<String, dynamic> _paymentMethodToJson(PaymentMethod pm) {
+    return {
+      "payment_method_code": pm.paymentMethodCode,
+      "method_type": pm.methodType,
+      "amount": pm.amount,
+      "currency": pm.currency,
+      "provider": pm.provider,
+      "reference": pm.reference,
+      "phone_number": pm.phoneNumber,
+      "account_number": pm.accountNumber,
+      "account_name": pm.accountName,
+      "payment_date": pm.paymentDate?.toIso8601String(),
+      "is_reversed": pm.isReversed,
+    };
+  }
+
+  Map<String, dynamic> _receiptSnapshotToJson(ReceiptSnapshot r) {
+    return {
+      "receiptCode": r.receiptCode,
+      "receiptDate": r.receiptDate.toIso8601String(),
+      "cashier": r.cashier,
+      "totalExpected": r.totalExpected,
+      "totalPaid": r.totalPaid,
+      "amountReceived": r.amountReceived,
+      "change": r.change,
+      "currency": r.currency,
+      "receiptLinesJson": r.receiptLinesJson,
+      "isReprint": r.isReprint,
+      "studentName": r.studentName,
+      "studentClass": r.studentClass,
+    };
+  }
+
   Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exc) {
     return {
       'id': exc.id,
@@ -726,13 +880,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
         'modifiedFields': p.modifiedFields,
+
+        // ✅ NEW FIELDS
+        'projectType': p.projectType,
+        'participationType': p.participationType,
+        'studentPayable': p.studentPayable,
       };
-  Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
+  Map<String, dynamic> _projectItemsToJson(ProjectItem i) => {
         'projectItemCode': i.projectItemCode,
         'projectCode': i.projectCode,
         'name': i.name,
-        'amount': i.amount,
-        'isStudentFee': i.isStudentFee,
+
+        // ✅ NEW FIELDS
+        'itemType': i.itemType,
+        'active': i.active,
+        'trackStock': i.trackStock,
+
         'syncStatus': i.syncStatus,
         'lastModified': i.lastModified?.toIso8601String(),
         'operationType': i.operationType,
@@ -750,21 +913,976 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'operationType': a.operationType,
         'modifiedFields': a.modifiedFields,
       };
-  Map<String, dynamic> _project_student_paymentsToJson(
-          ProjectStudentPayment p) =>
-      {
-        'projectStudentPaymentCode': p.projectStudentPaymentCode,
-        'studentId': p.studentId,
-        'projectCode': p.projectCode,
-        'itemId': p.itemId,
-        'amountPaid': p.amountPaid,
-        'balance': p.balance,
-        'syncStatus': p.syncStatus,
-        'lastModified': p.lastModified?.toIso8601String(),
-        'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
-      };
 
+//==================== BatchUnit sync ======================
+  Future<void> _createBatchUnitInMySQL(BatchUnit unit) async {
+    final Map<String, dynamic> jsonData = _batchUnitToJson(unit);
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
+            unit.operationType != null &&
+            unit.operationType != 'none') {
+          SyncQueueManager().enqueue(unit);
+        }
+        unit.syncStatus = true;
+        unit.operationType = 'none';
+        unit.modifiedFields = [];
+
+        await unit.save();
+      } else {
+        throw Exception('Failed to create BatchUnit');
+      }
+    } catch (e) {
+      print('BatchUnit create error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateBatchUnitInMySQL(BatchUnit unit) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+    for (String field in unit.modifiedFields ?? []) {
+      switch (field) {
+        case 'name':
+          modifiedFieldsJson['name'] = unit.level.name;
+          break;
+        case 'unitsPerPackage':
+          modifiedFieldsJson['unitsPerPackage'] = unit.unitsPerPackage;
+          break;
+        case 'quantity':
+          modifiedFieldsJson['quantity'] = unit.quantity;
+          break;
+        case 'buyingPrice':
+          modifiedFieldsJson['buyingPrice'] = unit.buyingPrice;
+          break;
+        case 'unitBatchCode':
+          modifiedFieldsJson['unitBatchCode'] = unit.unitBatchCode;
+          break;
+      }
+    }
+    modifiedFieldsJson['unitBatchCode'] = unit.unitBatchCode;
+
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('Students ${unit.unitBatchCode} updated successfully.');
+        // Update syncStatus and operationType in Hive
+        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
+            unit.operationType != null &&
+            unit.operationType != 'none') {
+          SyncQueueManager().enqueue(unit);
+        }
+        unit.syncStatus = true;
+        unit.operationType = 'none';
+        unit.modifiedFields = [];
+        await unit.save();
+      } else {
+        throw Exception('Failed to update students.');
+      }
+    } catch (e) {
+      print('Error updating students: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+//==================== _productBatch sync ======================
+
+  Future<void> _createProductBatchInMySQL(ProductBatch batch) async {
+    final Map<String, dynamic> jsonData = _productBatchToJsonLocal(batch);
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/product_batch_api.php?batchCode=${batch.batchCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((batch.modifiedFields?.isNotEmpty ?? false) &&
+            batch.operationType != null &&
+            batch.operationType != 'none') {
+          SyncQueueManager().enqueue(batch);
+        }
+
+        batch.syncStatus = true;
+        batch.operationType = 'none';
+        batch.modifiedFields = [];
+        await batch.save();
+      } else {
+        throw Exception('Failed to create ProductBatch');
+      }
+    } catch (e) {
+      print('ProductBatch create error: $e');
+    } finally {
+      setState(() => _isSyncings = false);
+    }
+  }
+
+  Future<void> _updateProductBatchInMySQL(ProductBatch batch) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in batch.modifiedFields ?? []) {
+      switch (field) {
+        case 'batchCode':
+          modifiedFieldsJson['batchCode'] = batch.batchCode;
+          break;
+
+        case 'productCode':
+          modifiedFieldsJson['productCode'] = batch.productCode;
+          break;
+
+        case 'reference':
+          modifiedFieldsJson['reference'] = batch.reference;
+          break;
+
+        case 'baseUnitType':
+          modifiedFieldsJson['baseUnitType'] = batch.baseUnitType?.name;
+          break;
+
+        case 'baseUnit':
+          modifiedFieldsJson['baseUnit'] = batch.baseUnit;
+          break;
+
+        case 'baseUnitSize':
+          modifiedFieldsJson['baseUnitSize'] = batch.baseUnitSize;
+          break;
+
+        case 'totalBaseUnits':
+          modifiedFieldsJson['totalBaseUnits'] = batch.totalBaseUnits;
+          break;
+
+        case 'remainingBaseUnits':
+          modifiedFieldsJson['remainingBaseUnits'] = batch.remainingBaseUnits;
+          break;
+
+        case 'totalBuyingCost':
+          modifiedFieldsJson['totalBuyingCost'] = batch.totalBuyingCost;
+          break;
+
+        case 'purchaseDate':
+          modifiedFieldsJson['purchaseDate'] =
+              batch.purchaseDate?.toIso8601String();
+          break;
+
+        case 'createdAt':
+          modifiedFieldsJson['createdAt'] = batch.createdAt?.toIso8601String();
+          break;
+
+        case 'units':
+          modifiedFieldsJson['units'] =
+              batch.units?.map((u) => _batchUnitToJson(u)).toList();
+          break;
+      }
+    }
+
+    // always include identifier
+    modifiedFieldsJson['batchCode'] = batch.batchCode;
+
+    setState(() => _isSyncings = true);
+
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/product_batch_api.php?batchCode=${batch.batchCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((batch.modifiedFields?.isNotEmpty ?? false) &&
+            batch.operationType != null &&
+            batch.operationType != 'none') {
+          SyncQueueManager().enqueue(batch);
+        }
+
+        batch.syncStatus = true;
+        batch.operationType = 'none';
+        batch.modifiedFields = [];
+        await batch.save();
+      } else {
+        throw Exception('Failed to update ProductBatch');
+      }
+    } catch (e) {
+      print('ProductBatch update error: $e');
+    } finally {
+      setState(() => _isSyncings = false);
+    }
+  }
+//==================== _projectItemPrice sync ======================
+
+  Future<void> _createProjectItemPriceInMySQL(ProjectItemPrice price) async {
+    final Map<String, dynamic> jsonData = _projectItemPriceToJsonLocal(price);
+
+    setState(() => _isSyncings = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_price_api.php?priceCode=${price.priceCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((price.modifiedFields?.isNotEmpty ?? false) &&
+            price.operationType != null &&
+            price.operationType != 'none') {
+          SyncQueueManager().enqueue(price);
+        }
+        price.syncStatus = true;
+        price.operationType = 'none';
+        price.modifiedFields = [];
+        await price.save();
+      } else {
+        throw Exception('Failed to create BatchUnit');
+      }
+    } catch (e) {
+      print('ProjectItemPrice create error: $e');
+    } finally {
+      setState(() => _isSyncings = false);
+    }
+  }
+
+  Future<void> _updateProjectItemPriceInMySQL(ProjectItemPrice price) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in price.modifiedFields ?? []) {
+      switch (field) {
+        case 'projectItemCode':
+          modifiedFieldsJson['projectItemCode'] = price.projectItemCode;
+          break;
+
+        case 'amount':
+          modifiedFieldsJson['amount'] = price.amount;
+          break;
+
+        case 'pricingType':
+          modifiedFieldsJson['pricingType'] = price.pricingType;
+          break;
+
+        case 'appliesTo':
+          modifiedFieldsJson['appliesTo'] = price.appliesTo;
+          break;
+
+        case 'effectiveFrom':
+          modifiedFieldsJson['effectiveFrom'] =
+              price.effectiveFrom.toIso8601String();
+          break;
+
+        case 'effectiveTo':
+          modifiedFieldsJson['effectiveTo'] =
+              price.effectiveTo?.toIso8601String();
+          break;
+      }
+    }
+
+    // Identifier (always required)
+    modifiedFieldsJson['priceCode'] = price.priceCode;
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_price_api.php?priceCode=${price.priceCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((price.modifiedFields?.isNotEmpty ?? false) &&
+            price.operationType != null &&
+            price.operationType != 'none') {
+          SyncQueueManager().enqueue(price);
+        }
+        price.syncStatus = true;
+        price.operationType = 'none';
+        price.modifiedFields = [];
+        await price.save();
+      } else {
+        throw Exception('Failed to update students.');
+      }
+    } catch (e) {
+      print('Error updating students: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _createProjectSaleTransactionInMySQL(
+      ProjectSaleTransaction tx) async {
+    final Map<String, dynamic> jsonData = _projectSaleTransactionToJson(tx);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php?transactionCode=${tx.transactionCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((tx.modifiedFields?.isNotEmpty ?? false) &&
+            tx.operationType != null &&
+            tx.operationType != 'none') {
+          SyncQueueManager().enqueue(tx);
+        }
+        tx.syncStatus = true;
+        tx.operationType = 'none';
+        tx.modifiedFields = [];
+        await tx.save();
+      } else {
+        throw Exception('Failed to create BatchUnit');
+      }
+    } catch (e) {
+      print('BatchUnit create error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateProjectSaleTransactionInMySQL(
+      ProjectSaleTransaction tx) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in tx.modifiedFields ?? []) {
+      switch (field) {
+        // 🔹 Core transaction fields
+        case 'studentId':
+          modifiedFieldsJson['studentId'] = tx.studentId;
+          break;
+
+        case 'projectCode':
+          modifiedFieldsJson['projectCode'] = tx.projectCode;
+          break;
+
+        case 'projectItemCode':
+          modifiedFieldsJson['projectItemCode'] = tx.projectItemCode;
+          break;
+
+        case 'batchCode':
+          modifiedFieldsJson['batchCode'] = tx.batchCode;
+          break;
+
+        case 'sellUnitCode':
+          modifiedFieldsJson['sellUnitCode'] = tx.sellUnitCode;
+          break;
+
+        case 'sellUnitNameSnapshot':
+          modifiedFieldsJson['sellUnitNameSnapshot'] = tx.sellUnitNameSnapshot;
+          break;
+
+        case 'quantitySold':
+          modifiedFieldsJson['quantitySold'] = tx.quantitySold;
+          break;
+
+        case 'unitSellingPrice':
+          modifiedFieldsJson['unitSellingPrice'] = tx.unitSellingPrice;
+          break;
+
+        case 'totalAmount':
+          modifiedFieldsJson['totalAmount'] = tx.totalAmount;
+          break;
+
+        case 'baseUnitsPerSellUnit':
+          modifiedFieldsJson['baseUnitsPerSellUnit'] = tx.baseUnitsPerSellUnit;
+          break;
+
+        case 'totalBaseUnitsSold':
+          modifiedFieldsJson['totalBaseUnitsSold'] = tx.totalBaseUnitsSold;
+          break;
+
+        case 'baseUnit':
+          modifiedFieldsJson['baseUnit'] = tx.baseUnit;
+          break;
+
+        case 'baseUnitType':
+          modifiedFieldsJson['baseUnitType'] = tx.baseUnitType.name;
+          break;
+
+        case 'transactionDate':
+          modifiedFieldsJson['transactionDate'] =
+              tx.transactionDate.toIso8601String();
+          break;
+
+        case 'paymentMethod':
+          modifiedFieldsJson['paymentMethod'] = tx.paymentMethod;
+          break;
+
+        case 'reference':
+          modifiedFieldsJson['reference'] = tx.reference;
+          break;
+
+        case 'amountPaid':
+          modifiedFieldsJson['amountPaid'] = tx.amountPaid;
+          break;
+
+        case 'arrears':
+          modifiedFieldsJson['arrears'] = tx.arrears;
+          break;
+
+        // 🔴 Soft delete
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] = tx.isDeleted;
+          break;
+
+        case 'deletedAt':
+          modifiedFieldsJson['deletedAt'] =
+              tx.deletedAt?.map((e) => e.toIso8601String()).toList();
+          break;
+
+        case 'restoredAt':
+          modifiedFieldsJson['restoredAt'] =
+              tx.restoredAt?.map((e) => e.toIso8601String()).toList();
+          break;
+
+        case 'deletedByUsers':
+          modifiedFieldsJson['deletedByUsers'] = tx.deletedByUsers;
+          break;
+
+        case 'restoredByUsers':
+          modifiedFieldsJson['restoredByUsers'] = tx.restoredByUsers;
+          break;
+
+        // 💳 Payment breakdown
+        case 'paymentMethodCode':
+          modifiedFieldsJson['paymentMethodCode'] = tx.paymentMethodCode;
+          break;
+
+        case 'methodType':
+          modifiedFieldsJson['methodType'] = tx.methodType;
+          break;
+
+        case 'amountPaidInPaymentMethod':
+          modifiedFieldsJson['amountPaidInPaymentMethod'] =
+              tx.amountPaidInPaymentMethod;
+          break;
+
+        case 'currency':
+          modifiedFieldsJson['currency'] = tx.currency;
+          break;
+
+        case 'provider':
+          modifiedFieldsJson['provider'] = tx.provider;
+          break;
+
+        case 'referenceNumber':
+          modifiedFieldsJson['referenceNumber'] = tx.referenceNumber;
+          break;
+
+        case 'phoneNumber':
+          modifiedFieldsJson['phoneNumber'] = tx.phoneNumber;
+          break;
+
+        case 'accountNumber':
+          modifiedFieldsJson['accountNumber'] = tx.accountNumber;
+          break;
+
+        case 'accountName':
+          modifiedFieldsJson['accountName'] = tx.accountName;
+          break;
+
+        case 'paymentDatetransacted':
+          modifiedFieldsJson['paymentDatetransacted'] =
+              tx.paymentDatetransacted?.toIso8601String();
+          break;
+
+        // 🔁 Audit / financial logic
+        case 'isReversed':
+          modifiedFieldsJson['isReversed'] = tx.isReversed;
+          break;
+
+        case 'lineTransactionCodes':
+          modifiedFieldsJson['lineTransactionCodes'] = tx.lineTransactionCodes;
+          break;
+
+        case 'financialType':
+          modifiedFieldsJson['financialType'] = tx.financialType;
+          break;
+
+        case 'parentTransactionCode':
+          modifiedFieldsJson['parentTransactionCode'] =
+              tx.parentTransactionCode;
+          break;
+
+        case 'affectsStock':
+          modifiedFieldsJson['affectsStock'] = tx.affectsStock;
+          break;
+
+        case 'createsObligation':
+          modifiedFieldsJson['createsObligation'] = tx.createsObligation;
+          break;
+
+        case 'settlesObligation':
+          modifiedFieldsJson['settlesObligation'] = tx.settlesObligation;
+          break;
+      }
+    }
+
+    // ✅ Always include identifier
+    modifiedFieldsJson['transactionCode'] = tx.transactionCode;
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php?transactionCode=${tx.transactionCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((tx.modifiedFields?.isNotEmpty ?? false) &&
+            tx.operationType != null &&
+            tx.operationType != 'none') {
+          SyncQueueManager().enqueue(tx);
+        }
+        tx.syncStatus = true;
+        tx.operationType = 'none';
+        tx.modifiedFields = [];
+        await tx.save();
+      } else {
+        throw Exception('Failed to update ProjectSaleTransaction');
+      }
+    } catch (e) {
+      print('ProjectSaleTransaction update error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _createBatchSellUnitInMySQL(BatchSellUnit unit) async {
+    final Map<String, dynamic> jsonData = _batchSellUnitToJson(unit);
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php?sellUnitCode=${unit.sellUnitCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
+            unit.operationType != null &&
+            unit.operationType != 'none') {
+          SyncQueueManager().enqueue(unit);
+        }
+        unit.syncStatus = true;
+        unit.operationType = 'none';
+        unit.modifiedFields = [];
+        await unit.save();
+      } else {
+        throw Exception('Failed to create BatchUnit');
+      }
+    } catch (e) {
+      print('BatchUnit create error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateBatchSellUnitInMySQL(BatchSellUnit unit) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in unit.modifiedFields ?? []) {
+      switch (field) {
+        case 'batchCode':
+          modifiedFieldsJson['batchCode'] = unit.batchCode;
+          break;
+
+        case 'unitName':
+          modifiedFieldsJson['unitName'] = unit.unitName;
+          break;
+
+        case 'quantityMultiplier':
+          modifiedFieldsJson['quantityMultiplier'] = unit.quantityMultiplier;
+          break;
+
+        case 'sellingPrice':
+          modifiedFieldsJson['sellingPrice'] = unit.sellingPrice;
+          break;
+
+        case 'active':
+          modifiedFieldsJson['active'] = unit.active;
+          break;
+
+        case 'deletedAt':
+          modifiedFieldsJson['deletedAt'] = unit.deletedAt?.toIso8601String();
+          break;
+
+        case 'packagingLevel':
+          modifiedFieldsJson['packagingLevel'] = unit.packagingLevel?.name;
+          break;
+
+        case 'baseUnitsPerSellUnit':
+          modifiedFieldsJson['baseUnitsPerSellUnit'] =
+              unit.baseUnitsPerSellUnit;
+          break;
+
+        case 'baseUnit':
+          modifiedFieldsJson['baseUnit'] = unit.baseUnit;
+          break;
+
+        case 'baseUnitType':
+          modifiedFieldsJson['baseUnitType'] = unit.baseUnitType?.name;
+          break;
+      }
+    }
+
+    // ✅ Always include identifier
+    modifiedFieldsJson['sellUnitCode'] = unit.sellUnitCode;
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php?sellUnitCode=${unit.sellUnitCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
+            unit.operationType != null &&
+            unit.operationType != 'none') {
+          SyncQueueManager().enqueue(unit);
+        }
+        unit.syncStatus = true;
+        unit.operationType = 'none';
+        unit.modifiedFields = [];
+        await unit.save();
+      } else {
+        throw Exception('Failed to update BatchSellUnit');
+      }
+    } catch (e) {
+      print('BatchSellUnit update error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _createPaymentMethodInMySQL(PaymentMethod pm) async {
+    final Map<String, dynamic> jsonData = _paymentMethodToJson(pm);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}'),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((pm.modifiedFields?.isNotEmpty ?? false) &&
+            pm.operationType != null &&
+            pm.operationType != 'none') {
+          SyncQueueManager().enqueue(pm);
+        }
+        pm.syncStatus = true;
+        pm.operationType = 'none';
+        pm.modifiedFields = [];
+        await pm.save();
+      } else {
+        throw Exception('Failed to create BatchUnit');
+      }
+    } catch (e) {
+      print('BatchUnit create error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updatePaymentMethodInMySQL(PaymentMethod pm) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in pm.modifiedFields ?? []) {
+      switch (field) {
+        case 'paymentMethodCode':
+          modifiedFieldsJson['payment_method_code'] = pm.paymentMethodCode;
+          break;
+
+        case 'methodType':
+          modifiedFieldsJson['method_type'] = pm.methodType;
+          break;
+
+        case 'amount':
+          modifiedFieldsJson['amount'] = pm.amount;
+          break;
+
+        case 'currency':
+          modifiedFieldsJson['currency'] = pm.currency;
+          break;
+
+        case 'provider':
+          modifiedFieldsJson['provider'] = pm.provider;
+          break;
+
+        case 'reference':
+          modifiedFieldsJson['reference'] = pm.reference;
+          break;
+
+        case 'phoneNumber':
+          modifiedFieldsJson['phone_number'] = pm.phoneNumber;
+          break;
+
+        case 'accountNumber':
+          modifiedFieldsJson['account_number'] = pm.accountNumber;
+          break;
+
+        case 'accountName':
+          modifiedFieldsJson['account_name'] = pm.accountName;
+          break;
+
+        case 'paymentDate':
+          modifiedFieldsJson['payment_date'] =
+              pm.paymentDate?.toIso8601String();
+          break;
+
+        case 'isReversed':
+          modifiedFieldsJson['is_reversed'] = pm.isReversed;
+          break;
+      }
+    }
+
+    // ✅ Always include identifier (use API expected format)
+    modifiedFieldsJson['payment_method_code'] = pm.paymentMethodCode;
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((pm.modifiedFields?.isNotEmpty ?? false) &&
+            pm.operationType != null &&
+            pm.operationType != 'none') {
+          SyncQueueManager().enqueue(pm);
+        }
+        pm.syncStatus = true;
+        pm.operationType = 'none';
+        pm.modifiedFields = [];
+        await pm.save();
+      } else {
+        throw Exception('Failed to update PaymentMethod');
+      }
+    } catch (e) {
+      print('PaymentMethod update error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _createReceiptSnapshotInMySQL(ReceiptSnapshot r) async {
+    final Map<String, dynamic> jsonData = _receiptSnapshotToJson(r);
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/receipt_snapshot_api.php?receiptCode=${r.receiptCode}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(jsonData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((r.modifiedFields?.isNotEmpty ?? false) &&
+            r.operationType != null &&
+            r.operationType != 'none') {
+          SyncQueueManager().enqueue(r);
+        }
+        r.syncStatus = true;
+        r.operationType = 'none';
+        r.modifiedFields = [];
+
+        await r.save();
+      } else {
+        throw Exception('Failed to create ReceiptSnapshot');
+      }
+    } catch (e) {
+      print('ReceiptSnapshot create error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+  Future<void> _updateReceiptSnapshotInMySQL(ReceiptSnapshot receipt) async {
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in receipt.modifiedFields ?? []) {
+      switch (field) {
+        case 'receiptDate':
+          modifiedFieldsJson['receiptDate'] =
+              receipt.receiptDate.toIso8601String();
+          break;
+
+        case 'cashier':
+          modifiedFieldsJson['cashier'] = receipt.cashier;
+          break;
+
+        case 'totalExpected':
+          modifiedFieldsJson['totalExpected'] = receipt.totalExpected;
+          break;
+
+        case 'totalPaid':
+          modifiedFieldsJson['totalPaid'] = receipt.totalPaid;
+          break;
+
+        case 'amountReceived':
+          modifiedFieldsJson['amountReceived'] = receipt.amountReceived;
+          break;
+
+        case 'change':
+          modifiedFieldsJson['change'] = receipt.change;
+          break;
+
+        case 'currency':
+          modifiedFieldsJson['currency'] = receipt.currency;
+          break;
+
+        case 'receiptLinesJson':
+          modifiedFieldsJson['receiptLinesJson'] = receipt.receiptLinesJson;
+          break;
+
+        case 'isReprint':
+          modifiedFieldsJson['isReprint'] = receipt.isReprint;
+          break;
+
+        case 'studentName':
+          modifiedFieldsJson['studentName'] = receipt.studentName;
+          break;
+
+        case 'studentClass':
+          modifiedFieldsJson['studentClass'] = receipt.studentClass;
+          break;
+      }
+    }
+
+    // ✅ Always include identifier
+    modifiedFieldsJson['receiptCode'] = receipt.receiptCode;
+    setState(() {
+      _isSyncings = true;
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/receipt_snapshot_api.php?receiptCode=${receipt.receiptCode}',
+        ),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if ((receipt.modifiedFields?.isNotEmpty ?? false) &&
+            receipt.operationType != null &&
+            receipt.operationType != 'none') {
+          SyncQueueManager().enqueue(receipt);
+        }
+        receipt.syncStatus = true;
+        receipt.operationType = 'none';
+        receipt.modifiedFields = [];
+        await receipt.save();
+      } else {
+        throw Exception('Failed to update ReceiptSnapshot');
+      }
+    } catch (e) {
+      print('ReceiptSnapshot update error: $e');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
   //=================== Exceptions  sync =========================
 
   Future<void> _createExceptionInMySQL(ExceptionalStudents newClass) async {
@@ -2795,44 +3913,70 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   Future<void> _updateProjectInMySQL(Project p) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
+
     for (String field in p.modifiedFields ?? []) {
       switch (field) {
         case 'name':
           modifiedFieldsJson['name'] = p.name;
           break;
+
         case 'description':
           modifiedFieldsJson['description'] = p.description;
           break;
+
         case 'status':
           modifiedFieldsJson['status'] = p.status;
           break;
-        case 'createdAt':
-          modifiedFieldsJson['createdAt'] = p.createdAt.toIso8601String();
+
+        case 'updatedAt':
+          modifiedFieldsJson['updatedAt'] = p.updatedAt.toIso8601String();
+          break;
+
+        case 'lastModified':
+          modifiedFieldsJson['lastModified'] =
+              p.lastModified?.toIso8601String();
+          break;
+
+        // ✅ NEW FIELDS
+        case 'projectType':
+          modifiedFieldsJson['projectType'] = p.projectType;
+          break;
+
+        case 'participationType':
+          modifiedFieldsJson['participationType'] = p.participationType;
+          break;
+
+        case 'studentPayable':
+          modifiedFieldsJson['studentPayable'] = p.studentPayable;
           break;
       }
     }
 
+    // ✅ Always include identifier
     modifiedFieldsJson['projectCode'] = p.projectCode;
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}',
+        ),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8',
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         if ((p.modifiedFields?.isNotEmpty ?? false) &&
             p.operationType != null &&
             p.operationType != 'none') {
           SyncQueueManager().enqueue(p);
         }
+
         p.syncStatus = true;
         p.operationType = 'none';
         p.modifiedFields = [];
@@ -2948,111 +4092,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //============================== projectStudentPayments ==========================
 
-  Future<void> _createProjectStudentPaymentInMySQL(
-      ProjectStudentPayment p) async {
-    final Map<String, dynamic> jsonData = _project_student_paymentsToJson(p);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((p.modifiedFields?.isNotEmpty ?? false) &&
-            p.operationType != null &&
-            p.operationType != 'none') {
-          SyncQueueManager().enqueue(p);
-        }
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to create project student payment.');
-      }
-    } catch (e) {
-      print('Error creating project student payment: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateProjectStudentPaymentInMySQL(
-      ProjectStudentPayment p) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in p.modifiedFields ?? []) {
-      switch (field) {
-        case 'studentId':
-          modifiedFieldsJson['studentId'] = p.studentId;
-          break;
-        case 'projectCode':
-          modifiedFieldsJson['projectCode'] = p.projectCode;
-          break;
-        case 'itemId':
-          modifiedFieldsJson['itemId'] = p.itemId;
-          break;
-        case 'amountPaid':
-          modifiedFieldsJson['amountPaid'] = p.amountPaid;
-          break;
-        case 'balance':
-          modifiedFieldsJson['balance'] = p.balance;
-          break;
-      }
-    }
-
-    modifiedFieldsJson['projectStudentPaymentCode'] =
-        p.projectStudentPaymentCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((p.modifiedFields?.isNotEmpty ?? false) &&
-            p.operationType != null &&
-            p.operationType != 'none') {
-          SyncQueueManager().enqueue(p);
-        }
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to update project student payment.');
-      }
-    } catch (e) {
-      print('Error updating project student payment: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
 //============================== projectItems ==========================
 
   Future<void> _createProjectItemInMySQL(ProjectItem i) async {
-    final Map<String, dynamic> jsonData = _project_itemsToJson(i);
+    final Map<String, dynamic> jsonData = _projectItemsToJson(i);
     setState(() {
       _isSyncings = true;
     });
@@ -3091,28 +4134,44 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   Future<void> _updateProjectItemInMySQL(ProjectItem i) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
+
     for (String field in i.modifiedFields ?? []) {
       switch (field) {
         case 'projectCode':
           modifiedFieldsJson['projectCode'] = i.projectCode;
           break;
+
         case 'name':
           modifiedFieldsJson['name'] = i.name;
           break;
-        case 'amount':
-          modifiedFieldsJson['amount'] = i.amount;
+
+        // ✅ NEW FIELDS
+        case 'itemType':
+          modifiedFieldsJson['itemType'] = i.itemType;
           break;
-        case 'isStudentFee':
-          modifiedFieldsJson['isStudentFee'] = i.isStudentFee;
+
+        case 'active':
+          modifiedFieldsJson['active'] = i.active;
+          break;
+
+        case 'trackStock':
+          modifiedFieldsJson['trackStock'] = i.trackStock;
+          break;
+
+        case 'lastModified':
+          modifiedFieldsJson['lastModified'] =
+              i.lastModified?.toIso8601String();
           break;
       }
     }
 
+    // ✅ Always include identifier
     modifiedFieldsJson['projectItemCode'] = i.projectItemCode;
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
@@ -3124,12 +4183,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonEncode(modifiedFieldsJson),
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         if ((i.modifiedFields?.isNotEmpty ?? false) &&
             i.operationType != null &&
             i.operationType != 'none') {
           SyncQueueManager().enqueue(i);
         }
+
         i.syncStatus = true;
         i.operationType = 'none';
         i.modifiedFields = [];
@@ -3249,7 +4309,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                                             icon: const Icon(Icons.cloud_upload,
                                                 size: 24),
                                             label: const Text(
-                                              'Push Records To The Cloud',
+                                              'Push To  Cloud',
                                               style: TextStyle(
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.w600),
@@ -3296,7 +4356,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                                                 Icons.cloud_download,
                                                 size: 24),
                                             label: const Text(
-                                              'Pull  Records From The Cloud',
+                                              'Pull From Cloud',
                                               style: TextStyle(
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.w600),
@@ -3411,8 +4471,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Project',
         'ProjectItem',
         'DailyActivity',
-        'ProjectStudentPayment',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
       'administration': [
         'Teacher Payments',
@@ -3432,8 +4498,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Project',
         'ProjectItem',
         'DailyActivity',
-        'ProjectStudentPayment',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
       'secretary': [
         'Students',
@@ -3449,11 +4521,17 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Project',
         'ProjectItem',
         'DailyActivity',
-        'ProjectStudentPayment',
         'Student Exceptions',
         'Users',
         'DomainRecord',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
       'teacher': [
         'Students',
@@ -3465,6 +4543,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Schools',
         'DomainRecord',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
       'accountant': [
         'Teacher Payments',
@@ -3481,11 +4566,17 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Project',
         'ProjectItem',
         'DailyActivity',
-        'ProjectStudentPayment',
         'Users',
         'Teacher Purposes',
         'DomainRecord',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
       'sub-admin': [
         'Teacher Payments',
@@ -3505,8 +4596,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Project',
         'ProjectItem',
         'DailyActivity',
-        'ProjectStudentPayment',
         'Student Exceptions',
+        'Project Batches',
+        'Batch Units',
+        'Project Item Pricing',
+        'Project Sale Transactions',
+        'Batch Unit Sales',
+        'Project Payment Method',
+        'Project Receipt Snapshot',
       ],
     };
 
@@ -3592,8 +4689,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'Project': _fetchAndSyncProject,
       'ProjectItem': _fetchAndSyncProjectItem,
       'DailyActivity': _fetchAndSyncDailyActivity,
-      'ProjectStudentPayment': _fetchAndSyncProjectStudentPayment,
       'Student Exceptions': _fetchAndSyncStudentExceptions,
+      'Project Batches': _fetchAndSyncProjectBatches,
+      'Batch Units': _fetchAndSyncBatchUnits,
+      'Project Item Pricing': _fetchAndSyncProjectItemPricing,
+      'Project Sale Transactions': _fetchAndSyncProjectSaleTransactions,
+      'Batch Unit Sales': _fetchAndSyncBatchUnitSales,
+      'Project Payment Method': _fetchAndSyncProjectPaymentMethod,
+      'Project Receipt Snapshot': _fetchAndSyncProjectReceiptSnapshot,
     };
 
     try {
@@ -3655,6 +4758,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     return [];
   }
 
+//================================decode _exceptionFromJson =======================================================================//
+
   ExceptionalStudents _exceptionFromJson(Map<String, dynamic> json) {
     return ExceptionalStudents(
       id: json['id'] ?? 0,
@@ -3673,6 +4778,40 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           : [],
       terms: _decodeToList(json['terms']),
     );
+  }
+
+//================================decode _batchUnitFromJson =======================================================================//
+
+  BatchUnit _batchUnitFromJson(Map<String, dynamic> json) {
+    return BatchUnit(
+      level: PackagingLevel.values.firstWhere(
+        (e) => e.name == json['level'],
+      ),
+      unitsPerPackage: (json['unitsPerPackage'] ?? 0).toDouble(),
+      quantity: json['quantity'] ?? 0,
+      buyingPrice: (json['buyingPrice'] ?? 0).toDouble(),
+      syncStatus: true,
+      lastModified: json['lastModified'] != null
+          ? DateTime.tryParse(json['lastModified'])
+          : null,
+      operationType: 'none',
+      modifiedFields: [],
+      unitBatchCode: json['unitBatchCode'],
+    );
+  }
+
+  List<String> _decodeClassToList(dynamic value) {
+    try {
+      if (value == null) return [];
+      if (value is List) return List<String>.from(value);
+      if (value is String) {
+        final decoded = jsonDecode(value);
+        if (decoded is List) return List<String>.from(decoded);
+      }
+    } catch (e) {
+      print('Error decoding string to List: $e');
+    }
+    return [];
   }
 
 //================================pull _fetchAndSyncStudentExceptions =======================================================================//
@@ -3761,20 +4900,147 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-//================================pull _fetchAndSyncClasses =======================================================================//
-  List<String> _decodeClassToList(dynamic value) {
+  //================================pull _fetchAndSyncProjectBatches=======================================================================//
+  StockUnitType? _parseStockUnitType(dynamic value) {
+    if (value == null) return null;
+
+    try {
+      return StockUnitType.values.firstWhere(
+        (e) => e.name.toLowerCase() == value.toString().toLowerCase(),
+      );
+    } catch (_) {
+      return StockUnitType.piece; // safe fallback
+    }
+  }
+
+  List<BatchUnit> _decodeBatchUnits(dynamic value) {
     try {
       if (value == null) return [];
-      if (value is List) return List<String>.from(value);
+
+      if (value is List) {
+        return value
+            .map((e) => _batchUnitFromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+
       if (value is String) {
         final decoded = jsonDecode(value);
-        if (decoded is List) return List<String>.from(decoded);
+        if (decoded is List) {
+          return decoded
+              .map((e) => _batchUnitFromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
       }
     } catch (e) {
-      print('Error decoding string to List: $e');
+      print('Error decoding BatchUnits: $e');
     }
     return [];
   }
+
+  Future<void> _fetchAndSyncProjectBatches() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/product_batch_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> batches = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded ProductBatch response: $decoded');
+
+        for (var batchData in batches) {
+          // 🔹 Parse dates safely
+          DateTime? purchaseDate =
+              DateTime.tryParse(batchData['purchaseDate'] ?? '');
+
+          DateTime? createdAt = DateTime.tryParse(batchData['createdAt'] ?? '');
+
+          // 🔹 Build object
+          ProductBatch fetchedBatch = ProductBatch(
+            batchCode: batchData['batchCode'],
+            productCode: batchData['productCode'],
+            reference: batchData['reference'],
+            baseUnitType: _parseStockUnitType(batchData['baseUnitType']),
+            baseUnit: batchData['baseUnit'],
+            baseUnitSize: batchData['baseUnitSize'],
+            totalBaseUnits: batchData['totalBaseUnits'],
+            remainingBaseUnits: batchData['remainingBaseUnits'],
+            totalBuyingCost: batchData['totalBuyingCost'],
+            purchaseDate: purchaseDate,
+            createdAt: createdAt,
+            units: _decodeBatchUnits(batchData['units']),
+          );
+
+          // 🔍 Check existing in Hive
+          var existingList = _productBatchBox!.values
+              .where((b) => b.batchCode == fetchedBatch.batchCode)
+              .toList();
+
+          ProductBatch? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          if (fetchedBatch.batchCode != null) {
+            if (existing != null) {
+              // 🔄 UPDATE
+              existing
+                ..productCode = fetchedBatch.productCode
+                ..reference = fetchedBatch.reference
+                ..baseUnitType = fetchedBatch.baseUnitType
+                ..baseUnit = fetchedBatch.baseUnit
+                ..baseUnitSize = fetchedBatch.baseUnitSize
+                ..totalBaseUnits = fetchedBatch.totalBaseUnits
+                ..remainingBaseUnits = fetchedBatch.remainingBaseUnits
+                ..totalBuyingCost = fetchedBatch.totalBuyingCost
+                ..purchaseDate = fetchedBatch.purchaseDate
+                ..createdAt = fetchedBatch.createdAt
+                ..units = fetchedBatch.units
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+
+              await existing.save();
+
+              print(
+                  'ProductBatch ${fetchedBatch.batchCode} updated successfully.');
+            } else {
+              // ➕ CREATE
+              await _productBatchBox!.add(fetchedBatch);
+
+              print(
+                  'ProductBatch ${fetchedBatch.batchCode} added successfully.');
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content:
+                  Text('A ProductBatch record with no batchCode was skipped.'),
+            ));
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch ProductBatch. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching/syncing ProductBatch: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+//================================pull _fetchAndSyncClasses =======================================================================//
 
   Future<void> _fetchAndSyncClasses() async {
     final String apiUrl =
@@ -5191,9 +6457,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 DateTime.now(),
             updatedAt: DateTime.tryParse(projectData['updatedAt'] ?? '') ??
                 DateTime.now(),
+
             syncStatus: true,
             operationType: 'none',
             lastModified: DateTime.tryParse(projectData['lastModified'] ?? ''),
+
+            // ✅ NEW REQUIRED FIELDS
+            projectType: projectData['projectType'] ?? 'sales',
+            participationType: projectData['participationType'] ?? 'optional',
+            studentPayable: projectData['studentPayable'],
           );
 
           var existingProjectList = _projectBox!.values
@@ -5213,19 +6485,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..updatedAt = fetchedProject.updatedAt
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+
+                // ✅ UPDATE NEW FIELDS
+                ..projectType = fetchedProject.projectType
+                ..participationType = fetchedProject.participationType
+                ..studentPayable = fetchedProject.studentPayable;
+
               await existingProject.save();
+
               print(
                   'Project ${fetchedProject.projectCode} updated successfully.');
             } else {
               await _projectBox!.add(fetchedProject);
+
               print(
                   'Project ${fetchedProject.projectCode} added successfully.');
             }
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('Project with no code was skipped.')),
+                content: Text('Project with no code was skipped.'),
+              ),
             );
           }
         }
@@ -5272,8 +6553,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             projectItemCode: itemData['projectItemCode'],
             projectCode: itemData['projectCode'],
             name: itemData['name'],
-            amount: _toDouble(itemData['amount'])!.toDouble(),
-            isStudentFee: _intToBool(itemData['isStudentFee']),
+
+            // ✅ NEW FIELDS
+            itemType: itemData['itemType'],
+            active: _intToBool(itemData['active']),
+            trackStock: _intToBool(itemData['trackStock']),
+
             syncStatus: true,
             operationType: 'none',
             lastModified: DateTime.tryParse(itemData['lastModified'] ?? ''),
@@ -5286,28 +6571,33 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           ProjectItem? existingItem =
               existingItemList.isNotEmpty ? existingItemList.first : null;
 
-          if (fetchedItem.projectItemCode.isNotEmpty) {
+          if ((fetchedItem.projectItemCode ?? '').isNotEmpty) {
             if (existingItem != null) {
               existingItem
                 ..projectCode = fetchedItem.projectCode
                 ..name = fetchedItem.name
-                ..amount = fetchedItem.amount
-                ..isStudentFee = fetchedItem.isStudentFee
+                ..itemType = fetchedItem.itemType
+                ..active = fetchedItem.active
+                ..trackStock = fetchedItem.trackStock
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
+
               await existingItem.save();
+
               print(
                   'ProjectItem ${fetchedItem.projectItemCode} updated successfully.');
             } else {
               await _projectItemBox!.add(fetchedItem);
+
               print(
                   'ProjectItem ${fetchedItem.projectItemCode} added successfully.');
             }
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('ProjectItem with no code was skipped.')),
+                content: Text('ProjectItem with no code was skipped.'),
+              ),
             );
           }
         }
@@ -5401,92 +6691,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================================pull _fetchAndSyncProjectStudentPayment =======================================================================//
-
-  Future<void> _fetchAndSyncProjectStudentPayment() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> payments = jsonDecode(response.body);
-        double? _toDouble(dynamic value) {
-          if (value == null) return null;
-          if (value is double) return value;
-          if (value is int) return value.toDouble();
-          if (value is String) return double.tryParse(value);
-          return null;
-        }
-
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var paymentData in payments) {
-          ProjectStudentPayment fetchedPayment = ProjectStudentPayment(
-            projectStudentPaymentCode: paymentData['projectStudentPaymentCode'],
-            studentId: paymentData['studentId'],
-            projectCode: paymentData['projectCode'],
-            itemId: paymentData['itemId'],
-            amountPaid: _toDouble(paymentData['amountPaid'])!.toDouble(),
-            balance: _toDouble(paymentData['balance'])!.toDouble(),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(paymentData['lastModified'] ?? ''),
-          );
-
-          var existingPaymentList = _projectStudentPaymentBox!.values
-              .where((p) =>
-                  p.projectStudentPaymentCode ==
-                  fetchedPayment.projectStudentPaymentCode)
-              .toList();
-
-          ProjectStudentPayment? existingPayment =
-              existingPaymentList.isNotEmpty ? existingPaymentList.first : null;
-
-          if (fetchedPayment.projectStudentPaymentCode.isNotEmpty) {
-            if (existingPayment != null) {
-              existingPayment
-                ..studentId = fetchedPayment.studentId
-                ..projectCode = fetchedPayment.projectCode
-                ..itemId = fetchedPayment.itemId
-                ..amountPaid = fetchedPayment.amountPaid
-                ..balance = fetchedPayment.balance
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingPayment.save();
-              print(
-                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} updated successfully.');
-            } else {
-              await _projectStudentPaymentBox!.add(fetchedPayment);
-              print(
-                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content:
-                      Text('ProjectStudentPayment with no code was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch ProjectStudentPayments. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing ProjectStudentPayments: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
 
   @override
   void dispose() {
@@ -10456,3 +11660,4 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 
 */
+ 

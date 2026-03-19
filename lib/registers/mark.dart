@@ -1,51 +1,298 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/student.dart';
+import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
+import 'package:zitf_system/main.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
+import 'package:zitf_system/server/routes/class_factory.dart';
+import 'package:zitf_system/server/routes/terms_factory.dart';
+import 'package:zitf_system/student_management/bulk_register_marking_api.dart';
+import 'package:zitf_system/student_management/fetch_student_register_api.dart';
+import 'package:zitf_system/student_management/mark_student_register_fetch_student_api.dart';
+import 'package:zitf_system/student_management/update_student_from_client.dart';
 
 class MarkAttendanceScreen extends StatefulWidget {
   @override
   _MarkAttendanceScreenState createState() => _MarkAttendanceScreenState();
 }
 
+enum DeviceRole { host, client }
+
 class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   String? _selectedClass;
   DateTime _selectedDate = DateTime.now();
   List<Student> _students = [];
-  final Box<Student> _studentBox = Hive.box<Student>('students');
-  final List<String> _classes = [];
+  List<String> _classes = [];
+  List<Terms> _availableTerms = [];
+  List<String> _selectedTerms = [];
+  bool _isSubmitting = false;
+
+  Future<DeviceRole> _loadDeviceRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roleStr = prefs.getString('device_role');
+
+    if (roleStr == 'host') return DeviceRole.host;
+    return DeviceRole.client; // default safe
+  }
+
+  DeviceRole? _role;
+  bool _roleReady = false;
 
   @override
   void initState() {
     super.initState();
-    _loadClasses();
+    _initializeDevice();
   }
 
-  void _loadClasses() {
-    final classes = _studentBox.values
-        .where((student) =>
-            student.terms!.contains(globalTermId)) // Filter by termId
-        .map((student) => student.class_)
-        .toSet()
-        .toList();
+  Future<void> _initializeDevice() async {
+    final role = await _loadDeviceRole();
 
     setState(() {
-      _classes.addAll(classes);
+      _role = role;
+      _roleReady = true;
     });
+
+    // 🔐 SAFE: role is now known
+    await _loadTerms();
+    await _loadClasses();
   }
 
-  void _loadStudents(String class_) {
-    final students = _studentBox.values
-        .where((student) =>
-            student.class_ == class_ &&
-            student.terms!.contains(globalTermId)) // Filter by class and termId
-        .toList();
+  Future<void> _loadTerms() async {
+    if (!_roleReady) return;
 
-    setState(() {
-      _students = students;
+    final now = DateTime.now();
+
+    if (_role == DeviceRole.host) {
+      final termsBox = await Hive.openBox<Terms>('terms');
+      final terms = termsBox.values.toList();
+      final sorted = sortTermsByStatusAndStartDate(terms);
+
+      setState(() {
+        _availableTerms = sorted;
+
+        // ✅ SELECT ONLY NON-EXPIRED TERMS
+        _selectedTerms = sorted
+            .where((t) => t.endDate != null && t.endDate!.isAfter(now))
+            .map((t) => t.termId!)
+            .toList();
+      });
+    } else {
+      try {
+        final terms = await TermApiService.fetchTerms();
+        final sorted = sortTermsByStatusAndStartDate(terms);
+
+        setState(() {
+          _availableTerms = sorted;
+
+          // ✅ SELECT ONLY NON-EXPIRED TERMS
+          _selectedTerms = sorted
+              .where((t) => t.endDate != null && t.endDate!.isAfter(now))
+              .map((t) => t.termId!)
+              .toList();
+        });
+      } catch (e) {
+        setState(() {
+          _availableTerms = [];
+          _selectedTerms = [];
+        });
+
+        _showDialog(
+          'Unable to load terms from host.\n'
+          'You cannot add students while offline.',
+        );
+      }
+    }
+  }
+
+  List<Terms> sortTermsByStatusAndStartDate(List<Terms> terms) {
+    final now = DateTime.now();
+
+    terms.sort((a, b) {
+      final aExpired = a.endDate != null && a.endDate!.isBefore(now);
+      final bExpired = b.endDate != null && b.endDate!.isBefore(now);
+
+      // ✅ Active terms first
+      if (aExpired != bExpired) {
+        return aExpired ? 1 : -1;
+      }
+
+      // ✅ Same group → sort by startDate
+      final aStart = a.startDate ?? DateTime(1900);
+      final bStart = b.startDate ?? DateTime(1900);
+
+      return bStart.compareTo(aStart); // newest first
     });
+
+    return terms;
+  }
+
+  Terms? getActiveTerm() {
+    final now = DateTime.now();
+    return _availableTerms.firstWhere(
+      (term) =>
+          term.startDate != null &&
+          term.endDate != null &&
+          !now.isBefore(term.startDate!) &&
+          !now.isAfter(term.endDate!),
+      orElse: () => _availableTerms.first,
+    );
+  }
+
+  Future<void> _loadClasses() async {
+    if (!_roleReady) return;
+
+    final currentTerm = getActiveTerm();
+    if (currentTerm == null) {
+      setState(() => _classes = []);
+      return;
+    }
+
+    final termId = currentTerm.termId!;
+
+    if (_role == DeviceRole.host) {
+      // HOST → Hive
+      final box = await Hive.openBox<Classes>('classes');
+      setState(() {
+        _classes = box.values
+            .where((c) => c.terms!.contains(termId))
+            .map((c) => c.className)
+            .toList();
+      });
+    } else {
+      // CLIENT → API ONLY
+      try {
+        final classes = await ClassApiService.fetchClasses(termId);
+        setState(() => _classes = classes);
+      } catch (e) {
+        setState(() => _classes = []);
+        _showDialog(
+          'Unable to load classes from host.\n'
+          'You cannot add students while offline.',
+        );
+      }
+    }
+  }
+
+  Future<void> _loadStudentsForClass(String className) async {
+    if (!_roleReady) return;
+
+    final currentTerm = getActiveTerm();
+    if (currentTerm == null) {
+      setState(() => _students = []);
+      return;
+    }
+
+    final termId = currentTerm.termId!;
+    if (_role == DeviceRole.host) {
+      final box = await Hive.openBox<Student>('students');
+
+      setState(() {
+        _students = box.values
+            .where((s) =>
+                s.class_ == className &&
+                s.terms != null &&
+                s.terms!.contains(termId))
+            .toList();
+      });
+    } else {
+      try {
+        final students = await StudentRegisterFetchApi.fetchByClass(
+          className: className,
+          termId: termId,
+        );
+
+        setState(() {
+          _students = students;
+        });
+      } catch (e) {
+        setState(() => _students = []);
+        _showDialog(
+          'Unable to load students from host.\n'
+          'Check connection.',
+        );
+      }
+    }
+  }
+
+  Future<void> _markAttendance() async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isSubmitting = true;
+    });
+    try {
+      if (_selectedClass == null) return;
+
+      final date = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+      );
+
+      final currentTerm = getActiveTerm();
+      if (currentTerm == null) {
+        setState(() => _classes = []);
+        return;
+      }
+
+      final termId = currentTerm.termId!;
+      // 🔒 CHECK ONLY ON HOST
+      if (_role == DeviceRole.host) {
+        final alreadyMarked =
+            await _isAttendanceAlreadyMarked(_selectedClass!, date);
+
+        if (alreadyMarked) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Attendance already marked for this class on this date'),
+            ),
+          );
+          return;
+        }
+      }
+
+      for (final student in _students) {
+        final isPresent = student.isPresent;
+
+        if (_role == DeviceRole.host) {
+          for (final student in _students) {
+            await _applyAttendanceLocally(student, date, student.isPresent);
+          }
+        } else {
+          await StudentRegisterBulkApiService.markBulkRegister(
+            className: _selectedClass!,
+            termId: termId,
+            date: date,
+            students: _students,
+          );
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Attendance marked successfully')),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _applyAttendanceLocally(
+    Student student,
+    DateTime date,
+    bool isPresent,
+  ) async {
+    if (isPresent) {
+      student.presentDates.add(date);
+      student.absentDates.remove(date);
+    } else {
+      student.absentDates.add(date);
+      student.presentDates.remove(date);
+    }
+    await student.save();
   }
 
   Future<bool> _isAttendanceAlreadyMarked(String class_, DateTime date) async {
@@ -59,58 +306,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       }
     }
     return isMarked;
-  }
-
-  void _markAttendance() async {
-    DateTime selectedDateWithoutTime =
-        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-
-    bool isAlreadyMarked = await _isAttendanceAlreadyMarked(
-        _selectedClass!, selectedDateWithoutTime);
-    if (isAlreadyMarked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Attendance already marked for this class on this date')),
-      );
-      return;
-    }
-
-    for (var student in _students) {
-      if (student.isPresent) {
-        List<String> modifiedFields = [];
-        modifiedFields.add('isPresent');
-        modifiedFields.add('absentDates');
-        modifiedFields.add('presentDates');
-
-        if (!student.presentDates.contains(selectedDateWithoutTime)) {
-          student.presentDates.add(selectedDateWithoutTime);
-        }
-        student.absentDates.remove(selectedDateWithoutTime);
-        student.syncStatus = false;
-        student.operationType = 'update';
-        student.lastModified = DateTime.now();
-        student.modifiedFields = modifiedFields;
-      } else {
-        List<String> modifiedFields = [];
-        modifiedFields.add('isPresent');
-        modifiedFields.add('absentDates');
-        modifiedFields.add('presentDates');
-        if (!student.absentDates.contains(selectedDateWithoutTime)) {
-          student.absentDates.add(selectedDateWithoutTime);
-        }
-        student.presentDates.remove(selectedDateWithoutTime);
-        student.syncStatus = false;
-        student.operationType = 'update';
-        student.lastModified = DateTime.now();
-        student.modifiedFields = modifiedFields;
-      }
-      student.save();
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Attendance marked successfully')),
-    );
   }
 
   @override
@@ -149,7 +344,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                               _selectedClass = value;
                             });
                             if (value != null) {
-                              _loadStudents(value);
+                              _loadStudentsForClass(value);
                             }
                           },
                         ),
@@ -194,11 +389,14 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Checkbox(
+                                    CheckboxListTile(
+                                      title: Text(
+                                          "${student.name} ${student.surname}"),
+                                      subtitle: Text(student.class_),
                                       value: student.isPresent,
                                       onChanged: (value) {
                                         setState(() {
-                                          student.isPresent = value!;
+                                          student.isPresent = value ?? false;
                                         });
                                       },
                                     ),
@@ -217,7 +415,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                           ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: _markAttendance,
+                          onPressed: _students.isEmpty ? null : _markAttendance,
                           child: const Text('Mark Attendance'),
                         ),
                       ],
@@ -227,6 +425,22 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _showDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("🧾 Student Submission Feedback"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
       ),
     );
   }

@@ -22,6 +22,7 @@ import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:path/path.dart' as path;
 import 'package:zitf_system/main.dart';
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
 import 'package:zitf_system/reusable_codes/serializers/school_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/student_payments_serializer.dart';
@@ -65,6 +66,8 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   final paymentBoxes = Hive.box<StudentPayment>('student_payments');
   List<School>? _cachedServerSchoolInfo;
 
+  final loggedInUser = getLoggedInUser();
+
   @override
   void initState() {
     super.initState();
@@ -99,7 +102,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
 
     final prefs = await SharedPreferences.getInstance();
     _hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
-
+    final _loggedInUsername = loggedInUser.username;
     if (_role == DeviceRole.host) {
       final payments = await _fetchStudentPaymentFromHive(); // <- Wait for Hive
       setState(() {
@@ -301,7 +304,26 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       }
 
       List<StudentPayment> filteredPayments = allStudentPayments;
-// If surname is not empty, apply from the list of selected terms filter
+      final _loggedInUsername = loggedInUser.role;
+
+      bool mat = false;
+
+      if (_loggedInUsername.toLowerCase() == 'admin' ||
+          _loggedInUsername.toLowerCase() == 'administration') {
+        mat = true;
+      }
+      print(mat);
+      // ✅ ALWAYS filter by logged-in cashier
+      if (_loggedInUsername != null && _loggedInUsername!.isNotEmpty) {
+        print(_loggedInUsername);
+        if (!mat) {
+          filteredPayments = filteredPayments.where((payment) {
+            final match = payment.role == _loggedInUsername;
+            if (!match) {}
+            return match;
+          }).toList();
+        }
+      }
       final appiedTermsFilter =
           _selectedStudent != null && _selectedStudent!.trim().isNotEmpty;
 
@@ -423,6 +445,8 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       'Receipt',
       'Payment Purpose',
       'Amount',
+      'Method',
+      'Method Details',
       'Payment Date',
       'Term',
       'Made By',
@@ -534,6 +558,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
     // For SUMMARIES
     double globalTotal = 0.0;
     final List<Map<String, dynamic>> miniSummary = [];
+    final Map<String, double> globalMethodTotals = {};
 
     for (final entry in groupedPayments.entries) {
       final studentItems = entry.value;
@@ -544,6 +569,18 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
 
       globalTotal += studentSubtotal;
 
+      final Map<String, double> studentMethodTotals = {};
+
+      for (final p in studentItems) {
+        final method = _resolvePaymentMethod(p);
+
+        studentMethodTotals[method] =
+            (studentMethodTotals[method] ?? 0) + (p.amountToPay ?? 0);
+      }
+      studentMethodTotals.forEach((method, total) {
+        globalMethodTotals[method] = (globalMethodTotals[method] ?? 0) + total;
+      });
+
       miniSummary.add({
         "name":
             "${studentItems.first.studentName} ${studentItems.first.studentSurname}",
@@ -551,10 +588,14 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       });
 
       final List<List<String>> tableData = studentItems.map((p) {
+        final method = _resolvePaymentMethod(p);
+
         return [
           p.id.toString(),
           p.paymentPurpose,
           (p.amountToPay ?? 0).toStringAsFixed(2),
+          method.toUpperCase(),
+          _buildPaymentMethodDetails(p),
           DateFormat("yyyy-MM-dd").format(p.paymentDate),
           p.termId ?? "",
           p.username ?? "",
@@ -569,7 +610,22 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         "",
         "",
         "",
+        "",
+        "",
       ]);
+
+      studentMethodTotals.forEach((method, total) {
+        tableData.add([
+          "",
+          "${method.toUpperCase()} TOTAL",
+          total.toStringAsFixed(2),
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+      });
 
       // --- Selected terms display
       final List<String> studentTermsDisplayList = _selectedTermIds.toList();
@@ -708,12 +764,14 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                 headerDecoration:
                     const pw.BoxDecoration(color: PdfColors.grey300),
                 columnWidths: {
-                  0: const pw.FlexColumnWidth(0.5),
-                  1: const pw.FlexColumnWidth(1.5),
-                  2: const pw.FlexColumnWidth(1),
-                  3: const pw.FlexColumnWidth(1),
-                  4: const pw.FlexColumnWidth(1),
+                  0: const pw.FlexColumnWidth(0.6),
+                  1: const pw.FlexColumnWidth(1.6),
+                  2: const pw.FlexColumnWidth(0.8),
+                  3: const pw.FlexColumnWidth(0.9),
+                  4: const pw.FlexColumnWidth(1.6),
                   5: const pw.FlexColumnWidth(1),
+                  6: const pw.FlexColumnWidth(1),
+                  7: const pw.FlexColumnWidth(1),
                 },
               ),
 
@@ -772,6 +830,30 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                   const pw.BoxDecoration(color: PdfColors.grey300),
               border: pw.TableBorder.all(color: PdfColors.black),
             ),
+            pw.SizedBox(height: 20),
+
+            /// Method Totals Section
+            pw.Text(
+              "PAYMENT METHOD BREAKDOWN",
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+
+            pw.SizedBox(height: 10),
+
+            pw.Table.fromTextArray(
+              headers: ["Method", "Total"],
+              data: globalMethodTotals.entries.map((e) {
+                return [
+                  e.key.toUpperCase(),
+                  e.value.toStringAsFixed(2),
+                ];
+              }).toList(),
+              border: pw.TableBorder.all(color: PdfColors.black),
+            ),
+
             pw.SizedBox(height: 20),
             pw.Text(
               "GRAND TOTAL: \$${globalTotal.toStringAsFixed(2)}",
@@ -841,7 +923,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       appBar: AppBar(
         title: const Center(
             child: Text(
-          'View Student Payments By',
+          'View Student Payments',
           style: TextStyle(
             fontSize: 14.0, // Adjust font size
             fontWeight: FontWeight.normal, // Font weight
@@ -949,6 +1031,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                           title: 'Filter by Payment Purpose',
                           child: _buildPaymentPurposeDropdown(),
                         ),
+                        const SizedBox(height: 20),
                         const SizedBox(height: 20),
                         _buildCard(
                           title: 'Filter by Payment Period',
@@ -1088,6 +1171,22 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
     });
   }
 
+  Map<String, double> _groupByPaymentMethod(List<StudentPayment> payments) {
+    final Map<String, double> methodTotals = {};
+
+    for (final p in payments) {
+      final method = (p.paymentMethodType ?? 'Cash').trim();
+
+      methodTotals.update(
+        method,
+        (value) => value + (p.amountToPay ?? 0),
+        ifAbsent: () => (p.amountToPay ?? 0),
+      );
+    }
+
+    return methodTotals;
+  }
+
   Widget _buildClassDropdown() {
     return MultiSelectChip(
       items: _classes,
@@ -1201,27 +1300,272 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
     }
   }
 
+  String _resolvePaymentMethod(StudentPayment payment) {
+    final method = payment.paymentMethodType?.toLowerCase().trim();
+    if (method == null || method.isEmpty) {
+      return 'cash';
+    }
+    return method;
+  }
+
+  String _buildPaymentMethodDetails(StudentPayment payment) {
+    final method = _resolvePaymentMethod(payment);
+
+    switch (method) {
+      case 'mobile_money':
+        return 'Ref: ${payment.paymentReference ?? ''} | '
+            'Phone: ${payment.phoneNumber ?? ''} | '
+            'Provider: ${payment.mobileMoneyProvider ?? ''}';
+
+      case 'bank_transfer':
+        return 'Ref: ${payment.paymentReference ?? ''} | '
+            'Acc No: ${payment.bankAccountNumber ?? ''} | '
+            'Acc Name: ${payment.bankAccountName ?? ''}';
+      case 'card':
+        return 'Ref: ${payment.paymentReference ?? ''} ';
+      case 'other':
+        return 'Ref: ${payment.paymentReference ?? ''} ';
+
+      case 'cash':
+      default:
+        return 'Cash Payment';
+    }
+  }
+
   Widget _buildPaymentsTable() {
-    // Group payments by unique student key
     final Map<String, List<StudentPayment>> groupedPayments = {};
 
     for (final payment in _filteredPayments) {
       final key =
           '${payment.studentName.toLowerCase()}_${payment.studentSurname.toLowerCase()}_${payment.studentClass.toLowerCase()}';
+
       groupedPayments.putIfAbsent(key, () => []).add(payment);
     }
 
-    // Compute grand total
     final grandTotal = _filteredPayments.fold<double>(
       0.0,
       (sum, payment) => sum + (payment.amountToPay ?? 0),
+    );
+
+    // ✅ Build rows safely here
+    final List<DataRow> rows = [];
+
+    for (final entry in groupedPayments.entries) {
+      final studentPayments = entry.value;
+
+      // Student Header
+      rows.add(
+        DataRow(
+          color: MaterialStateProperty.resolveWith<Color?>(
+            (states) => Colors.blueGrey[50],
+          ),
+          cells: [
+            const DataCell(Text('')),
+            DataCell(Text(
+              studentPayments.first.studentName.toUpperCase(),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            )),
+            DataCell(Text(
+              studentPayments.first.studentSurname.toUpperCase(),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            )),
+            DataCell(Text(
+              studentPayments.first.studentClass.toUpperCase(),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            )),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')), // Method
+            const DataCell(Text('')), // Method Details
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+          ],
+        ),
+      );
+
+      // Payment rows
+      for (final payment in studentPayments) {
+        rows.add(
+          DataRow(
+            cells: [
+              DataCell(Text(payment.id.toString())),
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              DataCell(Text(payment.paymentPurpose)),
+              DataCell(
+                Text(payment.amountToPay?.toStringAsFixed(2) ?? '0.00'),
+              ),
+
+              /// ✅ Method Type
+              DataCell(Text(payment.paymentMethodType.toUpperCase())),
+
+              /// ✅ Method Details
+              DataCell(Text(_buildPaymentMethodDetails(payment))),
+              DataCell(Text(payment.paymentDate.toString())),
+              DataCell(Text(payment.termId.toString())),
+              DataCell(Text(payment.role ?? '')),
+            ],
+          ),
+        );
+      }
+
+      // Subtotal
+      final studentSubtotal = studentPayments.fold<double>(
+        0.0,
+        (sum, p) => sum + (p.amountToPay ?? 0),
+      );
+
+      rows.add(
+        DataRow(
+          color: MaterialStateProperty.resolveWith<Color?>(
+            (states) => Colors.grey[200],
+          ),
+          cells: [
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(
+              Text('Subtotal', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            DataCell(
+              Text(
+                studentSubtotal.toStringAsFixed(2),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const DataCell(Text('')), // Method
+            const DataCell(Text('')), // Method Details
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+          ],
+        ),
+      );
+
+      // ✅ Payment Method Breakdown
+      final studentMethodTotals = _groupByPaymentMethod(studentPayments);
+
+      for (final methodEntry in studentMethodTotals.entries) {
+        rows.add(
+          DataRow(
+            color: MaterialStateProperty.resolveWith<Color?>(
+              (states) => Colors.orange[50],
+            ),
+            cells: [
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              DataCell(
+                Text(
+                  '${methodEntry.key} Total',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+              ),
+              DataCell(
+                Text(methodEntry.value.toStringAsFixed(2)),
+              ),
+              const DataCell(Text('')), // Method
+              const DataCell(Text('')), // Method Details
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+              const DataCell(Text('')),
+            ],
+          ),
+        );
+      }
+    }
+    // Spacer row
+    rows.add(
+      const DataRow(
+        cells: [
+          DataCell(Text('')),
+          DataCell(Text('')),
+          DataCell(Text('')),
+          DataCell(Text('')),
+          DataCell(Text('')),
+          DataCell(Text('')),
+          const DataCell(Text('')), // Method
+          const DataCell(Text('')), // Method Details
+          DataCell(Text('')),
+          DataCell(Text('')),
+          DataCell(Text('')),
+        ],
+      ),
+    );
+    final overallMethodTotals = _groupByPaymentMethod(_filteredPayments);
+    for (final methodEntry in overallMethodTotals.entries) {
+      rows.add(
+        DataRow(
+          color: MaterialStateProperty.resolveWith<Color?>(
+            (states) => Colors.green[100],
+          ),
+          cells: [
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            DataCell(
+              Text(
+                'TOTAL ${methodEntry.key}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            DataCell(
+              Text(
+                methodEntry.value.toStringAsFixed(2),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const DataCell(Text('')), // Method
+            const DataCell(Text('')), // Method Details
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+            const DataCell(Text('')),
+          ],
+        ),
+      );
+    }
+
+    // ✅ Grand Total Row
+    rows.add(
+      DataRow(
+        color: MaterialStateProperty.resolveWith<Color?>(
+          (states) => Colors.grey[300],
+        ),
+        cells: [
+          const DataCell(Text('')),
+          const DataCell(Text('')),
+          const DataCell(Text('')),
+          const DataCell(Text('')),
+          const DataCell(
+            Text(
+              'Grand Total',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          DataCell(
+            Text(
+              grandTotal.toStringAsFixed(2),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const DataCell(Text('')), // Method
+          const DataCell(Text('')), // Method Details
+          const DataCell(Text('')),
+          const DataCell(Text('')),
+          const DataCell(Text('')),
+        ],
+      ),
     );
 
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        physics: const ClampingScrollPhysics(),
         child: DataTable(
           columnSpacing: 18,
           columns: const [
@@ -1231,121 +1575,13 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
             DataColumn(label: Text('Class')),
             DataColumn(label: Text('Payment Purpose')),
             DataColumn(label: Text('Amount')),
+            DataColumn(label: Text('Method')),
+            DataColumn(label: Text('Method Details')),
             DataColumn(label: Text('Payment Date')),
             DataColumn(label: Text('Term')),
             DataColumn(label: Text('Made By')),
           ],
-          rows: [
-            for (final entry in groupedPayments.entries) ...[
-              // Student Header
-              DataRow(
-                color: MaterialStateProperty.resolveWith<Color?>(
-                  (Set<MaterialState> states) => Colors.blueGrey[50],
-                ),
-                cells: [
-                  const DataCell(Text('')),
-                  DataCell(Text(
-                    entry.value.first.studentName.toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  )),
-                  DataCell(Text(
-                    entry.value.first.studentSurname.toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  )),
-                  DataCell(Text(
-                    entry.value.first.studentClass.toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  )),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                ],
-              ),
-
-              // Student payment rows
-              for (final payment in entry.value)
-                DataRow(
-                  cells: [
-                    DataCell(Text(payment.id.toString())),
-                    const DataCell(Text('')),
-                    const DataCell(Text('')),
-                    const DataCell(Text('')),
-                    DataCell(Text(payment.paymentPurpose)),
-                    DataCell(
-                      Text(
-                        payment.amountToPay?.toStringAsFixed(2) ?? '0.00',
-                      ),
-                    ),
-                    DataCell(Text(payment.paymentDate.toString())),
-                    DataCell(Text(payment.termId.toString())),
-                    DataCell(Text(payment.role ?? '')),
-                  ],
-                ),
-
-              // ✅ Subtotal Row for this student
-              DataRow(
-                color: MaterialStateProperty.resolveWith<Color?>(
-                  (Set<MaterialState> states) => Colors.grey[200],
-                ),
-                cells: [
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(
-                    Text(
-                      'Subtotal',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      entry.value
-                          .fold<double>(
-                            0.0,
-                            (sum, p) => sum + (p.amountToPay ?? 0),
-                          )
-                          .toStringAsFixed(2),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                  const DataCell(Text('')),
-                ],
-              )
-            ],
-
-            // ✅ Grand Total Row
-            DataRow(
-              color: MaterialStateProperty.resolveWith<Color?>(
-                (Set<MaterialState> states) => Colors.grey[300],
-              ),
-              cells: [
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-                const DataCell(
-                  Text(
-                    'Total',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    grandTotal.toStringAsFixed(2),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-              ],
-            ),
-          ],
+          rows: rows,
         ),
       ),
     );

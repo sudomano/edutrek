@@ -15,43 +15,44 @@ class _CreateProjectFormState extends State<CreateProjectForm> {
   // Controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
-  String _selectedStatus = 'Active'; // Default status
+  String _selectedStatus = 'active';
+  String _selectedProjectType = 'sales';
+  String _selectedParticipationType = 'optional';
+  bool _studentPayable = true;
 
   void _saveProject() async {
     if (_formKey.currentState!.validate()) {
       // Check if a project with the same name and term already exists
       final box = Hive.box<Project>('projects');
 
-      final existingSchools = box.values.cast<Project>().where(
-            (s) =>
-                ((s.name.toLowerCase() == _nameController.text.toLowerCase())),
-          );
-      Project? existingSchool =
-          existingSchools.isNotEmpty ? existingSchools.first : null;
+      final exists = box.values.any(
+        (p) => p.name.toLowerCase() == _nameController.text.toLowerCase(),
+      );
 
-      // Ensure the user isn't updating to a name that already exists
-      if (existingSchool != null) {
+      if (exists) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Project with this Project Name already exists')),
+          const SnackBar(content: Text('Project already exists')),
         );
         return;
       }
 
-      final projectCode = uuid.v4();
+      final now = DateTime.now();
       // Create a new Project instance
       final newProject = Project(
-        projectCode: projectCode,
+        projectCode: uuid.v4(),
         name: _nameController.text,
         description: _descriptionController.text.isEmpty
             ? null
             : _descriptionController.text,
         status: _selectedStatus,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
+        projectType: _selectedProjectType,
+        participationType: _selectedParticipationType,
+        createdAt: now,
+        updatedAt: now,
         syncStatus: false, // Default to not synced
         lastModified: DateTime.now(),
         operationType: 'create',
+        studentPayable: _studentPayable,
       );
 
       // Save to Hive
@@ -79,49 +80,71 @@ class _CreateProjectFormState extends State<CreateProjectForm> {
         key: _formKey,
         child: ListView(
           children: [
-            // Project Code
-
-            // Project Name
-            TextFormField(
-              controller: _nameController,
-              decoration: InputDecoration(labelText: 'Project Name'),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter a project name';
-                }
-                return null;
-              },
+            SwitchListTile(
+              title: const Text('Only Students Must Pay for This Project?'),
+              subtitle: Text(
+                _studentPayable
+                    ? 'Payments will be collected from students only'
+                    : 'Project is externally funded or internal',
+              ),
+              value: _studentPayable,
+              onChanged: (v) => setState(() => _studentPayable = v),
             ),
 
-            // Description (optional)
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Project Name'),
+              validator: (value) =>
+                  value == null || value.isEmpty ? 'Required' : null,
+            ),
+
             TextFormField(
               controller: _descriptionController,
-              decoration: InputDecoration(labelText: 'Description'),
+              decoration: const InputDecoration(labelText: 'Description'),
               maxLines: 3,
             ),
 
-            // Status
+            /// Project Type
             DropdownButtonFormField<String>(
-              value: _selectedStatus,
-              decoration: InputDecoration(labelText: 'Status'),
-              items: ['Active', 'Closed']
-                  .map((status) => DropdownMenuItem(
-                        value: status,
-                        child: Text(status),
-                      ))
-                  .toList(),
-              onChanged: (newValue) {
-                setState(() {
-                  _selectedStatus = newValue!;
-                });
-              },
+              value: _selectedProjectType,
+              decoration: const InputDecoration(labelText: 'Project Type'),
+              items: const [
+                DropdownMenuItem(value: 'sales', child: Text('Sales (Goods)')),
+                DropdownMenuItem(value: 'service', child: Text('Services')),
+              ],
+              onChanged: (value) =>
+                  setState(() => _selectedProjectType = value!),
             ),
 
-            // Save Button
-            SizedBox(height: 20),
+            /// Participation Type
+            DropdownButtonFormField<String>(
+              value: _selectedParticipationType,
+              decoration:
+                  const InputDecoration(labelText: 'Participation Type'),
+              items: const [
+                DropdownMenuItem(value: 'optional', child: Text('Optional')),
+                DropdownMenuItem(
+                    value: 'compulsory', child: Text('Compulsory')),
+              ],
+              onChanged: (value) =>
+                  setState(() => _selectedParticipationType = value!),
+            ),
+
+            /// Status
+            DropdownButtonFormField<String>(
+              value: _selectedStatus,
+              decoration: const InputDecoration(labelText: 'Status'),
+              items: const [
+                DropdownMenuItem(value: 'active', child: Text('Active')),
+                DropdownMenuItem(value: 'closed', child: Text('Closed')),
+              ],
+              onChanged: (value) => setState(() => _selectedStatus = value!),
+            ),
+
+            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _saveProject,
-              child: Text('Save Project'),
+              child: const Text('Save Project'),
             ),
           ],
         ),

@@ -27,13 +27,16 @@ class ProjectAdapter extends TypeAdapter<Project> {
       lastModified: fields[7] as DateTime?,
       operationType: fields[8] as String?,
       modifiedFields: (fields[9] as List?)?.cast<String>(),
+      projectType: fields[10] as String,
+      participationType: fields[11] as String,
+      studentPayable: fields[12] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Project obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.projectCode)
       ..writeByte(1)
@@ -53,7 +56,13 @@ class ProjectAdapter extends TypeAdapter<Project> {
       ..writeByte(8)
       ..write(obj.operationType)
       ..writeByte(9)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(10)
+      ..write(obj.projectType)
+      ..writeByte(11)
+      ..write(obj.participationType)
+      ..writeByte(12)
+      ..write(obj.studentPayable);
   }
 
   @override

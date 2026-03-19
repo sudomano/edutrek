@@ -132,7 +132,7 @@ class GeneralLedger extends StatelessWidget {
                               ElevatedCard(
                                 icon: Icons.money_off,
                                 text: 'Equity ',
-                                target: ExportClassesPages(),
+                                target: RevenuesHome(),
                                 isLargeScreen: true,
                               ),
                             ],
@@ -168,7 +168,7 @@ class GeneralLedger extends StatelessWidget {
                               ElevatedCard(
                                 icon: Icons.money_off,
                                 text: 'Equity',
-                                target: ExportClassesPages(),
+                                target: RevenuesHome(),
                                 isLargeScreen: false,
                               ),
 

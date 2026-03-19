@@ -16,10 +16,18 @@ import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/payment_receipts_log.dart';
+import 'package:zitf_system/database/projects/packaging_level.dart';
+import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_item_price_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
+import 'package:zitf_system/database/projects/stock_unit_type.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -37,7 +45,6 @@ import 'package:zitf_system/entry_point/host_services_layer_4/host_seed.dart';
 import 'package:zitf_system/export_import_backup_data/export_import_home.dart';
 import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_final.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
-import 'package:zitf_system/landing_tet_page.dart';
 import 'package:zitf_system/projects/projects_home.dart';
 import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_user_when_app_in_background.dart';
 
@@ -107,11 +114,19 @@ void main() async {
   Hive.registerAdapter(ProjectAdapter());
   Hive.registerAdapter(ProjectItemAdapter());
   Hive.registerAdapter(DailyActivityAdapter());
-  Hive.registerAdapter(ProjectStudentPaymentAdapter());
   Hive.registerAdapter(AutoLogoutSettingsAdapter());
   Hive.registerAdapter(DomainRecordAdapter());
   Hive.registerAdapter(ExceptionalStudentsAdapter());
   Hive.registerAdapter(PaymentLogAdapter());
+  Hive.registerAdapter(ProductBatchAdapter());
+  Hive.registerAdapter(BatchSellUnitAdapter());
+  Hive.registerAdapter(ProjectItemPriceAdapter());
+  Hive.registerAdapter(ProjectSaleTransactionAdapter());
+  Hive.registerAdapter(BatchUnitAdapter());
+  Hive.registerAdapter(StockUnitTypeAdapter());
+  Hive.registerAdapter(PackagingLevelAdapter());
+  Hive.registerAdapter(PaymentMethodAdapter());
+  Hive.registerAdapter(ReceiptSnapshotAdapter());
 
   final prefs = await SharedPreferences.getInstance();
 
@@ -161,10 +176,18 @@ class HiveService {
     await Hive.openBox<Project>('projects');
     await Hive.openBox<ProjectItem>('projectItems');
     await Hive.openBox<DailyActivity>('dailyActivities');
-    await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
     await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
     await Hive.openBox('financial_box');
     await Hive.openBox<PaymentLog>('payment_log');
+
+    await Hive.openBox<ProductBatch>('product_batches');
+    await Hive.openBox<ProjectItemPrice>('project_item_prices');
+    await Hive.openBox<BatchSellUnit>('batch_sell_units');
+    await Hive.openBox<ProjectSaleTransaction>('project_sale_transactions');
+
+    await Hive.openBox<BatchUnit>('batch_units');
+    await Hive.openBox<PaymentMethod>('payment_methods');
+    await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
   }
 }
 
@@ -246,10 +269,17 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     debugPrint('Selected Role: $_selectedRole');
                     debugPrint(
                         'Is Logged In: ${widget.isLoggedIn}'); // Restart the app to ensure Hive boxes are properly initialized
-                    runApp(MyApp(
-                      role: _selectedRole!,
-                      isLoggedIn: widget.isLoggedIn,
-                    ));
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MyApp(
+                          role: _selectedRole!,
+                          isLoggedIn: widget.isLoggedIn,
+                        ),
+                      ),
+                      (route) => false,
+                    );
+
                     debugPrint('runApp(MyApp) called successfully');
                   }
                 : null,
@@ -382,8 +412,8 @@ class _MyAppState extends State<MyApp> {
 
         initialRoute: widget.isLoggedIn ? '/home' : '/login',
         routes: {
-          '/login': (context) => LoginScreen(),
-          '/home': (context) => const LandingTestPage(),
+          '/login': (context) => const LoginScreen(),
+          '/home': (context) => const HomeScreen(),
           '/homedeveloper': (context) => ViewSecurityScreen(),
           '/forgot': (context) => ForgottenPasswordScreen(),
           '/admin': (context) => EditSecurityScreen(),

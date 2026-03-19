@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart'; // Custom fonts
 import 'package:hive/hive.dart';
 
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_model.dart';
 import 'package:zitf_system/projects/project_items/create_item.dart';
 import 'package:zitf_system/projects/project_items/delete_item.dart';
 import 'package:zitf_system/projects/project_items/update_item.dart';
@@ -121,74 +122,92 @@ class _MyPageState extends State<ProjectItemsHome> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            //if (admin || secretary || subadmin)
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
+                                              ElevatedCard(
+                                                icon: Icons
+                                                    .create_new_folder_outlined,
+                                                text: 'Create Project Item',
+                                                target: CreateProjectItemForm(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
 
-                                            // Elevated cards with icons
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .view_comfortable_outlined,
-                                              text: 'View Project Items',
-                                              target: ViewProjectItems(),
-                                              isLargeScreen: true,
-                                            ),
-                                            //if (admin || secretary || subadmin)
-                                            ElevatedCard(
-                                              icon: Icons
-                                                  .create_new_folder_outlined,
-                                              text: 'Create Project Items',
-                                              target: CreateProjectItemForm(),
-                                              isLargeScreen: true,
-                                            ),
-                                            // if (admin || subadmin)
-                                            _buildElevatedCardWithDialog(
-                                              context,
-                                              icon: Icons.update,
-                                              text: 'Update Project Items',
-                                              isLargeScreen:
-                                                  true, // Flag to check screen size
-                                            ),
-
-                                            // if (admin || subadmin)
-                                            const ElevatedCard(
-                                              icon: Icons.delete,
-                                              text: 'Delete Project Items',
-                                              target: DeleteItem(),
-                                              isLargeScreen: true,
-                                            ),
+                                              // Elevated cards with icons
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text: 'View Project Items',
+                                                target: ViewProjectItems(),
+                                                isLargeScreen: true,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                subadmin)
+                                              _buildElevatedCardWithDialog(
+                                                context,
+                                                icon: Icons.update,
+                                                text: 'Update Project Item',
+                                                isLargeScreen:
+                                                    true, // Flag to check screen size
+                                              ),
+                                            if (admin || administration)
+                                              const ElevatedCard(
+                                                icon: Icons.delete,
+                                                text: 'Delete Project Item',
+                                                target: DeleteProjectItem(),
+                                                isLargeScreen: true,
+                                              ),
                                           ],
                                         )
                                       : Column(
                                           children: [
-                                            // Elevated cards with icons
-                                            const ElevatedCard(
-                                              icon: Icons
-                                                  .view_comfortable_outlined,
-                                              text: 'View Project Items',
-                                              target: ViewProjectItems(),
-                                              isLargeScreen: false,
-                                            ),
-                                            //if (admin || secretary || subadmin)
-                                            ElevatedCard(
-                                              icon: Icons
-                                                  .create_new_folder_outlined,
-                                              text: 'Create Project Items',
-                                              target: CreateProjectItemForm(),
-                                              isLargeScreen: false,
-                                            ),
-                                            _buildElevatedCardWithDialog(
-                                              context,
-                                              icon: Icons.update,
-                                              text: 'Update Project Items',
-                                              isLargeScreen:
-                                                  false, // Flag to check screen size
-                                            ),
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
+                                              ElevatedCard(
+                                                icon: Icons
+                                                    .create_new_folder_outlined,
+                                                text: 'Create Project Item',
+                                                target: CreateProjectItemForm(),
+                                                isLargeScreen: false,
+                                              ),
+                                            if (admin ||
+                                                administration ||
+                                                secretary ||
+                                                subadmin ||
+                                                accountant)
+                                              const ElevatedCard(
+                                                icon: Icons
+                                                    .view_comfortable_outlined,
+                                                text: 'View Project Items',
+                                                target: ViewProjectItems(),
+                                                isLargeScreen: false,
+                                              ),
                                             if (admin ||
                                                 administration ||
                                                 subadmin)
+                                              _buildElevatedCardWithDialog(
+                                                context,
+                                                icon: Icons.update,
+                                                text: 'Update Project Item',
+                                                isLargeScreen:
+                                                    false, // Flag to check screen size
+                                              ),
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
-                                                text: 'Delete Project Items',
-                                                target: DeleteItem(),
+                                                text: 'Delete Project Item',
+                                                target: DeleteProjectItem(),
                                                 isLargeScreen: false,
                                               ),
                                           ],
@@ -235,6 +254,17 @@ Widget _buildElevatedCardWithDialog(
         child: InkWell(
           onTap: () async {
             final Box<ProjectItem> box = Hive.box<ProjectItem>('projectItems');
+            final Box<Project> projectBox = Hive.box<Project>('projects');
+            final activeItems = box.values.where((item) {
+              final project = projectBox.values.cast<Project?>().firstWhere(
+                    (p) => p!.projectCode == item.projectCode,
+                    orElse: () => null,
+                  );
+
+              return project != null &&
+                  project.status.toLowerCase() != 'deleted';
+            }).toList();
+
             showDialog(
               context: context,
               builder: (context) {
@@ -248,31 +278,27 @@ Widget _buildElevatedCardWithDialog(
                   content: SizedBox(
                     width: double.maxFinite,
                     child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: box.length,
-                      itemBuilder: (context, index) {
-                        final currentClass = box.getAt(index);
-                        return ListTile(
-                          title: Text(
-                            currentClass!.name.toString(),
-                            style: GoogleFonts.montserrat(
-                              fontSize: isLargeScreen ? 14 : 16,
-                              color: Colors.blueGrey[900],
-                            ),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    UpdateProjectItemForm(index: index),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                        shrinkWrap: true,
+                        itemCount: activeItems.length,
+                        itemBuilder: (context, index) {
+                          final currentItem = activeItems[index];
+                          return ListTile(
+                            title: Text(currentItem.name ?? ''),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => UpdateProjectItemForm(
+                                    index: box.values
+                                        .toList()
+                                        .indexOf(currentItem),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }),
                   ),
                 );
               },

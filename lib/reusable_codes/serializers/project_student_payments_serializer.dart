@@ -1,3 +1,5 @@
+/*
+
 import 'dart:convert';
 
 import 'package:zitf_system/database/projects/project_student_payment_model.dart';
@@ -34,3 +36,5 @@ ProjectStudentPayment projectStudentPaymentsFromJson(
       operationType: json['operationType'],
       modifiedFields: parseStringList(json['modifiedFields']),
     );
+
+ */

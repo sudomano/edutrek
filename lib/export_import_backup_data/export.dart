@@ -11,10 +11,16 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_item_price_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -61,7 +67,15 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   Box<Project>? _projectBox;
   Box<ProjectItem>? _projectItemBox;
   Box<DailyActivity>? _dailyActivityBox;
-  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
+
+  Box<BatchUnit>? _batchUnitBox;
+  Box<ProductBatch>? _productBatchBox;
+  Box<ProjectItemPrice>? _projectItemPriceBox;
+  Box<ProjectSaleTransaction>? _projectSaleTransactionBox;
+  Box<BatchSellUnit>? _batchSellUnitBox;
+  Box<PaymentMethod>? _paymentMethodBox;
+  Box<ReceiptSnapshot>? _receiptSnapshotBox;
+
   Box<ExceptionalStudents>? _exceptionalStudentsBox;
 
   bool _isExporting = false; // To track export status
@@ -96,10 +110,20 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       _projectBox = await Hive.openBox<Project>('projects');
       _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
       _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-      _projectStudentPaymentBox =
-          await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
+
       _exceptionalStudentsBox =
           await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+
+      _batchUnitBox = await Hive.openBox<BatchUnit>('batch_units');
+      _productBatchBox = await Hive.openBox<ProductBatch>('product_batches');
+      _projectItemPriceBox =
+          await Hive.openBox<ProjectItemPrice>('project_item_prices');
+      _projectSaleTransactionBox = await Hive.openBox<ProjectSaleTransaction>(
+          'project_sale_transactions');
+      _batchSellUnitBox = await Hive.openBox<BatchSellUnit>('batch_sell_units');
+      _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
+      _receiptSnapshotBox =
+          await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
     } catch (e) {
       print('Error opening Hive boxes: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -135,12 +159,22 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'accounts': _serializeBox(_accountBox, _accountsToJson),
         'assets': _serializeBox(_assetBox, _assetsToJson),
         'projects': _serializeBox(_projectBox, _projectsToJson),
-        'project_items': _serializeBox(_projectItemBox, _project_itemsToJson),
+        'project_items': _serializeBox(_projectItemBox, _projectItemsToJson),
         'daily_activities':
             _serializeBox(_dailyActivityBox, _daily_activitiesToJson),
-        'project_student_payments': _serializeBox(
-            _projectStudentPaymentBox, _project_student_paymentsToJson),
         'exceptions': _serializeBox(_exceptionalStudentsBox, _exceptionsToJson),
+        'batch_units': _serializeBox(_batchUnitBox, _batchUnitToJson),
+        'product_batches': _serializeBox(_productBatchBox, _productBatchToJson),
+        'project_item_prices':
+            _serializeBox(_projectItemPriceBox, _projectItemPriceToJson),
+        'project_sale_transactions': _serializeBox(
+            _projectSaleTransactionBox, _projectSaleTransactionToJson),
+        'batch_sell_units':
+            _serializeBox(_batchSellUnitBox, _batchSellUnitToJson),
+        'payment_methods':
+            _serializeBox(_paymentMethodBox, _paymentMethodToJson),
+        'receipt_snapshots':
+            _serializeBox(_receiptSnapshotBox, _receiptSnapshotToJson),
       };
 
       String jsonData = jsonEncode(exportData);
@@ -215,6 +249,161 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       Box<T>? box, Map<String, dynamic> Function(T) toJson) {
     print('Serializing box: ${box?.name ?? 'Unknown'}');
     return box?.values.map((data) => toJson(data as T)).toList() ?? [];
+  }
+
+  Map<String, dynamic> _productBatchToJson(ProductBatch b) => {
+        'batchCode': b.batchCode,
+        'productCode': b.productCode,
+        'reference': b.reference,
+        'baseUnitType': b.baseUnitType?.name,
+        'baseUnit': b.baseUnit,
+        'baseUnitSize': b.baseUnitSize,
+        'totalBaseUnits': b.totalBaseUnits,
+        'remainingBaseUnits': b.remainingBaseUnits,
+        'totalBuyingCost': b.totalBuyingCost,
+        'purchaseDate': b.purchaseDate?.toIso8601String(),
+        'createdAt': b.createdAt?.toIso8601String(),
+        'syncStatus': b.syncStatus,
+        'lastModified': b.lastModified?.toIso8601String(),
+        'operationType': b.operationType,
+        'units': b.units?.map((u) => _batchUnitToJson(u)).toList(),
+        'modifiedFields':
+            b.modifiedFields != null ? jsonEncode(b.modifiedFields) : null,
+      };
+
+  Map<String, dynamic> _batchUnitToJson(BatchUnit u) => {
+        'level': u.level.name,
+        'unitsPerPackage': u.unitsPerPackage,
+        'quantity': u.quantity,
+        'buyingPrice': u.buyingPrice,
+        'unitBatchCode': u.unitBatchCode,
+      };
+
+  Map<String, dynamic> _projectItemPriceToJson(ProjectItemPrice p) => {
+        'priceCode': p.priceCode,
+        'projectItemCode': p.projectItemCode,
+        'amount': p.amount,
+        'pricingType': p.pricingType,
+        'appliesTo': p.appliesTo,
+        'effectiveFrom': p.effectiveFrom.toIso8601String(),
+        'effectiveTo': p.effectiveTo?.toIso8601String(),
+        'syncStatus': p.syncStatus,
+        'lastModified': p.lastModified?.toIso8601String(),
+        'operationType': p.operationType,
+        'modifiedFields':
+            p.modifiedFields != null ? jsonEncode(p.modifiedFields) : null,
+      };
+  Map<String, dynamic> _projectSaleTransactionToJson(
+          ProjectSaleTransaction t) =>
+      {
+        'transactionCode': t.transactionCode,
+        'studentId': t.studentId,
+        'projectCode': t.projectCode,
+        'projectItemCode': t.projectItemCode,
+        'batchCode': t.batchCode,
+        'sellUnitCode': t.sellUnitCode,
+        'sellUnitNameSnapshot': t.sellUnitNameSnapshot,
+        'quantitySold': t.quantitySold,
+        'unitSellingPrice': t.unitSellingPrice,
+        'totalAmount': t.totalAmount,
+        'baseUnitsPerSellUnit': t.baseUnitsPerSellUnit,
+        'totalBaseUnitsSold': t.totalBaseUnitsSold,
+        'baseUnit': t.baseUnit,
+        'baseUnitType': t.baseUnitType.name,
+        'transactionDate': t.transactionDate.toIso8601String(),
+        'paymentMethod': t.paymentMethod,
+        'reference': t.reference,
+        'amountPaid': t.amountPaid,
+        'arrears': t.arrears,
+
+        // 🔴 Soft delete
+        'isDeleted': t.isDeleted,
+        'deletedAt': t.deletedAt?.map((e) => e.toIso8601String()).toList(),
+        'restoredAt': t.restoredAt?.map((e) => e.toIso8601String()).toList(),
+        'deletedByUsers': t.deletedByUsers,
+        'restoredByUsers': t.restoredByUsers,
+
+        // 💳 Payment breakdown
+        'paymentMethodCode': t.paymentMethodCode,
+        'methodType': t.methodType,
+        'amountPaidInPaymentMethod': t.amountPaidInPaymentMethod,
+        'currency': t.currency,
+        'provider': t.provider,
+        'referenceNumber': t.referenceNumber,
+        'phoneNumber': t.phoneNumber,
+        'accountNumber': t.accountNumber,
+        'accountName': t.accountName,
+        'paymentDatetransacted': t.paymentDatetransacted?.toIso8601String(),
+
+        // 🔁 Audit
+        'isReversed': t.isReversed,
+        'lineTransactionCodes': t.lineTransactionCodes,
+        'financialType': t.financialType,
+        'parentTransactionCode': t.parentTransactionCode,
+        'affectsStock': t.affectsStock,
+        'createsObligation': t.createsObligation,
+        'settlesObligation': t.settlesObligation,
+
+        // Sync
+        'syncStatus': t.syncStatus,
+        'lastModified': t.lastModified?.toIso8601String(),
+        'operationType': t.operationType,
+        'modifiedFields':
+            t.modifiedFields != null ? jsonEncode(t.modifiedFields) : null,
+      };
+
+  Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit u) {
+    return {
+      "sell_unit_code": u.sellUnitCode,
+      "batch_code": u.batchCode,
+      "unit_name": u.unitName,
+      "quantity_multiplier": u.quantityMultiplier,
+      "selling_price": u.sellingPrice,
+      "active": u.active,
+      "deleted_at": u.deletedAt?.toIso8601String(),
+      "last_modified": u.lastModified?.toIso8601String(),
+      "operation_type": u.operationType,
+      "modified_fields": u.modifiedFields,
+      "packaging_level": u.packagingLevel?.name,
+      "base_units_per_sell_unit": u.baseUnitsPerSellUnit,
+      "base_unit": u.baseUnit,
+      "base_unit_type": u.baseUnitType?.name,
+    };
+  }
+
+  Map<String, dynamic> _paymentMethodToJson(PaymentMethod paymentMethod) {
+    return {
+      "payment_method_code": paymentMethod.paymentMethodCode,
+      "method_type": paymentMethod.methodType,
+      "amount": paymentMethod.amount,
+      "currency": paymentMethod.currency,
+      "provider": paymentMethod.provider,
+      "reference": paymentMethod.reference,
+      "phone_number": paymentMethod.phoneNumber,
+      "account_number": paymentMethod.accountNumber,
+      "account_name": paymentMethod.accountName,
+      "payment_date": paymentMethod.paymentDate?.toIso8601String(),
+      "is_reversed": paymentMethod.isReversed,
+      "last_modified": paymentMethod.lastModified?.toIso8601String(),
+      "operation_type": paymentMethod.operationType,
+    };
+  }
+
+  Map<String, dynamic> _receiptSnapshotToJson(ReceiptSnapshot snapshot) {
+    return {
+      "receipt_code": snapshot.receiptCode,
+      "receipt_date": snapshot.receiptDate.toIso8601String(),
+      "cashier": snapshot.cashier,
+      "total_expected": snapshot.totalExpected,
+      "total_paid": snapshot.totalPaid,
+      "amount_received": snapshot.amountReceived,
+      "change_amount": snapshot.change,
+      "currency": snapshot.currency,
+      "receipt_lines": snapshot.receiptLinesJson,
+      "is_reprint": snapshot.isReprint,
+      "student_name": snapshot.studentName,
+      "student_class": snapshot.studentClass,
+    };
   }
 
 // JSON Serialization method for ExceptionalStudents
@@ -590,22 +779,29 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': p.syncStatus,
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields != null
-            ? jsonEncode(p.modifiedFields) // JSON encode the list
-            : null,
+        'modifiedFields':
+            p.modifiedFields != null ? jsonEncode(p.modifiedFields) : null,
+
+        // ✅ NEW FIELDS
+        'projectType': p.projectType,
+        'participationType': p.participationType,
+        'studentPayable': p.studentPayable,
       };
-  Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
+  Map<String, dynamic> _projectItemsToJson(ProjectItem i) => {
         'projectItemCode': i.projectItemCode,
         'projectCode': i.projectCode,
         'name': i.name,
-        'amount': i.amount,
-        'isStudentFee': i.isStudentFee,
+
+        // ✅ NEW FIELDS
+        'itemType': i.itemType,
+        'active': i.active,
+        'trackStock': i.trackStock,
+
         'syncStatus': i.syncStatus,
         'lastModified': i.lastModified?.toIso8601String(),
         'operationType': i.operationType,
-        'modifiedFields': i.modifiedFields != null
-            ? jsonEncode(i.modifiedFields) // JSON encode the list
-            : null,
+        'modifiedFields':
+            i.modifiedFields != null ? jsonEncode(i.modifiedFields) : null,
       };
 
   Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
@@ -620,23 +816,6 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'operationType': a.operationType,
         'modifiedFields': a.modifiedFields != null
             ? jsonEncode(a.modifiedFields) // JSON encode the list
-            : null,
-      };
-
-  Map<String, dynamic> _project_student_paymentsToJson(
-          ProjectStudentPayment p) =>
-      {
-        'projectStudentPaymentCode': p.projectStudentPaymentCode,
-        'studentId': p.studentId,
-        'projectCode': p.projectCode,
-        'itemId': p.itemId,
-        'amountPaid': p.amountPaid,
-        'balance': p.balance,
-        'syncStatus': p.syncStatus,
-        'lastModified': p.lastModified?.toIso8601String(),
-        'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields != null
-            ? jsonEncode(p.modifiedFields) // JSON encode the list
             : null,
       };
 
@@ -721,7 +900,13 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     _projectBox?.close();
     _projectItemBox?.close();
     _dailyActivityBox?.close();
-    _projectStudentPaymentBox?.close();
     _exceptionalStudentsBox?.close();
+    _batchUnitBox?.close();
+    _productBatchBox?.close();
+    _projectItemPriceBox?.close();
+    _projectSaleTransactionBox?.close();
+    _batchSellUnitBox?.close();
+    _paymentMethodBox?.close();
+    _receiptSnapshotBox?.close();
   }
 }
