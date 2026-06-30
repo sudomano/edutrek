@@ -522,6 +522,9 @@ class _CreateProductBatchScreenState extends State<CreateProductBatchScreen> {
     double totalBaseUnits = 0;
     double totalBuyingCost = 0;
 
+    // ✅ Track which fields are being modified
+    List<String> modifiedFields = [];
+
     for (final u in packagingUnits) {
       final unitsPerPkg = double.tryParse(u.unitsPerPackageCtrl.text);
       final qty = int.tryParse(u.packageCountCtrl.text);
@@ -542,11 +545,17 @@ class _CreateProductBatchScreenState extends State<CreateProductBatchScreen> {
         return;
       }
 
+      // ✅ Create BatchUnit with sync fields set
       final batchUnit = BatchUnit(
         level: _mapLevel(u.level),
         unitsPerPackage: unitsPerPkg,
         quantity: qty,
         buyingPrice: price,
+        // ✅ Set sync fields for child objects
+        syncStatus: false,
+        lastModified: DateTime.now(),
+        operationType: 'create',
+        modifiedFields: ['level', 'unitsPerPackage', 'quantity', 'buyingPrice'],
       );
 
       units.add(batchUnit);
@@ -555,55 +564,130 @@ class _CreateProductBatchScreenState extends State<CreateProductBatchScreen> {
       totalBuyingCost += batchUnit.totalCost;
     }
 
-    /// Normalize by base unit size (VERY IMPORTANT)
+    /// Normalize by base unit size
     final normalizedBaseUnits = totalBaseUnits;
+
+    // ✅ Track modified fields
+    modifiedFields.add('reference');
+    modifiedFields.add('units');
+    modifiedFields.add('baseUnit');
+    modifiedFields.add('baseUnitSize');
+    modifiedFields.add('totalBaseUnits');
+    modifiedFields.add('totalBuyingCost');
+    modifiedFields.add('purchaseDate');
 
     final box = Hive.box<ProductBatch>('product_batches');
 
     if (widget.isEdit) {
       final existing = widget.batch!;
 
-      final updated = existing.copyWith(
-        reference: referenceCtrl.text.trim(),
-        baseUnitType: selectedBaseUnitType,
-        baseUnit: selectedBaseUnit,
-        baseUnitSize: baseUnitSize,
-        units: units,
-        totalBaseUnits: normalizedBaseUnits,
-        remainingBaseUnits: normalizedBaseUnits, // or preserve old logic
-        totalBuyingCost: totalBuyingCost,
-        purchaseDate: purchaseDate,
-        lastModified: DateTime.now(),
-        syncStatus: false,
-        operationType: 'update',
-        modifiedFields: [
-          'reference',
-          'units',
-          'baseUnit',
-          'baseUnitSize',
-        ],
-      );
+      // ✅ Track changed fields for edit
+      List<String> editModifiedFields = [];
 
+      if (existing.reference != referenceCtrl.text.trim()) {
+        editModifiedFields.add('reference');
+      }
+      if (existing.baseUnitType != selectedBaseUnitType) {
+        editModifiedFields.add('baseUnitType');
+      }
+      if (existing.baseUnit != selectedBaseUnit) {
+        editModifiedFields.add('baseUnit');
+      }
+      if (existing.baseUnitSize != baseUnitSize) {
+        editModifiedFields.add('baseUnitSize');
+      }
+      if (existing.purchaseDate != purchaseDate) {
+        editModifiedFields.add('purchaseDate');
+      }
+      if (existing.totalBaseUnits != normalizedBaseUnits) {
+        editModifiedFields.add('totalBaseUnits');
+      }
+      if (existing.totalBuyingCost != totalBuyingCost) {
+        editModifiedFields.add('totalBuyingCost');
+      }
+
+      // ✅ Check if units have changed
+      if (existing.units!.length != units.length) {
+        editModifiedFields.add('units');
+      } else {
+        for (int i = 0; i < units.length; i++) {
+          if (existing.units![i].unitsPerPackage != units[i].unitsPerPackage ||
+              existing.units![i].quantity != units[i].quantity ||
+              existing.units![i].buyingPrice != units[i].buyingPrice) {
+            editModifiedFields.add('units');
+            break;
+          }
+        }
+      }
+
+      // ✅ If no fields changed, show message and return
+      if (editModifiedFields.isEmpty) {
+        _showError('No changes detected');
+        return;
+      }
+
+      // ✅ Update existing ProductBatch with sync fields
       existing
-        ..reference = updated.reference
-        ..baseUnitType = updated.baseUnitType
-        ..baseUnit = updated.baseUnit
-        ..baseUnitSize = updated.baseUnitSize
-        ..units = updated.units
-        ..totalBaseUnits = updated.totalBaseUnits
-        ..remainingBaseUnits = updated.remainingBaseUnits
-        ..totalBuyingCost = updated.totalBuyingCost
-        ..purchaseDate = updated.purchaseDate
-        ..lastModified = updated.lastModified
+        ..reference = referenceCtrl.text.trim()
+        ..baseUnitType = selectedBaseUnitType
+        ..baseUnit = selectedBaseUnit
+        ..baseUnitSize = baseUnitSize
+        ..units = units
+        ..totalBaseUnits = normalizedBaseUnits
+        ..remainingBaseUnits = normalizedBaseUnits
+        ..totalBuyingCost = totalBuyingCost
+        ..purchaseDate = purchaseDate
+        ..lastModified = DateTime.now()
         ..syncStatus = false
-        ..operationType = 'update';
+        ..operationType = 'update'
+        ..modifiedFields = editModifiedFields;
 
       await existing.save();
+
+      // ✅ Also save each BatchUnit to its own box if needed
+      final batchUnitBox = Hive.box<BatchUnit>('batch_units');
+      for (var unit in units) {
+        // Check if unit already exists
+        var existingUnit = batchUnitBox.values
+            .where((u) => u.unitBatchCode == unit.unitBatchCode)
+            .firstOrNull;
+
+        if (existingUnit != null) {
+          // Update existing unit
+          existingUnit
+            ..level = unit.level
+            ..unitsPerPackage = unit.unitsPerPackage
+            ..quantity = unit.quantity
+            ..buyingPrice = unit.buyingPrice
+            ..syncStatus = false
+            ..lastModified = DateTime.now()
+            ..operationType = 'update'
+            ..modifiedFields = [
+              'level',
+              'unitsPerPackage',
+              'quantity',
+              'buyingPrice'
+            ];
+          await existingUnit.save();
+        } else {
+          // Add new unit
+          await batchUnitBox.add(unit);
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Batch updated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, existing);
     } else {
+      // ✅ CREATE NEW
       final batch = ProductBatch(
-        batchCode: DateTime.now()
-            .millisecondsSinceEpoch
-            .toString(), // or your PK logic
+        batchCode: DateTime.now().millisecondsSinceEpoch.toString(),
         productCode: widget.projectItem.projectItemCode,
         reference: referenceCtrl.text.trim(),
         baseUnitType: selectedBaseUnitType,
@@ -616,16 +700,38 @@ class _CreateProductBatchScreenState extends State<CreateProductBatchScreen> {
         purchaseDate: purchaseDate,
         createdAt: DateTime.now(),
         lastModified: DateTime.now(),
+        // ✅ Set sync fields for ProductBatch
         syncStatus: false,
         operationType: 'create',
-        modifiedFields: const [],
+        modifiedFields: [
+          'reference',
+          'units',
+          'baseUnitType',
+          'baseUnit',
+          'baseUnitSize',
+          'totalBaseUnits',
+          'totalBuyingCost',
+          'purchaseDate',
+        ],
       );
 
       await box.add(batch);
 
+      // ✅ Also save each BatchUnit to its own box
+      final batchUnitBox = Hive.box<BatchUnit>('batch_units');
+      for (var unit in units) {
+        await batchUnitBox.add(unit);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Batch created successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
       if (!mounted) return;
       Navigator.pop(context, batch);
-      return;
     }
   }
 

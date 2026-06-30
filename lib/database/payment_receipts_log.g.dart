@@ -26,13 +26,21 @@ class PaymentLogAdapter extends TypeAdapter<PaymentLog> {
           .toList(),
       parentName: fields[5] as String?,
       parentPhone: fields[6] as String?,
+      isReprint: fields[7] as bool?,
+      originalReceiptNumber: fields[8] as String?,
+      reprintCount: fields[9] as int?,
+      syncStatus: fields[10] as bool?,
+      lastModified: fields[11] as DateTime?,
+      operationType: fields[12] as String?,
+      logId: fields[13] as String?,
+      modifiedFields: (fields[14] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, PaymentLog obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.receiptNumber)
       ..writeByte(1)
@@ -46,7 +54,23 @@ class PaymentLogAdapter extends TypeAdapter<PaymentLog> {
       ..writeByte(5)
       ..write(obj.parentName)
       ..writeByte(6)
-      ..write(obj.parentPhone);
+      ..write(obj.parentPhone)
+      ..writeByte(7)
+      ..write(obj.isReprint)
+      ..writeByte(8)
+      ..write(obj.originalReceiptNumber)
+      ..writeByte(9)
+      ..write(obj.reprintCount)
+      ..writeByte(10)
+      ..write(obj.syncStatus)
+      ..writeByte(11)
+      ..write(obj.lastModified)
+      ..writeByte(12)
+      ..write(obj.operationType)
+      ..writeByte(13)
+      ..write(obj.logId)
+      ..writeByte(14)
+      ..write(obj.modifiedFields);
   }
 
   @override

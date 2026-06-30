@@ -1008,7 +1008,8 @@ class _ViewByScreenState extends State<ArrearsAndPrepayments> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ViewByScreen(),
+                    builder: (context) =>
+                        const StudentsArrearsStatementScreen(),
                   ),
                 );
               },

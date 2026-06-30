@@ -1,0 +1,35 @@
+-- DROP TABLE IF EXISTS `project_items`;
+CREATE TABLE `project_items` (
+  -- Primary Key
+  `projectItemCode` varchar(255) NOT NULL,
+  
+  -- Foreign Key
+  `projectCode` varchar(255) NOT NULL,
+  
+  -- Core Fields
+  `name` varchar(255) NOT NULL,
+  
+  -- ✅ NEW: Item Type
+  `itemType` varchar(50) DEFAULT 'goods', -- goods | service
+  
+  -- ✅ NEW: Active Status
+  `active` tinyint(1) DEFAULT 1,
+  
+  -- ✅ NEW: Track Stock
+  `trackStock` tinyint(1) DEFAULT 0,
+  
+  -- ✅ Extra fields from existing DB (keep for compatibility)
+  `amount` double NOT NULL DEFAULT 0,
+  `isStudentFee` tinyint(1) NOT NULL DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(50) DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  PRIMARY KEY (`projectItemCode`),
+  KEY `idx_projectCode` (`projectCode`),
+  KEY `idx_name` (`name`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

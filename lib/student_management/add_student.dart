@@ -12,6 +12,7 @@ import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:zitf_system/reusable_codes/contact_utils/contact_utils.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart';
 import 'package:zitf_system/server/routes/class_factory.dart';
 import 'package:zitf_system/server/routes/exceptions_factory.dart';
@@ -98,35 +99,113 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     await _setInitialRegNumber();
   }
 
+  Future<bool> _isAdminUser() async {
+    try {
+      final loggedInUser = getLoggedInUser();
+      if (loggedInUser == null) return false;
+
+      final role = loggedInUser.role?.toLowerCase() ?? '';
+
+      // Define which roles have administrative privileges
+      final adminRoles = [
+        'admin',
+        'administrator',
+        'superadmin',
+        'administration',
+        'sub-admin',
+        'subadmin'
+      ];
+
+      // Check if user's role is in the admin roles list
+      return adminRoles.contains(role);
+    } catch (e) {
+      // If we can't determine, default to false (non-admin)
+      return false;
+    }
+  }
+
   Future<void> _loadExceptions() async {
-    if (!_roleReady || globalTermId == null) return;
+    if (!_roleReady) {
+      debugPrint('⚠️ Role not ready yet');
+      return;
+    }
+
+    final bool isAdmin = await _isAdminUser();
+    debugPrint('🔍 Is Admin: $isAdmin');
+    debugPrint('🔍 Device Role: $_role');
 
     if (_role == DeviceRole.host) {
-      // HOST → Hive
-      final box =
-          await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
-
-      setState(() {
-        _allExceptions = box.values
-            .where((e) =>
-                e.exceptionStatus != null &&
-                e.exceptionStatus!.toLowerCase() == 'active' &&
-                e.terms!.contains(globalTermId))
-            .toList();
-      });
-    } else {
-      // CLIENT → HOST API ONLY
       try {
+        final box =
+            await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+
+        // Get all exceptions
+        final allExceptions = box.values.toList();
+        debugPrint('📊 Total exceptions in box: ${allExceptions.length}');
+
+        // Filter by term and status
+        final filteredExceptions = allExceptions.where((e) {
+          final isActive = e.exceptionStatus != null &&
+              e.exceptionStatus!.toLowerCase() == 'active';
+          return isActive;
+        }).toList();
+
+        debugPrint(
+            '📊 Exceptions after status filter: ${filteredExceptions.length}');
+
+        // ✅ CORRECTED: Apply admin filter - EXCLUDE priority exceptions for non-admin
+        final finalExceptions = filteredExceptions.where((e) {
+          // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
+          if (!isAdmin) {
+            return e.priorityFlag != 1; // ✅ This should be != 1, not == 0
+          }
+          // Admin sees everything
+          return true;
+        }).toList();
+
+        setState(() {
+          _allExceptions = finalExceptions;
+        });
+
+        debugPrint('📊 Final exceptions loaded: ${_allExceptions.length}');
+        debugPrint(
+            '📊 Priority exceptions hidden for non-admin: ${filteredExceptions.length - finalExceptions.length}');
+      } catch (e) {
+        debugPrint('❌ Error loading exceptions from Hive: $e');
+        setState(() => _allExceptions = []);
+      }
+    } else {
+      // Client mode
+      try {
+        debugPrint('📡 Fetching exceptions from server ');
         final exceptions =
             await ExceptionalStudentApiService.fetchActiveExceptions(
                 globalTermId!);
 
-        setState(() {
-          _allExceptions = exceptions;
-        });
-      } catch (e) {
-        setState(() => _allExceptions = []);
+        debugPrint('📊 Received ${exceptions.length} exceptions from server');
 
+        // ✅ CORRECTED: Apply admin filter - EXCLUDE priority exceptions for non-admin
+        final filteredExceptions = exceptions.where((e) {
+          // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
+          if (!isAdmin) {
+            final priority = e.priorityFlag ?? 0; // Handle null
+
+            return priority != 1;
+          }
+          // Admin sees everything
+          return true;
+        }).toList();
+
+        setState(() {
+          _allExceptions = filteredExceptions;
+        });
+
+        debugPrint('📊 Final exceptions loaded: ${_allExceptions.length}');
+        debugPrint(
+            '📊 Priority exceptions hidden for non-admin: ${exceptions.length - filteredExceptions.length}');
+      } catch (e) {
+        debugPrint('❌ Error loading exceptions from server: $e');
+        setState(() => _allExceptions = []);
         _showDialog(
           'Unable to load exceptions from host.\n'
           'You cannot add students while offline.',
@@ -240,6 +319,50 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         key: _formKey,
         child: ListView(
           children: [
+            // Add this near the top of your form
+            FutureBuilder<bool>(
+              future: _isAdminUser(),
+              builder: (context, snapshot) {
+                final isAdmin = snapshot.data ?? false;
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isAdmin ? Colors.green.shade50 : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isAdmin
+                          ? Colors.green.shade300
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isAdmin ? Icons.verified : Icons.person,
+                        color: isAdmin ? Colors.green : Colors.grey,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isAdmin
+                            ? '🔑 Administrator Access - All exceptions visible'
+                            : '👤 Standard Access - Priority exceptions hidden',
+                        style: TextStyle(
+                          color: isAdmin
+                              ? Colors.green.shade700
+                              : Colors.grey.shade700,
+                          fontSize: 14,
+                          fontWeight:
+                              isAdmin ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
             const SizedBox(height: 20),
             CheckboxListTile(
               title: const Text("Is Newcomer?"),
@@ -309,36 +432,92 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               },
             ),
 
+            // In the build method, update this section:
             if (_isExceptional == true) ...[
               const Center(
                   child: Text('Exceptional Info',
                       style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.bold))),
-              MultiSelectDialogField<ExceptionalStudents>(
-                items: _allExceptions
-                    .map((e) => MultiSelectItem<ExceptionalStudents>(
-                        e, '${e.exceptionName} (${e.exceptionId})'))
-                    .toList(),
-                title: const Text("Select Exception(s)"),
-                selectedColor: Colors.blue,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: Colors.grey.shade400,
-                    width: 1,
-                  ),
-                ),
-                buttonText: const Text(
-                  "Select Exception(s)",
-                  style: TextStyle(fontSize: 16),
-                ),
-                onConfirm: (values) {
-                  setState(() {
-                    _selectedExceptions =
-                        List<ExceptionalStudents>.from(values);
-                  });
+              FutureBuilder<bool>(
+                future: _isAdminUser(),
+                builder: (context, snapshot) {
+                  final isAdmin = snapshot.data ?? false;
+
+                  // ✅ CORRECTED: Filter exceptions based on admin status
+                  final filteredExceptions = _allExceptions.where((e) {
+                    // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
+                    if (!isAdmin) {
+                      return e.priorityFlag != 1; // ✅ CORRECTED
+                    }
+                    return true; // Admin sees everything
+                  }).toList();
+
+                  if (filteredExceptions.isEmpty) {
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            isAdmin ? Icons.warning_amber : Icons.lock,
+                            color: isAdmin ? Colors.orange : Colors.grey,
+                            size: 40,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isAdmin
+                                ? 'No exceptions available. Create some first.'
+                                : 'No exceptions available for your account level.\nPriority exceptions are restricted to Administrators.',
+                            style: TextStyle(
+                              color: isAdmin
+                                  ? Colors.orange
+                                  : Colors.grey.shade600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return MultiSelectDialogField<ExceptionalStudents>(
+                    items: filteredExceptions
+                        .map((e) => MultiSelectItem<ExceptionalStudents>(
+                            e,
+                            isAdmin && e.priorityFlag == 1
+                                ? '🔴 ${e.exceptionName} (Priority)'
+                                : '${e.exceptionName}'))
+                        .toList(),
+                    title: Text(isAdmin
+                        ? "Select Exception(s) - Admin View"
+                        : "Select Exception(s) - Standard View"),
+                    selectedColor: Colors.blue,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: Colors.grey.shade400,
+                        width: 1,
+                      ),
+                    ),
+                    buttonText: Text(
+                      isAdmin
+                          ? "Select Exception(s) (${filteredExceptions.length} available)"
+                          : "Select Exception(s) (${filteredExceptions.length} available)",
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    onConfirm: (values) {
+                      setState(() {
+                        _selectedExceptions =
+                            List<ExceptionalStudents>.from(values);
+                      });
+                    },
+                    initialValue: _selectedExceptions,
+                  );
                 },
-                initialValue: _selectedExceptions,
               ),
             ],
             const Center(
@@ -861,56 +1040,53 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final studentIdNumber = _studentIdNumberController.text.toLowerCase();
         final regnumber = uuid.v4();
 
-        final box = await Hive.openBox<Student>('students');
+        // ⭐ FIX: Only check duplicates on HOST devices
+        if (_role == DeviceRole.host) {
+          final box = await Hive.openBox<Student>('students');
 
-        // Check if a student with the same details already exists
-        final existingStudents = box.values.where((student) =>
-            student.name.toLowerCase() == name &&
-            student.surname.toLowerCase() == surname &&
-            student.class_.toLowerCase() == className &&
-            student.gender.toLowerCase() == gender);
+          // Check if a student with the same details already exists
+          final existingStudents = box.values.where((student) =>
+              student.name.toLowerCase() == name &&
+              student.surname.toLowerCase() == surname &&
+              student.class_.toLowerCase() == className &&
+              student.gender.toLowerCase() == gender);
 
-        // Check for student ID duplication
-        final duplicateId = box.values.any((student) =>
-            student.studentIdNumber?.toLowerCase() == studentIdNumber);
+          // Check for student ID duplication
+          final duplicateId = box.values.any((student) =>
+              student.studentIdNumber?.toLowerCase() == studentIdNumber);
 
-        final duplicateDetails = box.values.any((student) =>
-            student.name.toLowerCase() == name &&
-            student.surname.toLowerCase() == surname &&
-            student.class_.toLowerCase() == className &&
-            student.gender.toLowerCase() == gender);
+          final duplicateDetails = box.values.any((student) =>
+              student.name.toLowerCase() == name &&
+              student.surname.toLowerCase() == surname &&
+              student.class_.toLowerCase() == className &&
+              student.gender.toLowerCase() == gender);
 
-        if (_physicalAddressController.text.isEmpty) {
-          _showDialog('Physical Address is Required');
+          if (_physicalAddressController.text.isEmpty) {
+            _showDialog('Physical Address is Required');
+            return;
+          }
+          if (_phoneController.text.isEmpty) {
+            _showDialog('Parent Phone Number is Required');
+            return;
+          }
+          if (_parentNameController.text.isEmpty) {
+            _showDialog('Parent Name is Required');
+            return;
+          }
 
-          return;
-        }
-        if (_phoneController.text.isEmpty) {
-          _showDialog('Parent Phone Number is Required');
-
-          return;
-        }
-        if (_parentNameController.text.isEmpty) {
-          _showDialog('Parent Name is Required');
-
-          return;
-        }
-
-        if (existingStudents.isNotEmpty) {
-          _showDialog('Student already exists');
-
-          return;
-        }
-        if (duplicateId) {
-          _showDialog(' Registration Number already exists');
-
-          return;
-        }
-        if (duplicateDetails) {
-          _showDialog(
-              ' Student With Same Name, Surname, Class, Gender already exists');
-
-          return;
+          if (existingStudents.isNotEmpty) {
+            _showDialog('Student already exists');
+            return;
+          }
+          if (duplicateId) {
+            _showDialog('Registration Number already exists');
+            return;
+          }
+          if (duplicateDetails) {
+            _showDialog(
+                'Student With Same Name, Surname, Class, Gender already exists');
+            return;
+          }
         }
 
         int newId = await getNextId();
@@ -958,8 +1134,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         // Save a student record for each term.
         final newStudent = Student(
           exceptions: exceptions,
-
-          id: newId,
+          id: _role == DeviceRole.host
+              ? newId
+              : null, // ⭐ FIX: Client gets NULL id
           name: name,
           surname: surname,
           regNumber: _regNumberController.text,
@@ -969,10 +1146,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           phoneNumber: _phoneController.text,
           paymentStatus: _parentNameController.text,
           termId: globalTermId,
-          syncStatus: false, // Set syncStatus to false
-          lastModified: DateTime.now(), // Set lastModified to current datetime
-          operationType:
-              'create', // Set operationType to 'create' // Set the global term ID
+          syncStatus: _role == DeviceRole.host
+              ? true
+              : false, // ⭐ FIX: Host = synced, Client = pending
+          lastModified: DateTime.now(),
+          operationType: 'create',
           physicalAddress: _physicalAddressController.text.isEmpty
               ? null
               : _physicalAddressController.text,
@@ -1011,50 +1189,52 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           healthDetailedInformation: _illnessInfoController.text.isEmpty
               ? null
               : _illnessInfoController.text,
-
           modifiedFields: modifiedFields,
-          // Populate the new 'terms' field with the full list of selected terms.
           terms: _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!],
           isNewComer: _isNewComer ?? false,
           isNewComerFrom: _isNewComerFrom,
           isNewComerUntil: _isNewComerUntil,
         );
 
+        // ⭐ FIX: HOST saves locally, CLIENT only syncs to host
         if (_role == DeviceRole.host) {
-          box.add(newStudent); // Add the student
+          final box = await Hive.openBox<Student>('students');
+          await box.add(newStudent);
           await saveParentContact(newStudent);
-        } // 👈 Auto save parent contact
-// 🔁 If client device, attempt immediate host sync
-        // 🔁 CLIENT → HOST IMMEDIATE SYNC
-        // 🔁 CLIENT IMMEDIATE SYNC ONLY
-        else {
+          _showDialog('✅ Student saved successfully (HOST mode)');
+          _reloadFormWithNavigator();
+        } else {
+          // ⭐ CLIENT: Only sync to host - NO local save
           try {
+            _showDialog('⏳ Syncing student to host...');
+
             final response = await StudentApiService.sendStudents([
-              studentsToJson(newStudent), // send full student object
+              studentsToJson(newStudent),
             ]);
 
             final inserted = response['insertedStudents'] as List;
             if (inserted.isNotEmpty) {
-              _showDialog('Student was successfully synced to host.');
+              _showDialog('✅ Student successfully synced to host!');
               debugPrint('✅ Student synced to host');
+              _reloadFormWithNavigator();
             } else {
-              _showDialog('Student could not be synced. Check details.');
+              _showDialog(
+                  '⚠️ Student could not be synced. Please check connection and try again.');
               debugPrint('⚠️ Host accepted request but returned no data');
             }
           } catch (e) {
-            _showDialog('Failed to sync student. Host may be unreachable.');
-            debugPrint('⚠️ Host unreachable, client does NOT save locally: $e');
+            // ⭐ CLIENT: On failure, show error - DO NOT save locally
+            _showDialog('❌ Failed to sync student.\n'
+                'Host may be unreachable or offline.\n'
+                'Please check your network connection and try again.\n\n'
+                'Error: $e');
+            debugPrint('❌ Client sync failed (NO local save): $e');
           }
         }
-
-        _showDialog('Student Was Added Successfully');
-
-        _reloadFormWithNavigator();
       } else {
         _showDialog(
-            'No Selected Term Was Found. Create A New Term or Switch Terms To AnExisting One.');
+            'No Selected Term Was Found. Create A New Term or Switch Terms To An Existing One.');
       }
-      // Return to the previous screen
     }
   }
 

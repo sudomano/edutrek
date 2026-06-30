@@ -1,0 +1,40 @@
+-- DROP TABLE IF EXISTS `payment_receipts_log`;
+CREATE TABLE `payment_receipts_log` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `logId` varchar(50) DEFAULT NULL, -- ✅ NEW: Unique identifier for sync
+  `receiptNumber` int(11) NOT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `className` varchar(255) NOT NULL,
+  
+  -- Receipt Data
+  `dateTime` varchar(50) NOT NULL,
+  `receiptLines` json NOT NULL, -- FULL LineText list as JSON
+  
+  -- Parent Information
+  `parentName` varchar(255) DEFAULT NULL,
+  `parentPhone` varchar(20) DEFAULT NULL,
+  
+  -- Reprint Tracking
+  `isReprint` tinyint(1) DEFAULT 0,
+  `originalReceiptNumber` varchar(50) DEFAULT NULL,
+  `reprintCount` int(11) DEFAULT 0,
+  
+  -- ✅ Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `operationType` varchar(50) DEFAULT 'none',
+  `modifiedFields` json DEFAULT NULL, -- ✅ NEW: Tracks modified fields
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_logId` (`logId`),
+  KEY `idx_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

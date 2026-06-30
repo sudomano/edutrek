@@ -1,0 +1,743 @@
+
+/////////////////////////////////////users////////////////////////////
+-- DROP TABLE IF EXISTS `user`;
+CREATE TABLE `user` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `userCode` varchar(200) DEFAULT NULL,
+  
+  -- Core User Fields (matching client exactly)
+  `username` varchar(255) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `role` varchar(50) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `isActive` tinyint(1) DEFAULT 1,
+  
+  -- Security Fields (JSON for List support)
+  `securityQuestions` json DEFAULT NULL,
+  `securityAnswers` json DEFAULT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `assignedClasses` json DEFAULT NULL, -- JSON array for class names
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`),
+  UNIQUE KEY `uk_userCode` (`userCode`),
+  KEY `idx_role` (`role`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+//////////////////////////////school/////////////////////////////
+
+-- DROP TABLE IF EXISTS `school`;
+CREATE TABLE `school` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `schoolCode` varchar(200) DEFAULT NULL,
+  
+  -- School Information Fields (matching client exactly)
+  `schoolName` varchar(255) DEFAULT NULL,
+  `schoolAddress` varchar(255) DEFAULT NULL,
+  `schoolPhoneNumber` varchar(20) DEFAULT NULL,
+  `schoolEmail` varchar(255) DEFAULT NULL,
+  `schoolLogoPath` varchar(500) DEFAULT NULL, -- ✅ NEW FIELD
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_schoolCode` (`schoolCode`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/////////////////////////////////////classes//////////////////////
+-- DROP TABLE IF EXISTS `classes`;
+CREATE TABLE `classes` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `classCode` varchar(200) DEFAULT NULL,
+  
+  -- Class Information Fields (matching client exactly)
+  `className` varchar(255) NOT NULL,
+  `date` date NOT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `terms` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON for List support
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_classCode` (`classCode`),
+  KEY `idx_className` (`className`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/////////////////////////////////students//////////////////////
+-- DROP TABLE IF EXISTS `student`;
+CREATE TABLE `student` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `studentIdNumber` varchar(50) DEFAULT NULL,
+  
+  -- Core Fields
+  `name` varchar(255) NOT NULL,
+  `surname` varchar(255) NOT NULL,
+  `regNumber` varchar(50) NOT NULL,
+  `class` varchar(50) NOT NULL,
+  `gender` enum('Male','Female') NOT NULL,
+  `age` date NOT NULL,
+  `phoneNumber` varchar(20) NOT NULL,
+  `paymentStatus` varchar(255) NOT NULL,
+  
+  -- Attendance Fields
+  `isPresent` tinyint(1) DEFAULT 1,
+  `presentDates` json DEFAULT NULL,
+  `absentDates` json DEFAULT NULL,
+  
+  -- Demographic Fields
+  `physicalAddress` text DEFAULT NULL,
+  `formerSchool` varchar(255) DEFAULT NULL,
+  `religion` varchar(100) DEFAULT NULL,
+  `denomination` varchar(100) DEFAULT NULL,
+  `nationalIdNumber` varchar(50) DEFAULT NULL,
+  `nationality` varchar(100) DEFAULT NULL,
+  `district` varchar(100) DEFAULT NULL,
+  `previousSchoolPerformanceResults` text DEFAULT NULL,
+  `enrollmentStatus` enum('Enrolled','Not Enrolled') DEFAULT 'Not Enrolled',
+  
+  -- Emergency Contact
+  `emergencyContactName` varchar(255) DEFAULT NULL,
+  `emergencyContactNumber` varchar(20) DEFAULT NULL,
+  
+  -- Health Fields ✅ NEW
+  `healthStatus` varchar(255) DEFAULT NULL, -- ✅ Fixed from 'healthStauts'
+  `healthDetailedInformation` text DEFAULT NULL, -- ✅ NEW FIELD
+  
+  -- Academic Fields
+  `termId` varchar(250) DEFAULT NULL,
+  `terms` json DEFAULT NULL,
+  
+  -- Exceptions ✅ NEW
+  `exceptions` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- New Comer Fields
+  `isNewComer` tinyint(1) DEFAULT 0,
+  `isNewComerFrom` datetime DEFAULT NULL,
+  `isNewComerUntil` datetime DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys
+  `fid` int(11) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_studentIdNumber` (`studentIdNumber`),
+  UNIQUE KEY `uk_regNumber` (`regNumber`),
+  KEY `idx_name` (`name`, `surname`),
+  KEY `idx_class` (`class`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//////////////////////////////////exceptions ///////////////////////////////////////////-- DROP TABLE IF EXISTS `exceptional_students`;
+CREATE TABLE `exceptional_students` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `exceptionId` varchar(36) NOT NULL,
+  
+  -- Exception Fields
+  `exceptionName` varchar(255) DEFAULT NULL,
+  `exceptionStatus` varchar(20) DEFAULT NULL,
+  `exceptionType` varchar(20) DEFAULT NULL,
+  `exceptionFigure` varchar(20) DEFAULT NULL,
+  
+  -- Priority Flag ✅ NEW FIELD
+  `priorityFlag` tinyint(1) DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(20) DEFAULT NULL,
+  
+  -- JSON Fields
+  `modifiedFields` json DEFAULT NULL,
+  `terms` json DEFAULT NULL,
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_exceptionId` (`exceptionId`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/////////////////////////////////////////payment_purpose/////////////////////////////////////////
+-- DROP TABLE IF EXISTS `paymentpurpose`;
+CREATE TABLE `paymentpurpose` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `purposeCode` varchar(250) DEFAULT NULL,
+  
+  -- Core Fields
+  `paymentPurpose` varchar(255) NOT NULL,
+  `purposeAmount` decimal(10,2) NOT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `associatedClasses` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Exception Fields
+  `exceptions` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Feature Flags
+  `forNewcomersOnly` tinyint(1) DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purposeCode` (`purposeCode`),
+  KEY `idx_paymentPurpose` (`paymentPurpose`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ 
+
+
+
+ /////////////////////////////////////student_payment/////////////////////////////////////////
+
+ -- DROP TABLE IF EXISTS `studentpayment`;
+CREATE TABLE `studentpayment` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `receiptNumber` varchar(250) DEFAULT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `studentSurname` varchar(255) NOT NULL,
+  `studentClass` varchar(255) NOT NULL,
+  `studentRegNumber` varchar(50) DEFAULT NULL, -- ✅ NEW
+  `phoneNumber` varchar(20) NOT NULL,
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL,
+  `amountToPay` decimal(10,2) NOT NULL,
+  `paymentDate` date NOT NULL,
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Payment Method Details ✅ ALL NEW
+  `paymentMethodType` varchar(50) DEFAULT 'cash',
+  `paymentMethodAmount` decimal(10,2) DEFAULT 0.00,
+  `paymentReference` varchar(255) DEFAULT '',
+  `mobileMoneyPhone` varchar(20) DEFAULT '',
+  `mobileMoneyProvider` varchar(50) DEFAULT '',
+  `bankAccountNumber` varchar(50) DEFAULT '',
+  `bankAccountName` varchar(255) DEFAULT '',
+  `changeGiven` decimal(10,2) DEFAULT 0.00,
+  
+  -- User Information
+  `username` varchar(255) DEFAULT NULL,
+  `role` varchar(255) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`, `studentSurname`),
+  KEY `idx_paymentDate` (`paymentDate`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+////////////////////////////////////////student_payments_receipt_reprint_log/////////////////////////////////////////
+
+-- DROP TABLE IF EXISTS `payment_receipts_log`;
+CREATE TABLE `payment_receipts_log` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `logId` varchar(50) DEFAULT NULL, -- ✅ NEW: Unique identifier for sync
+  `receiptNumber` int(11) NOT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `className` varchar(255) NOT NULL,
+  
+  -- Receipt Data
+  `dateTime` varchar(50) NOT NULL,
+  `receiptLines` json NOT NULL, -- FULL LineText list as JSON
+  
+  -- Parent Information
+  `parentName` varchar(255) DEFAULT NULL,
+  `parentPhone` varchar(20) DEFAULT NULL,
+  
+  -- Reprint Tracking
+  `isReprint` tinyint(1) DEFAULT 0,
+  `originalReceiptNumber` varchar(50) DEFAULT NULL,
+  `reprintCount` int(11) DEFAULT 0,
+  
+  -- ✅ Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `operationType` varchar(50) DEFAULT 'none',
+  `modifiedFields` json DEFAULT NULL, -- ✅ NEW: Tracks modified fields
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_logId` (`logId`),
+  KEY `idx_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ 
+
+
+ /////////////////////////////////////teachers//////////////////////////////
+
+
+ -- DROP TABLE IF EXISTS `teachers`;
+CREATE TABLE `teachers` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `IdNumber` varchar(255) NOT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Personal Information
+  `name` varchar(255) NOT NULL,
+  `surname` varchar(255) NOT NULL,
+  `gender` varchar(50) NOT NULL,
+  `dateOfBirth` date NOT NULL,
+  `phoneNumber` varchar(50) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `address` text NOT NULL,
+  
+  -- Employment Information
+  `hireDate` date NOT NULL,
+  `qualifications` text NOT NULL,
+  `employmentStatus` varchar(100) NOT NULL,
+  
+  -- Class Assignment
+  `assignedClass` varchar(255) DEFAULT NULL,
+  `assignedClasses` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL, -- ✅ NEW FIELD
+  `isPaid` tinyint(1) DEFAULT 1,
+  `paymentAmount` double NOT NULL,
+  `paymentDate` datetime DEFAULT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `terms` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_IdNumber` (`IdNumber`),
+  KEY `idx_name` (`name`, `surname`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+////////////////////////////////////teacher purposes /////////////////
+
+
+
+
+-- DROP TABLE IF EXISTS `teacherpaymentspurposes`;
+CREATE TABLE `teacherpaymentspurposes` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `purposeCode` varchar(250) DEFAULT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Core Fields
+  `paymentPurpose` varchar(255) NOT NULL,
+  `purposeAmount` double NOT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `associatedStaff` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purposeCode` (`purposeCode`),
+  KEY `idx_paymentPurpose` (`paymentPurpose`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+///////////////////////////////////teacher payments //////////////////////////////////
+
+
+-- DROP TABLE IF EXISTS `teacherpayment`;
+CREATE TABLE `teacherpayment` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `receiptNumber` varchar(250) DEFAULT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `studentSurname` varchar(255) NOT NULL,
+  `studentClass` varchar(255) NOT NULL,
+  `phoneNumber` varchar(255) NOT NULL,
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL,
+  `amountToPay` double NOT NULL,
+  `paymentDate` datetime NOT NULL,
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Staff Association ✅ NEW FIELD
+  `associatedStaff` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`, `studentSurname`),
+  KEY `idx_paymentDate` (`paymentDate`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+////////////////////////////////////terms //////////////////////////////
+
+
+-- DROP TABLE IF EXISTS `terms`;
+CREATE TABLE `terms` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `termId` varchar(255) NOT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Term Information
+  `termName` varchar(255) NOT NULL,
+  `startDate` datetime NOT NULL, -- ✅ Changed from DATE to DATETIME
+  `endDate` datetime DEFAULT NULL, -- ✅ Changed from DATE to DATETIME
+  `isActive` tinyint(1) NOT NULL,
+  `status` varchar(50) NOT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_termId` (`termId`),
+  KEY `idx_termName` (`termName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+///////////////////////////////////accounts_assets//////////////////
+
+
+-- DROP TABLE IF EXISTS `accounts`;
+CREATE TABLE `accounts` (
+  -- Primary & Identifiers
+  `accountCode` varchar(255) NOT NULL,
+  
+  -- Account Information
+  `id` int(11) DEFAULT NULL,
+  `accountType` varchar(255) DEFAULT NULL,
+  `accountSubType` varchar(255) DEFAULT NULL,
+  `accountName` varchar(255) DEFAULT NULL,
+  `isALiquidAccount` tinyint(1) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(50) DEFAULT NULL,
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`accountCode`),
+  KEY `idx_accountType` (`accountType`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+///////////////////////////////assets///////////////////
+-- DROP TABLE IF EXISTS `assets`;
+CREATE TABLE `assets` (
+  -- Primary Key
+  `assetCode` varchar(255) NOT NULL,
+  
+  -- General Asset Information
+  `id` int(11) DEFAULT NULL,
+  `assetName` varchar(255) DEFAULT NULL,
+  `assetType` varchar(100) DEFAULT NULL,
+  `assetSubType` varchar(100) DEFAULT NULL,
+  `assetSerialNo` varchar(255) DEFAULT NULL,
+  
+  -- Acquisition
+  `acquisitionDate` datetime DEFAULT NULL,
+  `acquisitionCost` double DEFAULT NULL,
+  `acquisitionMethod` varchar(100) DEFAULT NULL,
+  
+  -- Location & Tracking
+  `department` varchar(100) DEFAULT NULL,
+  `location` varchar(100) DEFAULT NULL,
+  
+  -- Depreciation & Valuation
+  `depreciationRate` double DEFAULT NULL,
+  `depreciationMethod` varchar(100) DEFAULT NULL,
+  `lastDepreciationDate` datetime DEFAULT NULL,
+  `accumulatedDepreciation` double DEFAULT NULL,
+  `bookValue` double DEFAULT NULL,
+  `isImpaired` tinyint(1) DEFAULT NULL,
+  `impairmentLoss` double DEFAULT NULL,
+  `revaluationDate` datetime DEFAULT NULL,
+  `revaluationAmount` double DEFAULT NULL,
+  
+  -- Maintenance & Improvement
+  `lastMaintenanceDate` datetime DEFAULT NULL,
+  `maintenanceCost` double DEFAULT NULL,
+  `maintenanceDescription` text DEFAULT NULL,
+  `capitalImprovementCost` double DEFAULT NULL,
+  `capitalImprovementDescription` text DEFAULT NULL,
+  
+  -- Disposal
+  `disposalDate` datetime DEFAULT NULL,
+  `disposalProceeds` double DEFAULT NULL,
+  `disposalReason` text DEFAULT NULL,
+  `gainOrLossOnDisposal` double DEFAULT NULL,
+  
+  -- Leasing
+  `isLeased` tinyint(1) DEFAULT NULL,
+  `leaseType` varchar(100) DEFAULT NULL,
+  `leaseStartDate` datetime DEFAULT NULL,
+  `leaseEndDate` datetime DEFAULT NULL,
+  `leasePaymentAmount` double DEFAULT NULL,
+  
+  -- Sync & Audit
+  `lastAuditDate` datetime DEFAULT NULL,
+  `syncStatus` tinyint(1) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `createdAt` datetime DEFAULT NULL,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(100) DEFAULT NULL,
+  `usefulLife` varchar(100) DEFAULT NULL,
+  `hasDebitBalance` tinyint(1) DEFAULT NULL,
+  `hasCreditBalance` tinyint(1) DEFAULT NULL,
+  `option` varchar(100) DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  PRIMARY KEY (`assetCode`),
+  KEY `idx_assetName` (`assetName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+////////////////////////////projects /////////////////////////////
+-- DROP TABLE IF EXISTS `projects`;
+CREATE TABLE `projects` (
+  -- Primary Key
+  `projectCode` varchar(255) NOT NULL,
+  
+  -- Core Fields
+  `name` varchar(255) NOT NULL,
+  `description` text DEFAULT NULL,
+  `status` varchar(50) NOT NULL,
+  
+  -- Timestamps
+  `createdAt` datetime NOT NULL,
+  `updatedAt` datetime NOT NULL,
+  
+  -- ✅ NEW: Project Type Fields
+  `projectType` varchar(50) NOT NULL DEFAULT 'sales', -- sales | service | mixed
+  `participationType` varchar(50) NOT NULL DEFAULT 'optional', -- optional | compulsory
+  `studentPayable` tinyint(1) DEFAULT 1,
+  
+  -- Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(50) DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  PRIMARY KEY (`projectCode`),
+  KEY `idx_name` (`name`),
+  KEY `idx_status` (`status`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+////////////////////////////////////project_items//////////////////////////////////////
+
+
+-- DROP TABLE IF EXISTS `project_items`;
+CREATE TABLE `project_items` (
+  -- Primary Key
+  `projectItemCode` varchar(255) NOT NULL,
+  
+  -- Foreign Key
+  `projectCode` varchar(255) NOT NULL,
+  
+  -- Core Fields
+  `name` varchar(255) NOT NULL,
+  
+  -- ✅ NEW: Item Type
+  `itemType` varchar(50) DEFAULT 'goods', -- goods | service
+  
+  -- ✅ NEW: Active Status
+  `active` tinyint(1) DEFAULT 1,
+  
+  -- ✅ NEW: Track Stock
+  `trackStock` tinyint(1) DEFAULT 0,
+  
+  -- ✅ Extra fields from existing DB (keep for compatibility)
+  `amount` double NOT NULL DEFAULT 0,
+  `isStudentFee` tinyint(1) NOT NULL DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(50) DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  PRIMARY KEY (`projectItemCode`),
+  KEY `idx_projectCode` (`projectCode`),
+  KEY `idx_name` (`name`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+//////////////////////////////////batch_units////////////////////////
+
+
+-- DROP TABLE IF EXISTS `batch_units`;
+CREATE TABLE `batch_units` (
+  -- Primary Key
+  `unit_batch_code` varchar(50) NOT NULL,
+  
+  -- Foreign Key (for reference, not used in client sync)
+  `batch_code` varchar(50) DEFAULT NULL,
+  
+  -- Core Fields
+  `level` varchar(50) DEFAULT NULL,
+  `units_per_package` decimal(15,4) DEFAULT NULL,
+  `quantity` int(11) DEFAULT NULL,
+  `buying_price` decimal(15,2) DEFAULT NULL,
+  
+  -- ✅ NEW: Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`unit_batch_code`),
+  KEY `idx_batch_code` (`batch_code`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+//////////////////////////////////////////////batch_sell_units_history////////////////////////
+
+
+-- DROP TABLE IF EXISTS `batch_sell_units`;
+CREATE TABLE `batch_sell_units` (
+  -- Primary Key
+  `sell_unit_code` varchar(50) NOT NULL,
+  
+  -- Foreign Key
+  `batch_code` varchar(50) DEFAULT NULL,
+  
+  -- Core Fields
+  `unit_name` varchar(50) DEFAULT NULL,
+  `quantity_multiplier` int(11) DEFAULT NULL,
+  `selling_price` decimal(15,2) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT 1,
+  `deleted_at` datetime DEFAULT NULL,
+  
+  -- Snapshot Fields
+  `packaging_level` varchar(50) DEFAULT NULL,
+  `base_units_per_sell_unit` decimal(15,4) DEFAULT NULL,
+  `base_unit` varchar(10) DEFAULT NULL,
+  `base_unit_type` varchar(20) DEFAULT NULL,
+  
+  -- ✅ Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`sell_unit_code`),
+  KEY `idx_batch_code` (`batch_code`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

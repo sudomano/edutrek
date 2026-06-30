@@ -9,6 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart'; // For PDF preview
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zitf_system/lan_sync_services/sync_service.dart';
 import 'package:zitf_system/main.dart';
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
 import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
@@ -26,7 +27,6 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
   Future<List<Terms>> _termsFuture = Future.value([]);
 
   DeviceRole? _role;
-  String? _hostIp;
 
   @override
   void initState() {
@@ -37,64 +37,75 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
   Future<void> _initialize() async {
     _role = await getDeviceRole();
 
-    final prefs = await SharedPreferences.getInstance();
-    _hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
-
-    // Decide which future to load based on role
     setState(() {
-      _termsFuture = (_role == DeviceRole.host)
-          ? _fetchTermsFromHive()
-          : _fetchTermsFromServer();
+      _termsFuture = _fetchTermsFromLocalStorage();
     });
   }
 
-  Future<List<Terms>> _fetchTermsFromHive() async {
-    final box = await Hive.openBox<Terms>('terms');
-    final terms = box.values.where((s) => s.termId != null).toList();
-    terms.sort((a, b) => (a.termId ?? '')
-        .toLowerCase()
-        .compareTo((b.termId ?? '').toLowerCase()));
-    return terms;
+  Future<List<Terms>> _fetchTermsFromLocalStorage() async {
+    try {
+      final box = await Hive.openBox<Terms>('terms');
+      final terms = box.values.where((s) => s.termId != null).toList();
+      terms.sort((a, b) => (a.termId ?? '')
+          .toLowerCase()
+          .compareTo((b.termId ?? '').toLowerCase()));
+      await box.close();
+      return terms;
+    } catch (e) {
+      print("Error loading terms: $e");
+      return [];
+    }
   }
 
-  Future<List<Terms>> _fetchTermsFromServer() async {
-    if (_hostIp == null) {
-      print("Host IP is null, cannot fetch from server");
-      // Show alert in UI
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("⚠️ Host IP not set. Please configure connection."),
-          ),
-        );
-      });
-
-      return [];
+  // Manual sync (optional - for force refresh)
+  Future<void> _manualSyncTerms() async {
+    if (_role != DeviceRole.client) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Host mode - using local data')),
+      );
+      return;
     }
 
     try {
-      final url = Uri.parse('http://$_hostIp:8080/api/terms');
-      final httpClient = HttpClient();
-      final request = await httpClient.getUrl(url);
-      final response = await request.close();
+      final prefs = await SharedPreferences.getInstance();
+      final hostIp = prefs.getString('host_ip');
 
-      if (response.statusCode == 200) {
-        final jsonString = await response.transform(utf8.decoder).join();
-        final jsonList = jsonDecode(jsonString) as List;
-        return jsonList
-            .map((json) => termsFromJson(Map<String, dynamic>.from(json)))
-            .toList();
+      if (hostIp == null || hostIp.isEmpty) {
+        throw Exception('Host IP not configured');
+      }
+
+      setState(() {
+        _termsFuture = Future.value([]); // Show loading
+      });
+
+      final syncService = SyncService();
+      final synced = await syncService.syncTermsOnly(hostIp);
+
+      if (synced) {
+        setState(() {
+          _termsFuture = _fetchTermsFromLocalStorage();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Terms refreshed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
-        throw Exception('Failed to load terms data: ${response.statusCode}');
+        throw Exception('Sync failed');
       }
     } catch (e) {
-      print("Error fetching terms data: $e");
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error fetching from host: $e")),
-        );
+      setState(() {
+        _termsFuture = _fetchTermsFromLocalStorage(); // Revert to cached
       });
-      return [];
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ Failed to refresh: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -229,6 +240,11 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
             const Color.fromARGB(255, 38, 140, 191), // AppBar background color
         elevation: 4.0, // Subtle shadow
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _manualSyncTerms,
+            tooltip: 'Refresh terms from host',
+          ),
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
             onPressed: () async {

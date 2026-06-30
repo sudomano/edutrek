@@ -143,10 +143,7 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.print,
                                                 text: 'Re-Print Receipts',
@@ -195,10 +192,7 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+                                            if (admin || administration)
                                               const ElevatedCard(
                                                 icon: Icons.print,
                                                 text: ' Re-Print Receipts',

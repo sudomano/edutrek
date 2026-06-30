@@ -26,6 +26,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
 
   String _selectedType = 'PERCENTAGE';
   String _selectedStatus = 'ACTIVE';
+  int _priorityFlag = 0; // 0 = less priority, 1 = top priority
   Set<String> _selectedTerms = {};
 
   final List<String> _typeOptions = ['PERCENTAGE', 'AMOUNT', 'OTHER'];
@@ -59,6 +60,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
       _exceptionFigureController.text = exception.exceptionFigure ?? '';
       _selectedType = exception.exceptionType ?? 'PERCENTAGE';
       _selectedStatus = exception.exceptionStatus ?? 'ACTIVE';
+      _priorityFlag = exception.priorityFlag ?? 0;
       _selectedTerms = Set<String>.from(exception.terms ?? []);
     });
   }
@@ -67,9 +69,19 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
     if (_formKey.currentState!.validate()) {
       final isNew = !_isEditing;
       final now = DateTime.now();
+
+      // Update modified fields list
+      List<String> modifiedFields = [
+        'exceptionName',
+        'exceptionType',
+        'exceptionFigure',
+        'exceptionStatus',
+        'terms',
+        'priorityFlag', // Add priority flag to modified fields
+      ];
+
       final updated = ExceptionalStudents(
-        exceptionId:
-            _currentException?.exceptionId ?? const Uuid().v4(), // UUID
+        exceptionId: _currentException?.exceptionId ?? const Uuid().v4(),
         exceptionName: _exceptionNameController.text,
         exceptionStatus: _selectedStatus,
         exceptionType: _selectedType,
@@ -77,22 +89,15 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
         syncStatus: false,
         lastModified: now,
         operationType: isNew ? 'create' : 'update',
-        modifiedFields: [
-          'exceptionName',
-          'exceptionType',
-          'exceptionFigure',
-          'exceptionStatus',
-          'terms'
-        ],
+        modifiedFields: modifiedFields,
         terms: _selectedTerms.toList(),
+        priorityFlag: _priorityFlag, // Set priority flag
       );
 
       if (isNew) {
         _box.add(updated);
       } else {
         if (_currentException != null) {
-          final now = DateTime.now();
-
           final key =
               _box.keyAt(_box.values.toList().indexOf(_currentException!));
           final updatedException = _currentException!
@@ -101,16 +106,16 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
             ..exceptionFigure = updated.exceptionFigure
             ..exceptionStatus = updated.exceptionStatus
             ..terms = updated.terms
+            ..priorityFlag = updated.priorityFlag
             ..lastModified = now
             ..operationType = 'update'
             ..syncStatus = false;
 
-          _box.put(key, updatedException); // ✅ Safe update
+          _box.put(key, updatedException);
           final studentBox = Hive.box<Student>('students');
           final paymentPurposeBox =
               Hive.box<PaymentPurpose>('payment_purposes');
 
-          // Ensure the updated object has the latest fields including terms
           final updatedId = updated.exceptionId;
 
           // Update references in Student models
@@ -159,14 +164,15 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
           }
         }
       }
-// ======= IMPROVED APPLY/REMOVE BLOCK START =======
+
+      // Apply/Remove logic
       if (_applyToAllStudents &&
           updated.terms != null &&
           updated.terms!.isNotEmpty) {
         setState(() => _isComputing = true);
 
         final studentBox = Hive.box<Student>('students');
-        final globalTermIds = updated.terms!; // selected terms
+        final globalTermIds = updated.terms!;
         final now = DateTime.now();
         final exceptionId = updated.exceptionId;
 
@@ -182,59 +188,44 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
           final hasException =
               existingList.any((e) => e.exceptionId == exceptionId);
 
-          //
-          // 1) Student now qualifies → ensure exception assigned
-          //
           if (matches && !hasException) {
             existingList.add(updated);
-
             student
               ..exceptions = existingList
               ..operationType = 'update'
               ..syncStatus = false
               ..lastModified = now;
-
             await studentBox.put(key, student);
             continue;
           }
 
-          //
-          // 2) Student no longer qualifies → remove exception
-          //
           if (!matches && hasException) {
             existingList.removeWhere((e) => e.exceptionId == exceptionId);
-
             student
               ..exceptions = existingList
               ..operationType = 'update'
               ..syncStatus = false
               ..lastModified = now;
-
             await studentBox.put(key, student);
             continue;
           }
 
-          //
-          // 3) Student still qualifies → update stored exception instance
-          //
           if (matches && hasException) {
             final updatedExceptions = existingList.map((e) {
               return e.exceptionId == exceptionId ? updated : e;
             }).toList();
-
             student
               ..exceptions = updatedExceptions
               ..operationType = 'update'
               ..syncStatus = false
               ..lastModified = now;
-
             await studentBox.put(key, student);
           }
         }
 
         setState(() => _isComputing = false);
       }
-// ======= IMPROVED APPLY/REMOVE BLOCK END =======
+
       if (_removeFromAllStudents && !isNew) {
         setState(() => _isComputing = true);
 
@@ -262,7 +253,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
 
         setState(() => _isComputing = false);
         _resetForm();
-        return; // stop further processing
+        return;
       }
 
       _resetForm();
@@ -275,7 +266,6 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
 
     final now = DateTime.now();
 
-// Remove from students
     for (var student in studentBox.values) {
       if (student.exceptions != null &&
           student.exceptions!
@@ -293,7 +283,6 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
       }
     }
 
-// Remove from payment purposes
     for (var pp in paymentPurposeBox.values) {
       if (pp.exceptions != null &&
           pp.exceptions!.any((e) => e.exceptionId == exception.exceptionId)) {
@@ -310,7 +299,6 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
       }
     }
 
-// Finally, delete the exception
     exception.delete();
   }
 
@@ -322,7 +310,10 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
       _exceptionFigureController.clear();
       _selectedType = 'PERCENTAGE';
       _selectedStatus = 'ACTIVE';
+      _priorityFlag = 0;
       _selectedTerms.clear();
+      _applyToAllStudents = false;
+      _removeFromAllStudents = false;
     });
   }
 
@@ -375,105 +366,230 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
     final isWideScreen = MediaQuery.of(context).size.width >= 600;
 
     return Scaffold(
-      appBar: AppBar(title: Center(child: const Text('Exceptional Students'))),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            isWideScreen
-                ? Row(
-                    children: [
-                      // Left panel: Form
-                      Expanded(
-                        flex: 1,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Form(
-                            key: _formKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextFormField(
-                                  controller: _exceptionNameController,
-                                  decoration: const InputDecoration(
-                                      labelText: 'Exception Name'),
-                                  validator: (value) =>
-                                      value!.isEmpty ? 'Enter a name' : null,
+      appBar: AppBar(
+        title: const Center(child: Text('Exceptional Students Management')),
+        backgroundColor: Colors.blue[700],
+        foregroundColor: Colors.white,
+      ),
+      body: _isComputing
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 20),
+                  Text('Processing students... Please wait.'),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Form Card
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isEditing
+                                  ? 'Edit Exception'
+                                  : 'Add New Exception',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Exception Name
+                            TextFormField(
+                              controller: _exceptionNameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Exception Name',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.label),
+                              ),
+                              validator: (value) =>
+                                  value!.isEmpty ? 'Enter a name' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            // Exception Type
+                            DropdownButtonFormField<String>(
+                              value: _selectedType,
+                              items: _typeOptions
+                                  .map((type) => DropdownMenuItem(
+                                      value: type, child: Text(type)))
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setState(() => _selectedType = value!),
+                              decoration: const InputDecoration(
+                                labelText: 'Exception Type',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.category),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Exception Value
+                            if (_selectedType == "PERCENTAGE")
+                              TextFormField(
+                                controller: _exceptionFigureController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Percentage Value',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.percent),
+                                  suffixText: '%',
                                 ),
-                                DropdownButtonFormField<String>(
-                                  value: _selectedType,
-                                  items: _typeOptions
-                                      .map((type) => DropdownMenuItem(
-                                          value: type, child: Text(type)))
-                                      .toList(),
-                                  onChanged: (value) =>
-                                      setState(() => _selectedType = value!),
-                                  decoration: const InputDecoration(
-                                      labelText: 'Exception Type'),
+                                keyboardType: TextInputType.number,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Enter a percent value';
+                                  }
+                                  final parsed = double.tryParse(value);
+                                  if (parsed == null) {
+                                    return 'Enter a valid number';
+                                  }
+                                  if (parsed > 100 || parsed < 0) {
+                                    return 'Percent must be between 0 and 100';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            if (_selectedType == "AMOUNT")
+                              TextFormField(
+                                controller: _exceptionFigureController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Amount Value',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.attach_money),
                                 ),
-                                if (_selectedType == "PERCENTAGE")
-                                  TextFormField(
-                                    controller: _exceptionFigureController,
-                                    decoration: InputDecoration(
-                                      labelText: '$_selectedType Value',
+                                keyboardType: TextInputType.number,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Enter an amount';
+                                  }
+                                  final parsed = double.tryParse(value);
+                                  if (parsed == null) {
+                                    return 'Enter a valid number';
+                                  }
+                                  if (parsed < 0) {
+                                    return 'Amount must be at least 0';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            const SizedBox(height: 12),
+                            // Exception Status
+                            DropdownButtonFormField<String>(
+                              value: _selectedStatus,
+                              items: _statusOptions
+                                  .map((status) => DropdownMenuItem(
+                                      value: status, child: Text(status)))
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setState(() => _selectedStatus = value!),
+                              decoration: const InputDecoration(
+                                labelText: 'Exception Status',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.circle),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Priority Flag
+                            Card(
+                              color: _priorityFlag == 1
+                                  ? Colors.red.shade50
+                                  : Colors.grey.shade50,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.priority_high),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Priority Flag',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _priorityFlag == 1
+                                                ? '🔴 Top Priority - This exception will be applied first'
+                                                : '⚪ Normal Priority - Applied after priority exceptions',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: _priorityFlag == 1
+                                                  ? Colors.red
+                                                  : Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Enter a percent value';
-                                      }
-                                      final parsed = double.tryParse(value);
-                                      if (parsed == null) {
-                                        return 'Enter a valid number';
-                                      }
-                                      if (parsed > 100 || parsed < 0) {
-                                        return 'Percent must be between 0 and 100';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                if (_selectedType == "AMOUNT")
-                                  TextFormField(
-                                    controller: _exceptionFigureController,
-                                    decoration: InputDecoration(
-                                      labelText: '$_selectedType Value',
+                                    Switch(
+                                      value: _priorityFlag == 1,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _priorityFlag = value ? 1 : 0;
+                                        });
+                                      },
+                                      activeColor: Colors.red,
+                                      activeTrackColor: Colors.red.shade200,
+                                      inactiveThumbColor: Colors.grey,
+                                      inactiveTrackColor: Colors.grey.shade300,
                                     ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Enter an  amount';
-                                      }
-                                      final parsed = double.tryParse(value);
-                                      if (parsed == null) {
-                                        return 'Enter a valid number';
-                                      }
-                                      if (parsed < 0) {
-                                        return 'Amount value must be atleast 0 ';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                DropdownButtonFormField<String>(
-                                  value: _selectedStatus,
-                                  items: _statusOptions
-                                      .map((status) => DropdownMenuItem(
-                                          value: status, child: Text(status)))
-                                      .toList(),
-                                  onChanged: (value) =>
-                                      setState(() => _selectedStatus = value!),
-                                  decoration: const InputDecoration(
-                                      labelText: 'Exception Status'),
+                                  ],
                                 ),
-                                const SizedBox(height: 10),
-                                const Text("Associated Terms",
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.bold)),
-                                _buildTermsChecklist(),
-                                const SizedBox(height: 10),
-                                Column(
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Associated Terms
+                            const Text(
+                              "Associated Terms",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: _buildTermsChecklist(),
+                            ),
+                            const SizedBox(height: 12),
+                            // Apply/Remove options
+                            Card(
+                              color: Colors.blue.shade50,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
                                   children: [
                                     CheckboxListTile(
                                       title: const Text(
-                                          "Apply to students under selected terms"),
+                                        "Apply to students under selected terms",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                       value: _applyToAllStudents,
                                       onChanged: (value) {
                                         setState(() {
@@ -482,10 +598,17 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                             _removeFromAllStudents = false;
                                         });
                                       },
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                      activeColor: Colors.blue,
                                     ),
                                     CheckboxListTile(
                                       title: const Text(
-                                          "Remove from all students"),
+                                        "Remove from all students",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                       value: _removeFromAllStudents,
                                       onChanged: (value) {
                                         setState(() {
@@ -495,299 +618,266 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                             _applyToAllStudents = false;
                                         });
                                       },
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                      activeColor: Colors.red,
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 10),
-                                ElevatedButton(
-                                  onPressed: _saveException,
-                                  child: Text(_isEditing ? 'Update' : 'Add'),
-                                ),
-                                if (_isEditing)
-                                  TextButton(
-                                    onPressed: _resetForm,
-                                    child: const Text('Cancel'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: _saveException,
+                                    icon: Icon(_isEditing
+                                        ? Icons.update
+                                        : Icons.add_circle),
+                                    label: Text(_isEditing ? 'Update' : 'Add'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                      backgroundColor: _isEditing
+                                          ? Colors.orange
+                                          : Colors.blue,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
                                   ),
+                                ),
+                                if (_isEditing) ...[
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _resetForm,
+                                      icon: const Icon(Icons.cancel),
+                                      label: const Text('Cancel'),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 12),
+                                        backgroundColor: Colors.grey,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
-                          ),
+                          ],
                         ),
                       ),
-
-                      const VerticalDivider(width: 1),
-
-                      // Right panel: List
-                      Expanded(
-                        flex: 2,
-                        child: ValueListenableBuilder(
-                          valueListenable: _box.listenable(),
-                          builder: (context, Box<ExceptionalStudents> box, _) {
-                            if (box.isEmpty) {
-                              return const Center(
-                                  child: Text("No exceptions added."));
-                            }
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.all(12.0),
-                              scrollDirection: Axis.horizontal,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Header row
-                                  const Row(
-                                    children: [
-                                      _TableHeaderCell('Exception Name'),
-                                      _TableHeaderCell('Type'),
-                                      _TableHeaderCell('Value'),
-                                      _TableHeaderCell('Status'),
-                                      _TableHeaderCell('Terms'),
-                                      _TableHeaderCell('Actions'),
-                                    ],
-                                  ),
-                                  const Divider(),
-
-                                  // Data rows
-                                  ...box.values
-                                      .toList()
-                                      .asMap()
-                                      .entries
-                                      .map((entry) {
-                                    final index = entry.key;
-                                    final exception = entry.value;
-
-                                    return Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _TableCell(
-                                            exception.exceptionName ?? ''),
-                                        _TableCell(
-                                            exception.exceptionType ?? ''),
-                                        _TableCell(
-                                            exception.exceptionFigure ?? ''),
-                                        _TableCell(
-                                            exception.exceptionStatus ?? ''),
-                                        _TableCell(
-                                          (exception.terms ?? [])
-                                              .map((term) => Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                            right: 4),
-                                                    child:
-                                                        Chip(label: Text(term)),
-                                                  ))
-                                              .toList(),
-                                          isWrap: true,
-                                        ),
-                                        _TableCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.edit),
-                                                onPressed: () =>
-                                                    _startEdit(exception),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.delete),
-                                                onPressed: () =>
-                                                    _deleteException(exception),
-                                              ),
-                                            ],
-                                          ),
-                                          isWidget: true,
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Form(
-                          key: _formKey,
-                          child: Column(
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // List Card
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              TextFormField(
-                                controller: _exceptionNameController,
-                                decoration: const InputDecoration(
-                                    labelText: 'Exception Name'),
-                                validator: (value) =>
-                                    value!.isEmpty ? 'Enter a name' : null,
-                              ),
-                              DropdownButtonFormField<String>(
-                                value: _selectedType,
-                                items: _typeOptions
-                                    .map((type) => DropdownMenuItem(
-                                        value: type, child: Text(type)))
-                                    .toList(),
-                                onChanged: (value) =>
-                                    setState(() => _selectedType = value!),
-                                decoration: const InputDecoration(
-                                    labelText: 'Exception Type'),
-                              ),
-                              if (_selectedType == "PERCENTAGE")
-                                TextFormField(
-                                  controller: _exceptionFigureController,
-                                  decoration: InputDecoration(
-                                      labelText: '$_selectedType Value'),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Enter a percent value';
-                                    }
-                                    final parsed = double.tryParse(value);
-                                    if (parsed == null) {
-                                      return 'Enter a valid number';
-                                    }
-                                    if (parsed > 100 || parsed < 0) {
-                                      return 'Percent must be between 0 and 100';
-                                    }
-                                    return null;
-                                  },
+                              const Text(
+                                'Exception List',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                              if (_selectedType == "AMOUNT")
-                                TextFormField(
-                                  controller: _exceptionFigureController,
-                                  decoration: InputDecoration(
-                                      labelText: '$_selectedType Value'),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Enter amount value';
-                                    }
-                                    final parsed = double.tryParse(value);
-                                    if (parsed == null) {
-                                      return 'Enter a valid number';
-                                    }
-                                    if (parsed < 0) {
-                                      return 'Amount must be atleast 0';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              DropdownButtonFormField<String>(
-                                value: _selectedStatus,
-                                items: _statusOptions
-                                    .map((status) => DropdownMenuItem(
-                                        value: status, child: Text(status)))
-                                    .toList(),
-                                onChanged: (value) =>
-                                    setState(() => _selectedStatus = value!),
-                                decoration: const InputDecoration(
-                                    labelText: 'Exception Status'),
                               ),
-                              const SizedBox(height: 10),
-                              const Text("Associated Terms",
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.bold)),
-                              _buildTermsChecklist(),
-                              const SizedBox(height: 10),
-                              ElevatedButton(
-                                onPressed: _saveException,
-                                child: Text(_isEditing ? 'Update' : 'Add'),
-                              ),
-                              if (_isEditing)
-                                TextButton(
-                                  onPressed: _resetForm,
-                                  child: const Text('Cancel'),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
                                 ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade100,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Total: ${_box.length}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade800,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                        const Divider(),
-                        ValueListenableBuilder(
-                          valueListenable: _box.listenable(),
-                          builder: (context, Box<ExceptionalStudents> box, _) {
-                            if (box.isEmpty) {
-                              return const Center(
-                                  child: Text("No exceptions added."));
-                            }
-
-                            return SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      _TableHeaderCell('Exception Name'),
-                                      _TableHeaderCell('Type'),
-                                      _TableHeaderCell('Value'),
-                                      _TableHeaderCell('Status'),
-                                      _TableHeaderCell('Terms'),
-                                      _TableHeaderCell('Actions'),
-                                    ],
+                          const SizedBox(height: 12),
+                          ValueListenableBuilder(
+                            valueListenable: _box.listenable(),
+                            builder:
+                                (context, Box<ExceptionalStudents> box, _) {
+                              if (box.isEmpty) {
+                                return const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32.0),
+                                    child: Text(
+                                      "No exceptions added yet.\nAdd your first exception above.",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 16,
+                                      ),
+                                    ),
                                   ),
-                                  const Divider(),
-                                  ...box.values
-                                      .toList()
-                                      .asMap()
-                                      .entries
-                                      .map((entry) {
-                                    final exception = entry.value;
-                                    return Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _TableCell(
-                                            exception.exceptionName ?? ''),
-                                        _TableCell(
-                                            exception.exceptionType ?? ''),
-                                        _TableCell(
-                                            exception.exceptionFigure ?? ''),
-                                        _TableCell(
-                                            exception.exceptionStatus ?? ''),
-                                        _TableCell(
-                                          (exception.terms ?? [])
-                                              .map((term) => Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                            right: 4),
-                                                    child:
-                                                        Chip(label: Text(term)),
-                                                  ))
-                                              .toList(),
-                                          isWrap: true,
-                                        ),
-                                        _TableCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.edit),
-                                                onPressed: () =>
-                                                    _startEdit(exception),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.delete),
-                                                onPressed: () =>
-                                                    _deleteException(exception),
-                                              ),
-                                            ],
+                                );
+                              }
+
+                              final exceptions = box.values.toList();
+
+                              // Sort exceptions: priority first, then by name
+                              exceptions.sort((a, b) {
+                                // First sort by priority (1 first)
+                                final priorityCompare = (b.priorityFlag ?? 0)
+                                    .compareTo(a.priorityFlag ?? 0);
+                                if (priorityCompare != 0)
+                                  return priorityCompare;
+                                // Then by name
+                                return (a.exceptionName ?? '')
+                                    .compareTo(b.exceptionName ?? '');
+                              });
+
+                              return SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Header row
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade200,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          _TableHeaderCell('Priority'),
+                                          _TableHeaderCell('Name'),
+                                          _TableHeaderCell('Type'),
+                                          _TableHeaderCell('Value'),
+                                          _TableHeaderCell('Status'),
+                                          _TableHeaderCell('Terms'),
+                                          _TableHeaderCell('Actions'),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Data rows
+                                    ...exceptions.map((exception) {
+                                      return Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 4),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              (exception.priorityFlag ?? 0) == 1
+                                                  ? Colors.red.shade50
+                                                  : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color:
+                                                (exception.priorityFlag ?? 0) ==
+                                                        1
+                                                    ? Colors.red.shade200
+                                                    : Colors.grey.shade200,
+                                            width: 1,
                                           ),
-                                          isWidget: true,
                                         ),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            _TableCell(
+                                              exception.priorityFlag == 1
+                                                  ? '🔴'
+                                                  : '⚪',
+                                            ),
+                                            _TableCell(
+                                                exception.exceptionName ?? ''),
+                                            _TableCell(
+                                                exception.exceptionType ?? ''),
+                                            _TableCell(
+                                              '${exception.exceptionFigure ?? ''}${exception.exceptionType == 'PERCENTAGE' ? '%' : ''}',
+                                            ),
+                                            _TableCell(
+                                                exception.exceptionStatus ??
+                                                    ''),
+                                            _TableCell(
+                                              (exception.terms ?? [])
+                                                  .map((term) => Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(right: 4),
+                                                        child: Chip(
+                                                          label: Text(term),
+                                                          backgroundColor:
+                                                              Colors.blue
+                                                                  .shade100,
+                                                          side: BorderSide.none,
+                                                          materialTapTargetSize:
+                                                              MaterialTapTargetSize
+                                                                  .shrinkWrap,
+                                                        ),
+                                                      ))
+                                                  .toList(),
+                                              isWrap: true,
+                                            ),
+                                            _TableCell(
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(Icons.edit,
+                                                        color: Colors.blue,
+                                                        size: 20),
+                                                    onPressed: () =>
+                                                        _startEdit(exception),
+                                                    tooltip: 'Edit',
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.delete,
+                                                        color: Colors.red,
+                                                        size: 20),
+                                                    onPressed: () =>
+                                                        _deleteException(
+                                                            exception),
+                                                    tooltip: 'Delete',
+                                                  ),
+                                                ],
+                                              ),
+                                              isWidget: true,
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  )
-          ],
-        ),
-      ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -799,11 +889,14 @@ class _TableHeaderCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      width: 120,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       child: Text(
         label,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -819,8 +912,8 @@ class _TableCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      width: 120,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: isWidget
           ? content
           : isWrap
@@ -830,7 +923,10 @@ class _TableCell extends StatelessWidget {
                     children: content,
                   ),
                 )
-              : Text(content.toString()),
+              : Text(
+                  content.toString(),
+                  style: const TextStyle(fontSize: 13),
+                ),
     );
   }
 }

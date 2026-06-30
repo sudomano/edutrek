@@ -1,0 +1,26 @@
+-- DROP TABLE IF EXISTS `terms`;
+CREATE TABLE `terms` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `termId` varchar(255) NOT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Term Information
+  `termName` varchar(255) NOT NULL,
+  `startDate` datetime NOT NULL, -- ✅ Changed from DATE to DATETIME
+  `endDate` datetime DEFAULT NULL, -- ✅ Changed from DATE to DATETIME
+  `isActive` tinyint(1) NOT NULL,
+  `status` varchar(50) NOT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_termId` (`termId`),
+  KEY `idx_termName` (`termName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

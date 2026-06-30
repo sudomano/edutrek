@@ -15,16 +15,27 @@ class ExceptionalStudentApiService {
       String termId) async {
     final baseUrl = await _getBaseUrl();
 
+    print('📡 Fetching from: $baseUrl/api/exceptionalStudents?termId=$termId');
+
     final response = await http.get(
       Uri.parse('$baseUrl/api/exceptionalStudents?termId=$termId'),
       headers: {'Content-Type': 'application/json'},
     );
+
+    print('📡 Response status: ${response.statusCode}');
+    print('📡 Response body: ${response.body}');
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch exceptional students');
     }
 
     final List decoded = jsonDecode(response.body);
+
+    print('📊 Decoded ${decoded.length} exceptions');
+    for (var item in decoded) {
+      print(
+          '  - ${item['exceptionName']}: priorityFlag=${item['priorityFlag']}');
+    }
 
     return decoded
         .map((e) => exceptionalStudentsFromJson(Map<String, dynamic>.from(e)))

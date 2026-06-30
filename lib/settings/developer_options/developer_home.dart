@@ -3,9 +3,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:zitf_system/database/accounting_module_models/account_type.dart';
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
+import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
+import 'package:zitf_system/database/payment_receipts_log.dart';
+import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
+import 'package:zitf_system/database/projects/project_item_price_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
+import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
 
 import 'package:zitf_system/reusable_codes/PK_assignment/pk_assignment.dart';
@@ -64,9 +73,21 @@ final Map<String, bool> modelSelections = {
 };
 
 class _SyncClassesPageState extends State<DeveloperHome> {
+  Map<String, dynamic> _paymentLogsStatus = {};
+  bool _isLoading = true;
   @override
   void initState() {
     super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    setState(() => _isLoading = true);
+    final status = await _getPaymentLogsStatus();
+    setState(() {
+      _paymentLogsStatus = status;
+      _isLoading = false;
+    });
   }
 
   @override
@@ -106,6 +127,139 @@ class _SyncClassesPageState extends State<DeveloperHome> {
                     const SizedBox(
                       height: 10,
                     ),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Payment Logs Cleanup',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Fix payment logs with invalid operation types and prepare them for sync',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Status Display
+                            if (_isLoading) ...[
+                              const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border:
+                                      Border.all(color: Colors.grey.shade200),
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildStatusRow('Total Logs',
+                                        _paymentLogsStatus['total'] ?? 0),
+                                    _buildStatusRow('✅ Synced',
+                                        _paymentLogsStatus['synced'] ?? 0,
+                                        color: Colors.green),
+                                    _buildStatusRow('⏳ Unsynced',
+                                        _paymentLogsStatus['unsynced'] ?? 0,
+                                        color: Colors.orange),
+                                    _buildStatusRow('📝 Create Operations',
+                                        _paymentLogsStatus['createCount'] ?? 0,
+                                        color: Colors.blue),
+                                    _buildStatusRow('✏️ Update Operations',
+                                        _paymentLogsStatus['updateCount'] ?? 0,
+                                        color: Colors.purple),
+                                    _buildStatusRow(
+                                      '⚠️ Invalid Operations',
+                                      _paymentLogsStatus['otherCount'] ?? 0,
+                                      color:
+                                          (_paymentLogsStatus['otherCount'] ??
+                                                      0) >
+                                                  0
+                                              ? Colors.red
+                                              : Colors.green,
+                                      isBold: true,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: 16),
+
+                            // Cleanup Button
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    (_paymentLogsStatus['otherCount'] ?? 0) > 0
+                                        ? Colors.red
+                                        : Colors.grey.shade400,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed:
+                                  (_paymentLogsStatus['otherCount'] ?? 0) > 0
+                                      ? _cleanupPaymentLogs
+                                      : null,
+                              icon: Icon(
+                                (_paymentLogsStatus['otherCount'] ?? 0) > 0
+                                    ? Icons.cleaning_services
+                                    : Icons.check_circle,
+                                size: 24,
+                              ),
+                              label: Text(
+                                (_paymentLogsStatus['otherCount'] ?? 0) > 0
+                                    ? 'Clean Up ${_paymentLogsStatus['otherCount']} Logs'
+                                    : 'All Logs Clean',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+
+                            if ((_paymentLogsStatus['otherCount'] ?? 0) > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  '⚠️ ${_paymentLogsStatus['otherCount']} log(s) need cleanup to be ready for sync',
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _loadStatus,
+                              icon: const Icon(Icons.refresh, size: 16),
+                              label: const Text('Refresh Status'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -561,217 +715,342 @@ class _SyncClassesPageState extends State<DeveloperHome> {
     );
   }
 
+  // Helper widget for status row
+  Widget _buildStatusRow(String label, int value,
+      {Color? color, bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            value.toString(),
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+// ============================================================
+// PAYMENT LOG COMPACTION / CLEANUP LOGIC
+// ============================================================
+
+  /// Method to clean up payment logs:
+  /// - Finds all logs with operationType not in ['none', 'create', 'update']
+  /// - Resets them to 'create' with syncStatus = false
+  Future<void> _cleanupPaymentLogs() async {
+    try {
+      final box = await Hive.openBox<PaymentLog>('payment_log');
+      final allLogs = box.values.toList();
+
+      if (allLogs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No payment logs found to clean up'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // ✅ Find logs with invalid operation types
+      final List<PaymentLog> logsToFix = [];
+      final List<String> invalidOperationTypes = [];
+
+      for (var log in allLogs) {
+        final opType = log.operationType ?? '';
+        if (opType != 'none' && opType != 'create' && opType != 'update') {
+          logsToFix.add(log);
+          if (!invalidOperationTypes.contains(opType)) {
+            invalidOperationTypes.add(opType);
+          }
+        }
+      }
+
+      if (logsToFix.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ All payment logs have valid operation types'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        return;
+      }
+
+      // ✅ Show confirmation dialog
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('🔄 Clean Up Payment Logs'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Found ${logsToFix.length} payment log(s) with invalid operation types:',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Invalid operation types found:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    ...invalidOperationTypes.map(
+                      (type) => Text(
+                        '• $type',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'These logs will be reset to:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              const Text('• operationType: "create"'),
+              const Text('• syncStatus: false'),
+              const Text('• lastModified: now'),
+              const Text('• modifiedFields: cleared'),
+              const SizedBox(height: 12),
+              Text(
+                '⚠️ This action cannot be undone!',
+                style: TextStyle(
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Clean Up'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) {
+        return;
+      }
+
+      // ✅ Perform the cleanup
+      int fixedCount = 0;
+      for (var log in logsToFix) {
+        try {
+          // ✅ Reset to 'create' with syncStatus = false
+          log.operationType = 'create';
+          log.syncStatus = false;
+          log.lastModified = DateTime.now();
+          log.modifiedFields = [
+            'operationType',
+            'syncStatus',
+            'lastModified',
+            'modifiedFields',
+          ];
+          await log.save();
+          fixedCount++;
+          debugPrint(
+              '✅ Fixed log: ${log.logId} (receipt: ${log.receiptNumber})');
+        } catch (e) {
+          debugPrint('❌ Failed to fix log ${log.logId}: $e');
+        }
+      }
+
+      // ✅ Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✅ Fixed $fixedCount payment log(s) - ready for sync',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error cleaning up payment logs: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Method to check payment logs status (for display)
+  Future<Map<String, dynamic>> _getPaymentLogsStatus() async {
+    try {
+      final box = await Hive.openBox<PaymentLog>('payment_log');
+      final allLogs = box.values.toList();
+
+      int total = allLogs.length;
+      int synced = allLogs.where((l) => l.syncStatus == true).length;
+      int unsynced = allLogs.where((l) => l.syncStatus == false).length;
+      int createCount =
+          allLogs.where((l) => l.operationType == 'create').length;
+      int updateCount =
+          allLogs.where((l) => l.operationType == 'update').length;
+      int otherCount = allLogs
+          .where((l) =>
+              l.operationType != 'none' &&
+              l.operationType != 'create' &&
+              l.operationType != 'update')
+          .length;
+
+      return {
+        'total': total,
+        'synced': synced,
+        'unsynced': unsynced,
+        'createCount': createCount,
+        'updateCount': updateCount,
+        'otherCount': otherCount,
+      };
+    } catch (e) {
+      return {
+        'total': 0,
+        'synced': 0,
+        'unsynced': 0,
+        'createCount': 0,
+        'updateCount': 0,
+        'otherCount': 0,
+        'error': e.toString(),
+      };
+    }
+  }
+
   Future<void> setOperationTypeForSelectedModels(List<String> models) async {
+    Future<void> resetBox<T>(String boxName) async {
+      final box = await Hive.openBox<T>(boxName);
+      for (var key in box.keys) {
+        final item = box.get(key);
+        if (item != null) {
+          (item as dynamic).operationType = 'create';
+          (item as dynamic).syncStatus = false;
+          await box.put(key, item);
+        }
+      }
+    }
+
     if (models.contains('TeacherPaymentsPurposes')) {
-      final box = await Hive.openBox<TeacherPaymentsPurposes>(
-          'teacher_payments_purposes');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<TeacherPaymentsPurposes>('teacher_payments_purposes');
     }
-
     if (models.contains('PaymentPurpose')) {
-      final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<PaymentPurpose>('payment_purposes');
     }
-
     if (models.contains('Classes')) {
-      final box = await Hive.openBox<Classes>('classes');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Classes>('classes');
     }
-
     if (models.contains('StudentPayment')) {
-      final box = await Hive.openBox<StudentPayment>('student_payments');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<StudentPayment>('student_payments');
     }
-
     if (models.contains('TeacherPayment')) {
-      final box = await Hive.openBox<TeacherPayment>('teacher_payments');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<TeacherPayment>('teacher_payments');
     }
-
     if (models.contains('Student')) {
-      final box = await Hive.openBox<Student>('students');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Student>('students');
     }
-
     if (models.contains('Withdrawal')) {
-      final box = await Hive.openBox<Withdrawal>('withdrawals');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Withdrawal>('withdrawals');
     }
-
     if (models.contains('User')) {
-      final box = await Hive.openBox<User>('users');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<User>('users');
     }
-
     if (models.contains('Teachers')) {
-      final box = await Hive.openBox<Teachers>('teachers');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Teachers>('teachers');
     }
-
     if (models.contains('School')) {
-      final box = await Hive.openBox<School>('school');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<School>('school');
     }
-
     if (models.contains('Terms')) {
-      final box = await Hive.openBox<Terms>('terms');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Terms>('terms');
     }
-
     if (models.contains('Account')) {
-      final box = await Hive.openBox<Account>('account');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Account>('account');
     }
-
     if (models.contains('Asset')) {
-      final box = await Hive.openBox<Asset>('asset');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Asset>('asset');
     }
-
     if (models.contains('Project')) {
-      final box = await Hive.openBox<Project>('projects');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<Project>('projects');
     }
-
     if (models.contains('ProjectItem')) {
-      final box = await Hive.openBox<ProjectItem>('projectItems');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<ProjectItem>('projectItems');
     }
-
     if (models.contains('DailyActivity')) {
-      final box = await Hive.openBox<DailyActivity>('dailyActivities');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+      await resetBox<DailyActivity>('dailyActivities');
+    }
+    if (models.contains('DomainRecord')) {
+      await resetBox<DomainRecord>('domainBox');
     }
 
-    if (models.contains('DomainRecord')) {
-      final box = await Hive.openBox<DomainRecord>('domainBox');
-      for (var key in box.keys) {
-        final item = box.get(key);
-        if (item != null) {
-          item.operationType = 'create';
-          item.syncStatus = false;
-          await box.put(key, item);
-        }
-      }
+    // --- NEWLY ADDED MISSING MODELS ---
+    if (models.contains('ExceptionalStudents')) {
+      await resetBox<ExceptionalStudents>('exceptionalStudents');
+    }
+    if (models.contains('BatchUnit')) {
+      await resetBox<BatchUnit>('batch_units');
+    }
+    if (models.contains('ProductBatch')) {
+      await resetBox<ProductBatch>('product_batches');
+    }
+    if (models.contains('ProjectItemPrice')) {
+      await resetBox<ProjectItemPrice>('projectItemPrice');
+    }
+    if (models.contains('ProjectSaleTransaction')) {
+      await resetBox<ProjectSaleTransaction>('project_sale_transactions');
+    }
+    if (models.contains('BatchSellUnit')) {
+      await resetBox<BatchSellUnit>('batchSellUnits');
+    }
+    if (models.contains('PaymentMethod')) {
+      await resetBox<PaymentMethod>('paymentMethods');
+    }
+    if (models.contains('ReceiptSnapshot')) {
+      await resetBox<ReceiptSnapshot>('receiptSnapshots');
     }
 
     print("Selected models' operationType fields set to 'create'.");
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 }

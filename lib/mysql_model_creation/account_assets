@@ -1,0 +1,26 @@
+-- DROP TABLE IF EXISTS `accounts`;
+CREATE TABLE `accounts` (
+  -- Primary & Identifiers
+  `accountCode` varchar(255) NOT NULL,
+  
+  -- Account Information
+  `id` int(11) DEFAULT NULL,
+  `accountType` varchar(255) DEFAULT NULL,
+  `accountSubType` varchar(255) DEFAULT NULL,
+  `accountName` varchar(255) DEFAULT NULL,
+  `isALiquidAccount` tinyint(1) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(50) DEFAULT NULL,
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`accountCode`),
+  KEY `idx_accountType` (`accountType`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

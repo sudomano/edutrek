@@ -27,8 +27,7 @@ import 'package:zitf_system/student_management/create_students/multi_class_selec
 import 'package:zitf_system/student_payments/view_all_paid_students.dart';
 
 class ViewStudentsScreenfilter extends StatefulWidget {
-  final String? selectedClassName; // <- Add this line #######################
-
+  final String? selectedClassName;
   const ViewStudentsScreenfilter({Key? key, this.selectedClassName})
       : super(key: key);
 
@@ -79,7 +78,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
   List<Terms>? _cachedServerTerms;
 
   List<Student>? _cachedFilteredStudents;
-
+  bool _isDataLoaded = false; // Track if initial data is loaded
+  bool _shouldAutoFilter = false; // Control auto-filtering on init
   @override
   void initState() {
     super.initState();
@@ -150,13 +150,17 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     if (_isHostIpMissing) {
       debugPrint("Host IP is null, cannot fetch from server");
       if (mounted) {
-        _showDialog("⚠️ Host IP not set. Please configure connection.");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text("⚠️ Host IP not set. Please configure connection.")),
+        );
       }
       return [];
     }
 
     try {
-      final url = Uri.parse('http://$_hostIp:8080/api/students');
+      final url = Uri.parse('http://$_hostIp:8080/api/students/all');
       final httpClient = HttpClient();
       final request = await httpClient.getUrl(url);
       final response = await request.close();
@@ -177,7 +181,11 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       debugPrint("Error fetching students data: $e");
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _showDialog("⚠️ Host IP not set. Please configure connection.");
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("⚠️ Host IP not set. Please configure connection."),
+            ),
+          );
         }
       });
       return [];
@@ -194,11 +202,12 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
   Future<void> _fetchInitialData() async {
     setState(() {
       _isSyncing = true;
-      _progressMessage = 'Fetching initial data...';
+      _progressMessage = 'Loading data...';
     });
 
     try {
       _role = await getDeviceRole();
+
       final prefs = await SharedPreferences.getInstance();
       _hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
 
@@ -213,16 +222,22 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         allTerms = termBox.values.toList();
       } else {
         if (_isHostIpMissing) {
-          _showDialog("⚠️ Host IP not set. Please configure connection.");
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content:
+                    Text("⚠️ Host IP not set. Please configure connection.")),
+          );
           setState(() => _isSyncing = false);
           return;
         }
+
         if (_cachedServerTerms == null || _cachedServerStudents == null) {
           final termsResponse = await HttpClient()
               .getUrl(Uri.parse('http://$_hostIp:8080/api/terms'))
               .then((req) => req.close());
+          // ✅ CHANGED: /students -> /students/all
           final studentsResponse = await HttpClient()
-              .getUrl(Uri.parse('http://$_hostIp:8080/api/students'))
+              .getUrl(Uri.parse('http://$_hostIp:8080/api/students/all'))
               .then((req) => req.close());
 
           if (termsResponse.statusCode == 200 &&
@@ -252,73 +267,131 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
       // Extract term IDs
       _termIds = allTerms.map((e) => e.termId.toString()).toSet().toList();
+
       _selectedTermId = _termIds.contains(globalTermId)
           ? globalTermId
           : (_termIds.isNotEmpty ? _termIds.first : null);
 
-      // Filter students by selected term
-      final filtered = allStudents
-          .where((student) =>
-              student.terms != null && student.terms!.contains(_selectedTermId))
-          .toList();
+      // Extract classes from students filtered by the selected term
+      if (_selectedTermId != null) {
+        final termStudents = allStudents
+            .where((s) => s.terms != null && s.terms!.contains(_selectedTermId))
+            .toList();
 
-      // Extract class names
-      _classes = ['All'];
-      _classes.addAll(filtered.map((s) => s.class_).toSet().toList());
+        _classes = ['All'];
+        final classSet = termStudents.map((s) => s.class_).toSet().toList();
+
+        _classes.addAll(classSet);
+        _classes.sort();
+      } else {
+        _classes = ['All'];
+      }
+
       _selectedClasses = ['All'];
 
+      // Store all students
+      _cachedServerStudents = allStudents;
+      _cachedFilteredStudents = [];
+
       setState(() {
+        _filteredStudents = [];
+        _isDataLoaded = true;
         _isSyncing = false;
+        _progressMessage = 'Ready. Apply filters to view students.';
       });
     } catch (error) {
       print("Error fetching initial data: $error");
       setState(() {
         _isSyncing = false;
+        _classes = ['All'];
       });
     }
   }
 
   Future<void> _filterStudents() async {
-    setState(() {
-      _isSyncing = true;
-      _progressMessage = 'Fetching Students From Database ...';
-    });
-    try {
-      List<Student> allStudents;
+    // Don't show syncing for quick operations
+    if (_filteredStudents.isEmpty) {
+      setState(() {
+        _isSyncing = true;
+        _progressMessage = 'Fetching Students From Database ...';
+      });
+    }
 
-      if (_role == DeviceRole.host) {
+    try {
+      // Use cached data if available, otherwise fetch
+      List<Student> allStudents = [];
+
+      if (_cachedServerStudents != null && _cachedServerStudents!.isNotEmpty) {
+        allStudents = _cachedServerStudents!;
+      } else if (_role == DeviceRole.host) {
         final studentBox = Hive.box<Student>('students');
-        allStudents = studentBox.values
-            .where(
-                (s) => s.termId != null && s.terms!.contains(_selectedTermId))
-            .toList();
+        allStudents = studentBox.values.toList();
+        _cachedServerStudents = allStudents;
       } else {
-        // Use previously fetched server data
         allStudents = await _studentsFuture;
-        allStudents = allStudents
-            .where((s) => s.terms!.contains(_selectedTermId))
-            .toList();
+        _cachedServerStudents = allStudents;
       }
 
-      List<Student> filtered = allStudents;
+      // Apply term filter first (this is the most restrictive)
+      List<Student> filtered = allStudents
+          .where((s) => s.terms != null && s.terms!.contains(_selectedTermId))
+          .toList();
 
+      // Apply other filters only if there are results (early exit optimization)
+      if (filtered.isEmpty) {
+        setState(() {
+          _filteredStudents = [];
+          _isSyncing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❗ No students found for the selected term.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      // Apply class filter
       if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
         filtered =
             filtered.where((s) => _selectedClasses.contains(s.class_)).toList();
+        if (filtered.isEmpty) {
+          setState(() {
+            _filteredStudents = [];
+            _isSyncing = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❗ No students found for the selected class.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
       }
 
-      if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
-        filtered = filtered.where((student) {
-          return _selectedClasses.contains(student.class_);
-        }).toList();
-      }
-
+      // Apply gender filter
       if (_selectedGender != null && _selectedGender != "All") {
         filtered = filtered
             .where((student) => student.gender == _selectedGender)
             .toList();
+        if (filtered.isEmpty) {
+          setState(() {
+            _filteredStudents = [];
+            _isSyncing = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❗ No students found for the selected gender.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
       }
 
+      // Apply surname filter
       if (_selectedSurname?.isNotEmpty ?? false) {
         filtered = filtered
             .where((student) => student.surname
@@ -327,6 +400,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
             .toList();
       }
 
+      // Apply registration filter
       if (_selectedReg?.isNotEmpty ?? false) {
         filtered = filtered
             .where((s) => s.studentIdNumber!
@@ -335,6 +409,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
             .toList();
       }
 
+      // Apply date of birth filter
       if (_selectedStartDate != null || _selectedEndDate != null) {
         filtered = filtered.where((s) {
           final dob = s.age;
@@ -348,28 +423,23 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           }
         }).toList();
       }
-      if (_filterByExceptional) {
-        filtered = filtered
-            .where((s) => s.exceptions != null && s.exceptions!.isNotEmpty)
-            .toList();
-      }
 
-      if (_filterByNewcomer) {
-        filtered = filtered.where((s) => s.isNewComer == true).toList();
-      }
-
-      filtered.sort((a, b) => _isSortAscending
-          ? a.surname.compareTo(b.surname)
-          : b.surname.compareTo(a.surname));
+      // Cache the filtered results
+      _cachedFilteredStudents = filtered;
 
       setState(() {
         _filteredStudents = filtered;
-        _cachedFilteredStudents = filtered;
+        _isSyncing = false;
       });
 
-      // ✅ After filtering, show a message if no students are found
+      // Show message if no students found
       if (filtered.isEmpty) {
-        _showDialog('❗ No students found for the selected criteria.');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❗ No students found for the selected criteria.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       } else if (_studentsTableKey.currentContext != null) {
         Scrollable.ensureVisible(
           _studentsTableKey.currentContext!,
@@ -379,7 +449,6 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       }
     } catch (error) {
       debugPrint("Error during filtering: $error");
-    } finally {
       setState(() {
         _isSyncing = false;
       });
@@ -489,7 +558,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           // Create the directory if it doesn't exist
           if (!await downloadDir.exists()) {
             await downloadDir.create(recursive: true);
-            _showDialog("Download directory created.");
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Download directory created.")));
           }
 
           // Define the initial file path
@@ -507,20 +577,116 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
           await file.writeAsBytes(pdfBytes);
 
           // Show success notification
-          _showDialog("PDF saved to $filePath");
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
         } else {
           // Show error notification
-          _showDialog("Error: External storage directory not found.");
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Error: External storage directory not found.")));
         }
       } else {
         // Show permission denied notification
-        _showDialog("Permission denied for storage access.");
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Permission denied for storage access.")));
       }
     } catch (e) {
       // Show error notification
-      _showDialog("Error saving PDF: $e");
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error saving PDF: $e")));
     }
   }
+
+// Helper method to get all students for current term
+  // Helper method to get all students for current term
+  List<Student> _getAllStudentsForCurrentTerm() {
+    // If we have filtered students, use them
+    if (_filteredStudents.isNotEmpty) {
+      return _filteredStudents;
+    }
+
+    // If we have cached filtered students, use them
+    if (_cachedFilteredStudents != null &&
+        _cachedFilteredStudents!.isNotEmpty) {
+      return _cachedFilteredStudents!;
+    }
+
+    // If we have cached server students, return a subset for the current term
+    if (_cachedServerStudents != null && _cachedServerStudents!.isNotEmpty) {
+      return _cachedServerStudents!
+          .where((s) => s.terms != null && s.terms!.contains(_selectedTermId))
+          .toList();
+    }
+
+    // Return empty list
+    return [];
+  }
+
+// Add this method to refresh the special category filters
+  void _refreshSpecialFilters() {
+    setState(() {
+      // This will trigger a rebuild of the filters with updated data
+    });
+  }
+
+// Helper method to apply other filters (gender, class, etc.) to the filtered list
+  List<Student> _applyOtherFilters(List<Student> students) {
+    List<Student> filtered = List.from(students);
+
+    // Apply class filter
+    if (_selectedClasses.isNotEmpty && !_selectedClasses.contains("All")) {
+      filtered =
+          filtered.where((s) => _selectedClasses.contains(s.class_)).toList();
+    }
+
+    // Apply gender filter
+    if (_selectedGender != null && _selectedGender != "All") {
+      filtered = filtered
+          .where((student) => student.gender == _selectedGender)
+          .toList();
+    }
+
+    // Apply surname filter
+    if (_selectedSurname?.isNotEmpty ?? false) {
+      filtered = filtered
+          .where((student) => student.surname
+              .toLowerCase()
+              .contains(_selectedSurname!.toLowerCase()))
+          .toList();
+    }
+
+    // Apply registration number filter
+    if (_selectedReg?.isNotEmpty ?? false) {
+      filtered = filtered
+          .where((s) => s.studentIdNumber!
+              .toLowerCase()
+              .contains(_selectedReg!.toLowerCase()))
+          .toList();
+    }
+
+    // Apply date of birth filter
+    if (_selectedStartDate != null || _selectedEndDate != null) {
+      filtered = filtered.where((s) {
+        final dob = s.age;
+        if (_selectedStartDate != null && _selectedEndDate != null) {
+          return dob.isAfter(_selectedStartDate!) &&
+              dob.isBefore(_selectedEndDate!);
+        } else if (_selectedStartDate != null) {
+          return dob.isAfter(_selectedStartDate!);
+        } else {
+          return dob.isBefore(_selectedEndDate!);
+        }
+      }).toList();
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => _isSortAscending
+        ? a.surname.compareTo(b.surname)
+        : b.surname.compareTo(a.surname));
+
+    return filtered;
+  }
+
+// Add these debug helper methods
 
   @override
   Widget build(BuildContext context) {
@@ -564,7 +730,7 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ViewByScreen(),
+                    builder: (context) => const ArrearsAndPrepayments(),
                   ),
                 );
               },
@@ -673,32 +839,47 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
                         title: 'View by Date of Birth',
                         child: _buildDOBPicker(),
                       ),
+                      // In the build method, replace the filter widgets with these:
+
                       _buildCard(
-                        title: 'Filter by Special Categories',
-                        child: Column(
-                          children: [
-                            CheckboxListTile(
-                              title:
-                                  const Text("Show Only Exceptional Students"),
-                              value: _filterByExceptional,
-                              onChanged: (value) {
-                                setState(() {
-                                  _filterByExceptional = value!;
-                                });
-                              },
-                            ),
-                            CheckboxListTile(
-                              title: const Text("Show Only Newcomer Students"),
-                              value: _filterByNewcomer,
-                              onChanged: (value) {
-                                setState(() {
-                                  _filterByNewcomer = value!;
-                                });
-                              },
-                            ),
-                          ],
+                        title: 'Exceptional Students Filter',
+                        child: ExceptionalStudentsFilter(
+                          key: ValueKey(
+                              'exceptional_filter_${_filteredStudents.length}'), // Forces rebuild when data changes
+                          students: _getAllStudentsForCurrentTerm(),
+                          onFilterChanged: (filteredStudents) {
+                            setState(() {
+                              _filteredStudents =
+                                  _applyOtherFilters(filteredStudents);
+                            });
+                          },
                         ),
                       ),
+
+                      _buildCard(
+                        title: 'Newcomer Students Filter',
+                        child: NewcomerStudentsFilter(
+                          key: ValueKey(
+                              'newcomer_filter_${_filteredStudents.length}'), // Forces rebuild when data changes
+                          students: _getAllStudentsForCurrentTerm(),
+                          onFilterChanged: (filteredStudents) {
+                            setState(() {
+                              // Combine with other active filters
+                              _filteredStudents =
+                                  _applyOtherFilters(filteredStudents);
+                            });
+                          },
+                        ),
+                      ),
+                      if (!_isDataLoaded && !_isSyncing)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            'Loading data... Please wait.',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
                       const SizedBox(height: 20),
                       Center(
                         child: _isSyncing
@@ -1114,34 +1295,47 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
       _selectedGender = 'All';
       _selectedSurname = '';
       _selectedReg = '';
-
       _selectedStartDate = null;
       _selectedEndDate = null;
       _filterByExceptional = false;
       _filterByNewcomer = false;
       _filteredStudents = [];
-
-      _surnameController.clear(); // <-- Clears the field visibly
-      _regNumberController.clear(); // <-- Clears the field visibly
+      _surnameController.clear();
+      _regNumberController.clear();
     });
 
-    if (_role == DeviceRole.host) {
-      final studentBox = await Hive.openBox<Student>('students');
-      final termClasses =
-          studentBox.values.where((s) => s.termId == _selectedTermId).toList();
+    try {
+      if (_role == DeviceRole.host) {
+        final studentBox = await Hive.openBox<Student>('students');
+        final allStudents = studentBox.values.toList();
 
-      _classes = ['All'];
-      _classes.addAll(termClasses.map((s) => s.class_).toSet().toList());
-    } else {
-      // Use cached or filtered server data
-      final serverStudents = _cachedServerStudents ?? [];
+        final termStudents = allStudents
+            .where((s) => s.terms?.contains(_selectedTermId) ?? false)
+            .toList();
 
-      final termClasses = serverStudents
-          .where((s) => s.terms?.contains(_selectedTermId) ?? false)
-          .toList();
+        final classSet = termStudents.map((s) => s.class_).toSet().toList();
 
-      _classes = ['All'];
-      _classes.addAll(termClasses.map((s) => s.class_).toSet().toList());
+        _classes = ['All'];
+        _classes.addAll(classSet);
+        _classes.sort();
+      } else {
+        // Client mode
+        final serverStudents = _cachedServerStudents ?? [];
+
+        final termStudents = serverStudents
+            .where((s) => s.terms?.contains(_selectedTermId) ?? false)
+            .toList();
+
+        final classSet = termStudents.map((s) => s.class_).toSet().toList();
+
+        _classes = ['All'];
+        _classes.addAll(classSet);
+        _classes.sort();
+      }
+    } catch (e) {
+      setState(() {
+        _classes = ['All'];
+      });
     }
 
     setState(() {
@@ -1291,5 +1485,429 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     _regNumberController.dispose();
 
     super.dispose();
+  }
+}
+
+// Add these new classes after the imports and before the ViewStudentsScreenfilter class
+
+// Widget for Exceptional Students Filter
+class ExceptionalStudentsFilter extends StatefulWidget {
+  final List<Student> students;
+  final Function(List<Student>) onFilterChanged;
+
+  const ExceptionalStudentsFilter({
+    Key? key,
+    required this.students,
+    required this.onFilterChanged,
+  }) : super(key: key);
+
+  @override
+  _ExceptionalStudentsFilterState createState() =>
+      _ExceptionalStudentsFilterState();
+}
+
+class _ExceptionalStudentsFilterState extends State<ExceptionalStudentsFilter> {
+  Map<String, bool> _exceptionSelections = {};
+  List<String> _allExceptions = [];
+  bool _selectAll = false;
+  bool _isFilterApplied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _extractAllExceptions();
+    // Don't auto-apply - wait for user to click apply or use the main Apply Filters button
+  }
+
+  @override
+  void didUpdateWidget(ExceptionalStudentsFilter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.students != widget.students) {
+      _extractAllExceptions();
+      // Don't auto-apply
+    }
+  }
+
+  void _extractAllExceptions() {
+    Set<String> uniqueExceptions = {};
+    for (var student in widget.students) {
+      if (student.exceptions != null && student.exceptions!.isNotEmpty) {
+        for (var exception in student.exceptions!) {
+          uniqueExceptions.add(exception.exceptionName.toString());
+        }
+      }
+    }
+    _allExceptions = uniqueExceptions.toList()..sort();
+
+    Map<String, bool> newSelections = {};
+    for (var exception in _allExceptions) {
+      newSelections[exception] = false;
+    }
+    _exceptionSelections = newSelections;
+    _selectAll = false;
+    _isFilterApplied = false;
+  }
+
+  void _applyFilter() {
+    List<String> selectedExceptions = _exceptionSelections.entries
+        .where((entry) => entry.value)
+        .map((entry) => entry.key)
+        .toList();
+
+    List<Student> filteredStudents;
+
+    if (selectedExceptions.isEmpty) {
+      filteredStudents = widget.students
+          .where((student) =>
+              student.exceptions != null && student.exceptions!.isNotEmpty)
+          .toList();
+    } else {
+      filteredStudents = widget.students
+          .where((student) =>
+              student.exceptions != null &&
+              student.exceptions!.any((exception) =>
+                  selectedExceptions.contains(exception.exceptionName)))
+          .toList();
+    }
+
+    setState(() {
+      _isFilterApplied = true;
+    });
+    widget.onFilterChanged(filteredStudents);
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      _selectAll = !_selectAll;
+      for (var key in _exceptionSelections.keys) {
+        _exceptionSelections[key] = _selectAll;
+      }
+      _isFilterApplied = false; // Reset filter applied state
+    });
+  }
+
+  void _toggleException(String exceptionName) {
+    setState(() {
+      _exceptionSelections[exceptionName] =
+          !_exceptionSelections[exceptionName]!;
+      bool allSelected = _exceptionSelections.values.every((value) => value);
+      bool anySelected = _exceptionSelections.values.any((value) => value);
+      if (allSelected) {
+        _selectAll = true;
+      } else if (!anySelected) {
+        _selectAll = false;
+      }
+      _isFilterApplied = false; // Reset filter applied state
+    });
+  }
+
+  void _untickAll() {
+    setState(() {
+      for (var key in _exceptionSelections.keys) {
+        _exceptionSelections[key] = false;
+      }
+      _selectAll = false;
+      _isFilterApplied = false; // Reset filter applied state
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Exceptional Students Filter',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                if (_isFilterApplied)
+                  const Chip(
+                    label: Text('Applied'),
+                    backgroundColor: Colors.green,
+                    labelStyle: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_allExceptions.isNotEmpty) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _toggleSelectAll,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Select All'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _untickAll,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Untick All'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _applyFilter,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Apply'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: _allExceptions.map((exception) {
+                      return CheckboxListTile(
+                        title: Text(exception),
+                        value: _exceptionSelections[exception] ?? false,
+                        onChanged: (value) => _toggleException(exception),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        activeColor: Colors.blue,
+                        checkColor: Colors.white,
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Selected: ${_exceptionSelections.values.where((v) => v).length} of ${_allExceptions.length} exceptions',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ] else ...[
+              const Text(
+                'No exceptional students found.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+} // Widget for Newcomer Students Filter
+
+class NewcomerStudentsFilter extends StatefulWidget {
+  final List<Student> students;
+  final Function(List<Student>) onFilterChanged;
+
+  const NewcomerStudentsFilter({
+    Key? key,
+    required this.students,
+    required this.onFilterChanged,
+  }) : super(key: key);
+
+  @override
+  _NewcomerStudentsFilterState createState() => _NewcomerStudentsFilterState();
+}
+
+class _NewcomerStudentsFilterState extends State<NewcomerStudentsFilter> {
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _isFilterApplied = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStartDate) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+        _isFilterApplied = false;
+      });
+    }
+  }
+
+  void _applyFilter() {
+    // First get all newcomer students
+    List<Student> filteredStudents =
+        widget.students.where((student) => student.isNewComer == true).toList();
+
+    // Apply date range filter if dates are provided
+    if (_startDate != null || _endDate != null) {
+      filteredStudents = filteredStudents.where((student) {
+        bool matchesStartDate = true;
+        bool matchesEndDate = true;
+
+        // Check if newcomer from date is within range
+        if (_startDate != null && student.isNewComerFrom != null) {
+          matchesStartDate = student.isNewComerFrom!.isAfter(_startDate!) ||
+              student.isNewComerFrom!.isAtSameMomentAs(_startDate!);
+        }
+
+        // Check if newcomer until date is within range
+        if (_endDate != null && student.isNewComerUntil != null) {
+          matchesEndDate = student.isNewComerUntil!.isBefore(_endDate!) ||
+              student.isNewComerUntil!.isAtSameMomentAs(_endDate!);
+        }
+
+        // If both dates are provided, check if the date ranges overlap
+        if (_startDate != null &&
+            _endDate != null &&
+            student.isNewComerFrom != null &&
+            student.isNewComerUntil != null) {
+          // Check if the date ranges overlap
+          bool overlaps = !(student.isNewComerUntil!.isBefore(_startDate!) ||
+              student.isNewComerFrom!.isAfter(_endDate!));
+          return overlaps;
+        }
+
+        return matchesStartDate && matchesEndDate;
+      }).toList();
+    }
+
+    setState(() {
+      _isFilterApplied = true;
+    });
+    widget.onFilterChanged(filteredStudents);
+  }
+
+  void _clearDates() {
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _isFilterApplied = false;
+    });
+    // Optionally apply filter with cleared dates (shows all newcomers)
+    _applyFilter();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    int totalNewcomers =
+        widget.students.where((s) => s.isNewComer == true).length;
+
+    return Card(
+      elevation: 5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Newcomer Students Filter',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                if (_isFilterApplied)
+                  const Chip(
+                    label: Text('Applied'),
+                    backgroundColor: Colors.green,
+                    labelStyle: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Total Newcomers: $totalNewcomers',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Select Date Range:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => _selectDate(context, true),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.grey[200],
+                    ),
+                    child: Text(
+                      _startDate != null
+                          ? 'From: ${DateFormat('yyyy-MM-dd').format(_startDate!)}'
+                          : 'From: Select Start Date',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => _selectDate(context, false),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.grey[200],
+                    ),
+                    child: Text(
+                      _endDate != null
+                          ? 'To: ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+                          : 'To: Select End Date',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _applyFilter,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Apply Filter'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _clearDates,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Clear & Show All'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

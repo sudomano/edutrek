@@ -1,0 +1,49 @@
+-- DROP TABLE IF EXISTS `studentpayment`;
+CREATE TABLE `studentpayment` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `receiptNumber` varchar(250) DEFAULT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `studentSurname` varchar(255) NOT NULL,
+  `studentClass` varchar(255) NOT NULL,
+  `studentRegNumber` varchar(50) DEFAULT NULL, -- ✅ NEW
+  `phoneNumber` varchar(20) NOT NULL,
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL,
+  `amountToPay` decimal(10,2) NOT NULL,
+  `paymentDate` date NOT NULL,
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Payment Method Details ✅ ALL NEW
+  `paymentMethodType` varchar(50) DEFAULT 'cash',
+  `paymentMethodAmount` decimal(10,2) DEFAULT 0.00,
+  `paymentReference` varchar(255) DEFAULT '',
+  `mobileMoneyPhone` varchar(20) DEFAULT '',
+  `mobileMoneyProvider` varchar(50) DEFAULT '',
+  `bankAccountNumber` varchar(50) DEFAULT '',
+  `bankAccountName` varchar(255) DEFAULT '',
+  `changeGiven` decimal(10,2) DEFAULT 0.00,
+  
+  -- User Information
+  `username` varchar(255) DEFAULT NULL,
+  `role` varchar(255) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`, `studentSurname`),
+  KEY `idx_paymentDate` (`paymentDate`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,0 +1,31 @@
+-- DROP TABLE IF EXISTS `batch_sell_units`;
+CREATE TABLE `batch_sell_units` (
+  -- Primary Key
+  `sell_unit_code` varchar(50) NOT NULL,
+  
+  -- Foreign Key
+  `batch_code` varchar(50) DEFAULT NULL,
+  
+  -- Core Fields
+  `unit_name` varchar(50) DEFAULT NULL,
+  `quantity_multiplier` int(11) DEFAULT NULL,
+  `selling_price` decimal(15,2) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT 1,
+  `deleted_at` datetime DEFAULT NULL,
+  
+  -- Snapshot Fields
+  `packaging_level` varchar(50) DEFAULT NULL,
+  `base_units_per_sell_unit` decimal(15,4) DEFAULT NULL,
+  `base_unit` varchar(10) DEFAULT NULL,
+  `base_unit_type` varchar(20) DEFAULT NULL,
+  
+  -- ✅ Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`sell_unit_code`),
+  KEY `idx_batch_code` (`batch_code`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

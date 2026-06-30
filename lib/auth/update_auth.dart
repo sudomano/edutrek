@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/admin/home_screen.dart';
 import 'package:zitf_system/auth/crud_auth/view_admin_auth.dart';
+import 'package:zitf_system/auth/super_user_do/super_user_login_screen.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 
@@ -198,7 +199,7 @@ class _ViewSecurityScreenState extends State<ViewSecurityScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Center(child: Text('View Adminnns')),
+        title: const Center(child: Text('View Admin Account Info')),
         actions: [
           IconButton(
             icon: const Icon(Icons.home,
@@ -226,7 +227,19 @@ class _ViewSecurityScreenState extends State<ViewSecurityScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 30),
             onPressed: _refreshData,
-          )
+          ),
+          IconButton(
+            icon: const Icon(Icons.admin_panel_settings,
+                size: 30, color: Colors.orange),
+            tooltip: 'Super User Settings',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const SuperUserLoginScreen()),
+              );
+            },
+          ),
         ],
       ),
       body: Center(

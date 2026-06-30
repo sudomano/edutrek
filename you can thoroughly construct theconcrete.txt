@@ -1,0 +1,2199 @@
+you can thoroughly construct theconcrete solution from the current working code ---------------------------------- @override
+  Widget build(BuildContext context) {
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
+    Widget searchField = RawKeyboardListener(
+      focusNode: FocusNode(),
+      onKey: isWindows ? _handleKeyEvent : null,
+      child: TextFormField(
+        controller: _studentSearchController,
+        focusNode: _searchFocusNode,
+        textInputAction: TextInputAction.search,
+        onFieldSubmitted: (value) {
+          _performSearch(value.trim());
+        },
+        decoration: InputDecoration(
+          labelText: 'Search Student by Surname',
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () =>
+                _performSearch(_studentSearchController.text.trim()),
+          ),
+        ),
+        onChanged: (value) {
+          _searchDebounce?.cancel();
+          _searchDebounce = Timer(_searchDebounceDuration, () {
+            _searchStudent(value.trim(), showDialog: false);
+          });
+        },
+      ),
+    );
+    if (globalTermId != null) {
+      return Stack(
+        children: [
+          Scaffold(
+            floatingActionButton: StreamBuilder<bool>(
+              stream: bluetoothPrint.isScanning,
+              initialData: false,
+              builder: (c, snapshot) {
+                if (snapshot.data == true) {
+                  return FloatingActionButton(
+                    child: const Icon(Icons.stop),
+                    onPressed: () => bluetoothPrint.stopScan(),
+                    backgroundColor: Colors.red,
+                  );
+                } else {
+                  return FloatingActionButton(
+                    child: const Icon(Icons.search),
+                    onPressed: () => bluetoothPrint.startScan(
+                        timeout: const Duration(seconds: 5)),
+                  );
+                }
+              },
+            ),
+            appBar: AppBar(
+              title: const Center(
+                child: Text(
+                  'Make Payment',
+                  style: TextStyle(
+                    fontSize: 14.0, // Adjust font size
+                    fontWeight: FontWeight.normal, // Bold font
+                    color: Colors.white, // Title color
+                    letterSpacing: 1.2, // Slight letter spacing for elegance
+                  ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.print),
+                  onPressed: _printStatementViaBluetooth,
+                  tooltip: 'Print Statement via Bluetooth',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.picture_as_pdf),
+                  onPressed: _generatePdfPreview,
+                  tooltip: 'Generate PDF Statement',
+                ),
+              ],
+              backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+            ),
+            body: Center(
+              child: SingleChildScrollView(
+                controller: _mainScrollController, // Add this controller
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color.fromRGBO(255, 255, 255, 1),
+                        Color.fromRGBO(255, 255, 255, 1)
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      RefreshIndicator(
+                        onRefresh: () =>
+                            bluetoothHelper.bluetoothPrint.startScan(
+                          timeout: const Duration(seconds: 5),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: <Widget>[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10, horizontal: 10),
+                                    child: Text(
+                                        tips), // Keep "tips" for dynamic updates
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              StreamBuilder<List<BluetoothDevice>>(
+                                stream:
+                                    bluetoothHelper.bluetoothPrint.scanResults,
+                                initialData: const [],
+                                builder: (c, snapshot) => Column(
+                                  children: snapshot.data!
+                                      .map((d) => ListTile(
+                                            title: Text(d.name ?? ''),
+                                            subtitle: Text(d.address ?? ''),
+                                            onTap: () async {
+                                              setState(() {
+                                                _device = d;
+                                              });
+                                            },
+                                            trailing: _device != null &&
+                                                    _device!.address ==
+                                                        d.address
+                                                ? const Icon(
+                                                    Icons.check,
+                                                    color: Colors.green,
+                                                  )
+                                                : null,
+                                          ))
+                                      .toList(),
+                                ),
+                              ),
+                              const Divider(),
+                              Container(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 5, 20, 10),
+                                child: Column(
+                                  children: <Widget>[
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: <Widget>[
+                                        OutlinedButton(
+                                          onPressed: _connected
+                                              ? null
+                                              : () async {
+                                                  if (_device != null &&
+                                                      _device!.address !=
+                                                          null) {
+                                                    setState(() {
+                                                      tips = 'Connecting...';
+                                                    });
+                                                    try {
+                                                      await bluetoothHelper
+                                                          .bluetoothPrint
+                                                          .connect(_device!);
+                                                      setState(() {
+                                                        tips =
+                                                            'Connected to ${_device!.name}';
+                                                        _connected = true;
+                                                      });
+                                                    } catch (e) {
+                                                      setState(() {
+                                                        tips =
+                                                            'Failed to connect: $e';
+                                                      });
+                                                    }
+                                                  } else {
+                                                    setState(() {
+                                                      tips =
+                                                          'Please select a device';
+                                                    });
+                                                  }
+                                                },
+                                          child: const Text('Connect'),
+                                        ),
+                                        const SizedBox(width: 10.0),
+                                        OutlinedButton(
+                                          onPressed: _connected
+                                              ? () async {
+                                                  setState(() {
+                                                    tips = 'Disconnecting...';
+                                                  });
+                                                  try {
+                                                    await bluetoothHelper
+                                                        .bluetoothPrint
+                                                        .disconnect();
+                                                    setState(() {
+                                                      tips = 'Disconnected';
+                                                      _connected = false;
+                                                    });
+                                                  } catch (e) {
+                                                    setState(() {
+                                                      tips =
+                                                          'Failed to disconnect: $e';
+                                                    });
+                                                  }
+                                                }
+                                              : null,
+                                          child: const Text('Disconnect'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              )
+                            ],
+                          ),
+                        ),
+                      ),
+                      Form(
+                        key: _formKey,
+                        autovalidateMode: AutovalidateMode
+                            .onUserInteraction, // Automatically triggers validation
+
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 20),
+                            searchField,
+                            if (_selectedStudent != null)
+                              Card(
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 20),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 10),
+                                      if (_selectedStudent != null)
+                                        Builder(
+                                          builder: (_) {
+                                            final studentId = _selectedStudent!
+                                                .studentIdNumber
+                                                .toString();
+
+                                            // 🔹 PROJECT ARREARS
+                                            final projectArrearsDetails =
+                                                buildStudentArrearsDetails(
+                                                    studentId);
+
+                                            final totalProjectArrears =
+                                                projectArrearsDetails
+                                                    .fold<double>(
+                                              0,
+                                              (sum, e) => sum + e.arrears,
+                                            );
+
+                                            return Card(
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 20),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(16),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    /// 👤 STUDENT INFO
+                                                    Text(
+                                                        'Student: ${_selectedStudent!.name} ${_selectedStudent!.surname}'),
+                                                    const SizedBox(height: 10),
+                                                    Text(
+                                                        'Class: ${_selectedStudent!.class_}'),
+                                                    const SizedBox(height: 10),
+                                                    Text(
+                                                        '${_selectedStudent!.paymentStatus}: ${_selectedStudent!.phoneNumber}'),
+
+                                                    if (_selectedStudent!
+                                                                .emergencyContactNumber !=
+                                                            null &&
+                                                        _selectedStudent!
+                                                            .emergencyContactNumber!
+                                                            .isNotEmpty)
+                                                      Text(
+                                                          '${_selectedStudent!.emergencyContactName}: ${_selectedStudent!.emergencyContactNumber}'),
+
+                                                    const Divider(height: 30),
+                                                    if (_selectedStudent !=
+                                                        null)
+
+                                                      /// 💰 FEES ARREARS (Existing Future)
+                                                      FutureBuilder<double>(
+                                                        future:
+                                                            _totalArrearsFuture,
+                                                        builder: (context,
+                                                            snapshot) {
+                                                          if (snapshot
+                                                                  .connectionState ==
+                                                              ConnectionState
+                                                                  .waiting) {
+                                                            return const Text(
+                                                              'Calculating total arrears...',
+                                                              style: TextStyle(
+                                                                  color: Colors
+                                                                      .grey,
+                                                                  fontStyle:
+                                                                      FontStyle
+                                                                          .italic),
+                                                            );
+                                                          }
+
+                                                          if (snapshot
+                                                              .hasError) {
+                                                            return Text(
+                                                              'Error fetching arrears: ${snapshot.error}',
+                                                              style: const TextStyle(
+                                                                  color: Colors
+                                                                      .red),
+                                                            );
+                                                          }
+
+                                                          final feesArrears =
+                                                              snapshot.data ??
+                                                                  0.0;
+
+                                                          final grandTotal =
+                                                              feesArrears +
+                                                                  totalProjectArrears;
+
+                                                          return Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              /// =========================
+                                                              /// 🔥 GRAND TOTAL
+                                                              /// =========================
+                                                              Container(
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .all(
+                                                                        14),
+                                                                decoration:
+                                                                    BoxDecoration(
+                                                                  gradient:
+                                                                      LinearGradient(
+                                                                    colors: [
+                                                                      Colors.red
+                                                                          .withOpacity(
+                                                                              0.1),
+                                                                      Colors
+                                                                          .deepOrange
+                                                                          .withOpacity(
+                                                                              0.1),
+                                                                    ],
+                                                                  ),
+                                                                  borderRadius:
+                                                                      BorderRadius
+                                                                          .circular(
+                                                                              12),
+                                                                  border: Border.all(
+                                                                      color: Colors
+                                                                          .red
+                                                                          .withOpacity(
+                                                                              0.2)),
+                                                                ),
+                                                                child: Row(
+                                                                  children: [
+                                                                    const Icon(
+                                                                        Icons
+                                                                            .account_balance_wallet,
+                                                                        color: Colors
+                                                                            .red),
+                                                                    const SizedBox(
+                                                                        width:
+                                                                            10),
+                                                                    const Expanded(
+                                                                      child:
+                                                                          Text(
+                                                                        'Total Student\'s Outstanding',
+                                                                        style:
+                                                                            TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                    Text(
+                                                                      '\$${grandTotal.toStringAsFixed(2)}',
+                                                                      style:
+                                                                          const TextStyle(
+                                                                        fontSize:
+                                                                            18,
+                                                                        fontWeight:
+                                                                            FontWeight.bold,
+                                                                        color: Colors
+                                                                            .red,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              const SizedBox(
+                                                                  height: 16),
+
+                                                              /// =========================
+                                                              /// 📋 PROJECT ARREARS HEADER
+                                                              /// =========================
+                                                              if (projectArrearsDetails
+                                                                  .isNotEmpty)
+                                                                Container(
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .all(
+                                                                          12),
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    color: Colors
+                                                                        .deepPurple
+                                                                        .withOpacity(
+                                                                            0.06),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            12),
+                                                                    border: Border.all(
+                                                                        color: Colors
+                                                                            .deepPurple
+                                                                            .withOpacity(0.15)),
+                                                                  ),
+                                                                  child: Column(
+                                                                    crossAxisAlignment:
+                                                                        CrossAxisAlignment
+                                                                            .start,
+                                                                    children: [
+                                                                      const Text(
+                                                                        '📋 Project Arrears Overview',
+                                                                        style:
+                                                                            TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                          color:
+                                                                              Colors.deepPurple,
+                                                                        ),
+                                                                      ),
+                                                                      const SizedBox(
+                                                                          height:
+                                                                              10),
+
+                                                                      /// =========================
+                                                                      /// PROJECT CARDS
+                                                                      /// =========================
+                                                                      ...projectArrearsDetails
+                                                                          .map(
+                                                                              (s) {
+                                                                        return Container(
+                                                                          margin: const EdgeInsets
+                                                                              .symmetric(
+                                                                              vertical: 6),
+                                                                          decoration:
+                                                                              BoxDecoration(
+                                                                            color:
+                                                                                Colors.white,
+                                                                            borderRadius:
+                                                                                BorderRadius.circular(12),
+                                                                            boxShadow: [
+                                                                              BoxShadow(
+                                                                                color: Colors.black.withOpacity(0.05),
+                                                                                blurRadius: 6,
+                                                                                offset: const Offset(0, 3),
+                                                                              ),
+                                                                            ],
+                                                                          ),
+                                                                          child:
+                                                                              Padding(
+                                                                            padding:
+                                                                                const EdgeInsets.all(12),
+                                                                            child:
+                                                                                Column(
+                                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                                              children: [
+                                                                                /// PROJECT NAME
+                                                                                Row(
+                                                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                                  children: [
+                                                                                    Expanded(
+                                                                                      child: Text(
+                                                                                        s.projectName,
+                                                                                        style: const TextStyle(
+                                                                                          fontSize: 15,
+                                                                                          fontWeight: FontWeight.bold,
+                                                                                          color: Colors.black87,
+                                                                                        ),
+                                                                                      ),
+                                                                                    ),
+                                                                                    Container(
+                                                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                                                      decoration: BoxDecoration(
+                                                                                        color: Colors.red.withOpacity(0.1),
+                                                                                        borderRadius: BorderRadius.circular(20),
+                                                                                      ),
+                                                                                      child: Text(
+                                                                                        "\$${s.arrears.toStringAsFixed(2)}",
+                                                                                        style: const TextStyle(
+                                                                                          color: Colors.red,
+                                                                                          fontWeight: FontWeight.bold,
+                                                                                        ),
+                                                                                      ),
+                                                                                    ),
+                                                                                  ],
+                                                                                ),
+
+                                                                                const SizedBox(height: 8),
+
+                                                                                /// ITEM DETAILS
+                                                                                Text(
+                                                                                  'Item: ${s.itemName}',
+                                                                                  style: TextStyle(
+                                                                                    color: Colors.grey.shade700,
+                                                                                    fontSize: 13,
+                                                                                  ),
+                                                                                ),
+                                                                                const SizedBox(height: 4),
+                                                                                Text(
+                                                                                  'Batch: ${s.batchName}',
+                                                                                  style: TextStyle(
+                                                                                    color: Colors.grey.shade600,
+                                                                                    fontSize: 13,
+                                                                                  ),
+                                                                                ),
+
+                                                                                const SizedBox(height: 12),
+
+                                                                                /// ACTION BUTTONS
+                                                                                Row(
+                                                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                                                  children: [
+                                                                                    /// FULL PAY
+                                                                                    ElevatedButton.icon(
+                                                                                      style: ElevatedButton.styleFrom(
+                                                                                        backgroundColor: Colors.redAccent,
+                                                                                        foregroundColor: Colors.white,
+                                                                                        shape: RoundedRectangleBorder(
+                                                                                          borderRadius: BorderRadius.circular(10),
+                                                                                        ),
+                                                                                      ),
+                                                                                      icon: const Icon(Icons.payments, size: 18),
+                                                                                      label: const Text("Pay Full"),
+                                                                                      onPressed: () {
+                                                                                        Navigator.push(
+                                                                                          context,
+                                                                                          MaterialPageRoute(
+                                                                                            builder: (_) => const ProjectPaymentScreen(),
+                                                                                          ),
+                                                                                        );
+                                                                                      },
+                                                                                    ),
+
+                                                                                    const SizedBox(width: 10),
+
+                                                                                    /// PARTIAL PAY
+                                                                                    ElevatedButton.icon(
+                                                                                      style: ElevatedButton.styleFrom(
+                                                                                        backgroundColor: Colors.deepPurple,
+                                                                                        foregroundColor: Colors.white,
+                                                                                        shape: RoundedRectangleBorder(
+                                                                                          borderRadius: BorderRadius.circular(10),
+                                                                                        ),
+                                                                                      ),
+                                                                                      icon: const Icon(Icons.payment, size: 18),
+                                                                                      label: const Text("Partial"),
+                                                                                      onPressed: () {
+                                                                                        Navigator.push(
+                                                                                          context,
+                                                                                          MaterialPageRoute(
+                                                                                            builder: (_) => const ProjectPaymentScreen(),
+                                                                                          ),
+                                                                                        );
+                                                                                      },
+                                                                                    ),
+                                                                                  ],
+                                                                                ),
+                                                                              ],
+                                                                            ),
+                                                                          ),
+                                                                        );
+                                                                      }),
+                                                                    ],
+                                                                  ),
+                                                                ),
+
+                                                              const SizedBox(
+                                                                  height: 12),
+
+                                                              /// =========================
+                                                              /// 📦 TOTAL PROJECT ARREARS
+                                                              /// =========================
+                                                              if (totalProjectArrears >
+                                                                  0)
+                                                                Container(
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .all(
+                                                                          12),
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    color: Colors
+                                                                        .orange
+                                                                        .withOpacity(
+                                                                            0.08),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            12),
+                                                                    border: Border.all(
+                                                                        color: Colors
+                                                                            .orange
+                                                                            .withOpacity(0.2)),
+                                                                  ),
+                                                                  child: Row(
+                                                                    children: [
+                                                                      const Icon(
+                                                                          Icons
+                                                                              .warning_amber_rounded,
+                                                                          color:
+                                                                              Colors.orange),
+                                                                      const SizedBox(
+                                                                          width:
+                                                                              10),
+                                                                      Expanded(
+                                                                        child:
+                                                                            Text(
+                                                                          'Project Arrears Total',
+                                                                          style:
+                                                                              TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
+                                                                            color:
+                                                                                Colors.grey.shade800,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      Text(
+                                                                        '\$${totalProjectArrears.toStringAsFixed(2)}',
+                                                                        style:
+                                                                            const TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                          color:
+                                                                              Colors.deepOrange,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      ),
+                                                    const SizedBox(height: 52),
+
+                                                    FutureBuilder<
+                                                        List<
+                                                            Map<String,
+                                                                dynamic>>>(
+                                                      key: ValueKey(
+                                                          _purposeListVersion), // Force refresh when version changes
+
+                                                      future:
+                                                          _fetchUniquePaymentPurposesByStudentWithArrearsForPreviwNew(
+                                                              _selectedStudent!),
+                                                      builder:
+                                                          (context, snapshot) {
+                                                        if (snapshot
+                                                                .connectionState ==
+                                                            ConnectionState
+                                                                .waiting) {
+                                                          return const Center(
+                                                              child:
+                                                                  CircularProgressIndicator());
+                                                        }
+
+                                                        if (snapshot.hasError) {
+                                                          return Text(
+                                                              'Error: ${snapshot.error}');
+                                                        }
+
+                                                        if (!snapshot.hasData ||
+                                                            snapshot.data!
+                                                                .isEmpty) {
+                                                          return const Text(
+                                                              'No Arrears found for this student.');
+                                                        }
+
+                                                        final purposeList =
+                                                            snapshot.data!;
+
+                                                        // Format currency safely
+                                                        String _formatCurrency(
+                                                            double amount) {
+                                                          try {
+                                                            return '\$${amount.toStringAsFixed(2)}';
+                                                          } catch (e) {
+                                                            return '\$0.00';
+                                                          }
+                                                        }
+
+                                                        // ✅ Define extractAmountFromBracket at the top level of the builder
+                                                        double
+                                                            extractAmountFromBracket(
+                                                                String text) {
+                                                          try {
+                                                            final RegExp regex =
+                                                                RegExp(
+                                                                    r'\[\$(\d+(?:\.\d+)?)\]|\$(\d+(?:\.\d+)?)');
+                                                            final match = regex
+                                                                .firstMatch(
+                                                                    text);
+                                                            if (match != null) {
+                                                              String amountStr =
+                                                                  match.group(
+                                                                          1) ??
+                                                                      match.group(
+                                                                          2) ??
+                                                                      '';
+                                                              if (amountStr
+                                                                  .isNotEmpty) {
+                                                                return double
+                                                                    .parse(
+                                                                        amountStr);
+                                                              }
+                                                            }
+                                                            final fallbackRegex =
+                                                                RegExp(
+                                                                    r'(\d+(?:\.\d+)?)');
+                                                            final fallbackMatch =
+                                                                fallbackRegex
+                                                                    .firstMatch(
+                                                                        text);
+                                                            if (fallbackMatch !=
+                                                                null) {
+                                                              return double.parse(
+                                                                  fallbackMatch
+                                                                      .group(
+                                                                          1)!);
+                                                            }
+                                                            return 0.0;
+                                                          } catch (e) {
+                                                            print(
+                                                                'Error parsing amount from: "$text" - $e');
+                                                            return 0.0;
+                                                          }
+                                                        }
+
+// Calculate overall total from all purposes with error handling
+                                                        double
+                                                            _calculateOverallTotal(
+                                                                List<dynamic>
+                                                                    purposeList) {
+                                                          double overallTotal =
+                                                              0.0;
+
+                                                          try {
+                                                            for (var entry
+                                                                in purposeList) {
+                                                              final String
+                                                                  preview =
+                                                                  entry[
+                                                                      'arrearsPreview'];
+                                                              final List<String>
+                                                                  subPurposes =
+                                                                  preview
+                                                                      .split(
+                                                                          ',')
+                                                                      .map((s) =>
+                                                                          s.trim())
+                                                                      .toList();
+
+                                                              for (var subPurpose
+                                                                  in subPurposes) {
+                                                                try {
+                                                                  // Look for pattern like [$50] or [$75.50] or $50
+                                                                  final RegExp
+                                                                      regex =
+                                                                      RegExp(
+                                                                          r'\[\$(\d+(?:\.\d+)?)\]|\$(\d+(?:\.\d+)?)');
+                                                                  final match =
+                                                                      regex.firstMatch(
+                                                                          subPurpose);
+                                                                  if (match !=
+                                                                      null) {
+                                                                    String
+                                                                        amountStr =
+                                                                        match.group(1) ??
+                                                                            match.group(2) ??
+                                                                            '';
+                                                                    if (amountStr
+                                                                        .isNotEmpty) {
+                                                                      overallTotal +=
+                                                                          double.parse(
+                                                                              amountStr);
+                                                                    }
+                                                                  } else {
+                                                                    // Fallback: try to find any number
+                                                                    final fallbackRegex =
+                                                                        RegExp(
+                                                                            r'(\d+(?:\.\d+)?)');
+                                                                    final fallbackMatch =
+                                                                        fallbackRegex
+                                                                            .firstMatch(subPurpose);
+                                                                    if (fallbackMatch !=
+                                                                        null) {
+                                                                      overallTotal +=
+                                                                          double.parse(
+                                                                              fallbackMatch.group(1)!);
+                                                                    }
+                                                                  }
+                                                                } catch (e) {
+                                                                  print(
+                                                                      'Error parsing sub-purpose: "$subPurpose" - $e');
+                                                                  continue;
+                                                                }
+                                                              }
+                                                            }
+                                                          } catch (e) {
+                                                            print(
+                                                                'Error calculating overall total: $e');
+                                                          }
+
+                                                          return overallTotal;
+                                                        }
+
+// Handle selecting all arrears
+                                                        Future<void>
+                                                            _checkAllArrears() async {
+                                                          final double total =
+                                                              _calculateOverallTotal(
+                                                                  purposeList);
+
+                                                          // Show confirmation dialog
+                                                          final confirm =
+                                                              await showDialog<
+                                                                  bool>(
+                                                            context: context,
+                                                            builder:
+                                                                (BuildContext
+                                                                    context) {
+                                                              return AlertDialog(
+                                                                title: const Text(
+                                                                    "Confirm Selection"),
+                                                                content: Text(
+                                                                  "You are about to pay all arrears totaling ${_formatCurrency(total)}. Continue?",
+                                                                ),
+                                                                actions: [
+                                                                  TextButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                            context,
+                                                                            false),
+                                                                    child: const Text(
+                                                                        "Cancel"),
+                                                                  ),
+                                                                  ElevatedButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                            context,
+                                                                            true),
+                                                                    style: ElevatedButton.styleFrom(
+                                                                        backgroundColor:
+                                                                            Colors.green),
+                                                                    child: const Text(
+                                                                        "Confirm"),
+                                                                  ),
+                                                                ],
+                                                              );
+                                                            },
+                                                          );
+
+                                                          if (confirm == true) {
+                                                            setState(() {
+                                                              _selectedPaymentPurpose =
+                                                                  null;
+                                                              _selectedArrearsTerm =
+                                                                  null;
+                                                              // Add your payment processing logic here
+                                                            });
+                                                          }
+                                                        }
+
+                                                        void _selectAllPurposes(
+                                                            bool select) {
+                                                          for (int i = 0;
+                                                              i <
+                                                                  purposeList
+                                                                      .length;
+                                                              i++) {
+                                                            final purpose =
+                                                                purposeList[i]
+                                                                    ['purpose'];
+                                                            final preview =
+                                                                purposeList[i][
+                                                                    'arrearsPreview'];
+                                                            final subPurposes =
+                                                                preview
+                                                                    .split(',')
+                                                                    .map((s) =>
+                                                                        s.trim())
+                                                                    .toList();
+                                                            final String
+                                                                purposeKey =
+                                                                purpose.paymentPurpose ??
+                                                                    'purpose_$i';
+
+                                                            _selectedSubPurposes[
+                                                                    purposeKey] =
+                                                                List<bool>.filled(
+                                                                    subPurposes
+                                                                        .length,
+                                                                    select);
+                                                          }
+                                                        }
+
+                                                        String _extractTermIdFromSubPurpose(
+                                                            String
+                                                                subPurposeText,
+                                                            Map<String, double>
+                                                                arrearsDetails) {
+                                                          print(
+                                                              '🔍 Extracting term from: "$subPurposeText"');
+                                                          print(
+                                                              '📋 Available arrearsDetails keys: ${arrearsDetails.keys.toList()}');
+
+                                                          // ✅ Pattern 1: Match "YYYY TERMX" format (e.g., "2025 TERM3")
+                                                          final yearTermRegex =
+                                                              RegExp(
+                                                                  r'(\d{4})\s+TERM(\d+)',
+                                                                  caseSensitive:
+                                                                      false);
+                                                          final match =
+                                                              yearTermRegex
+                                                                  .firstMatch(
+                                                                      subPurposeText);
+
+                                                          if (match != null) {
+                                                            final year =
+                                                                match.group(1);
+                                                            final termNumber =
+                                                                match.group(2);
+
+                                                            // Try to find matching term in arrearsDetails keys
+                                                            for (var termId
+                                                                in arrearsDetails
+                                                                    .keys) {
+                                                              // Check if termId contains the year and term number
+                                                              if (termId.contains(
+                                                                      year!) &&
+                                                                  termId.contains(
+                                                                      'TERM$termNumber')) {
+                                                                print(
+                                                                    '✅ Matched termId: $termId');
+                                                                return termId;
+                                                              }
+                                                            }
+                                                          }
+
+                                                          // ✅ Pattern 2: Direct match with arrearsDetails key
+                                                          for (var termId
+                                                              in arrearsDetails
+                                                                  .keys) {
+                                                            if (subPurposeText
+                                                                .contains(
+                                                                    termId)) {
+                                                              print(
+                                                                  '✅ Direct match: $termId');
+                                                              return termId;
+                                                            }
+                                                          }
+
+                                                          // ✅ Pattern 3: Extract the exact term from the parentheses if needed
+                                                          final parenRegex =
+                                                              RegExp(
+                                                                  r'\(([^)]+)\)');
+                                                          final parenMatch =
+                                                              parenRegex.firstMatch(
+                                                                  subPurposeText);
+                                                          if (parenMatch !=
+                                                              null) {
+                                                            final termDesc =
+                                                                parenMatch
+                                                                    .group(1);
+                                                            for (var termId
+                                                                in arrearsDetails
+                                                                    .keys) {
+                                                              if (termId.contains(
+                                                                  termDesc!)) {
+                                                                print(
+                                                                    '✅ Matched by description: $termId');
+                                                                return termId;
+                                                              }
+                                                            }
+                                                          }
+
+                                                          // Fallback to global term ID
+                                                          print(
+                                                              '⚠️ No match found, using globalTermId: ${globalTermId.toString()}');
+                                                          return globalTermId
+                                                              .toString();
+                                                        }
+
+                                                        List<
+                                                                Map<String,
+                                                                    dynamic>>
+                                                            getSelectedItems() {
+                                                          List<
+                                                                  Map<String,
+                                                                      dynamic>>
+                                                              selectedItems =
+                                                              [];
+
+                                                          for (int i = 0;
+                                                              i <
+                                                                  purposeList
+                                                                      .length;
+                                                              i++) {
+                                                            final purposeData =
+                                                                purposeList[i];
+                                                            final purpose =
+                                                                purposeData[
+                                                                    'purpose'];
+                                                            final subPurposesWithTerms =
+                                                                purposeData['subPurposesWithTerms']
+                                                                        as List<
+                                                                            Map<String,
+                                                                                dynamic>>? ??
+                                                                    [];
+
+                                                            final String
+                                                                purposeKey =
+                                                                purpose.paymentPurpose ??
+                                                                    'purpose_$i';
+
+                                                            // ← Safety: ensure selections length matches subPurposes length
+                                                            if (_selectedSubPurposes
+                                                                .containsKey(
+                                                                    purposeKey)) {
+                                                              final currentSelections =
+                                                                  _selectedSubPurposes[
+                                                                      purposeKey]!;
+                                                              if (currentSelections
+                                                                      .length !=
+                                                                  subPurposesWithTerms
+                                                                      .length) {
+                                                                // Reset selections for this purpose if lengths don't match
+                                                                _selectedSubPurposes[
+                                                                    purposeKey] = List<
+                                                                        bool>.filled(
+                                                                    subPurposesWithTerms
+                                                                        .length,
+                                                                    false);
+                                                              }
+                                                            }
+
+                                                            final selections =
+                                                                _selectedSubPurposes[
+                                                                        purposeKey] ??
+                                                                    [];
+
+                                                            for (int j = 0;
+                                                                j < selections.length &&
+                                                                    j <
+                                                                        subPurposesWithTerms
+                                                                            .length;
+                                                                j++) {
+                                                              if (selections[
+                                                                  j]) {
+                                                                final subData =
+                                                                    subPurposesWithTerms[
+                                                                        j];
+                                                                selectedItems
+                                                                    .add({
+                                                                  'purpose':
+                                                                      purpose,
+                                                                  'subPurpose':
+                                                                      subData[
+                                                                          'preview'],
+                                                                  'amount': subData[
+                                                                      'amount'],
+                                                                  'termId': subData[
+                                                                      'termId'],
+                                                                });
+                                                              }
+                                                            }
+                                                          }
+                                                          return selectedItems;
+                                                        }
+
+                                                        void
+                                                            _proceedWithSelected() async {
+                                                          final selectedItems =
+                                                              getSelectedItems();
+
+                                                          if (selectedItems
+                                                              .isEmpty) {
+                                                            ScaffoldMessenger
+                                                                    .of(context)
+                                                                .showSnackBar(
+                                                              const SnackBar(
+                                                                  content: Text(
+                                                                      'Please select at least one item')),
+                                                            );
+                                                            return;
+                                                          }
+
+                                                          // Add each selected item
+                                                          for (var item
+                                                              in selectedItems) {
+                                                            setState(() {
+                                                              final newItem = {
+                                                                'purpose': item[
+                                                                    'purpose'],
+                                                                'amount': item[
+                                                                    'amount'],
+                                                                'originalAmount':
+                                                                    item[
+                                                                        'amount'],
+                                                                'currentAmount':
+                                                                    item[
+                                                                        'amount'],
+                                                                'termId': item[
+                                                                        'termId'] ??
+                                                                    globalTermId
+                                                                        .toString(),
+                                                                'amountError':
+                                                                    null,
+                                                                'isRemainingArrears':
+                                                                    false, // Newly added items are not remaining arrears
+                                                              };
+
+                                                              final index =
+                                                                  _paymentPurposes
+                                                                      .length;
+                                                              _paymentPurposes
+                                                                  .add(newItem);
+                                                              _amountControllers[
+                                                                      index] =
+                                                                  TextEditingController(
+                                                                text: (item['amount']
+                                                                        as double)
+                                                                    .toStringAsFixed(
+                                                                        2),
+                                                              );
+                                                            });
+                                                          }
+
+                                                          // Clear selections after adding
+                                                          setState(() {
+                                                            _selectAllPurposes(
+                                                                false);
+                                                            _updateTotalEntered();
+                                                          });
+                                                          _scrollToDataTable();
+                                                        }
+
+                                                        return Card(
+                                                          margin:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  vertical: 10),
+                                                          child: Padding(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .all(12),
+                                                            child: Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              children: [
+                                                                // Title Section
+                                                                const Text(
+                                                                  "📊 Fees Arrears Overview",
+                                                                  style:
+                                                                      TextStyle(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    fontSize:
+                                                                        16,
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(
+                                                                    height: 10),
+
+                                                                // Overall Total and Select Button Section
+                                                                Container(
+                                                                  margin:
+                                                                      const EdgeInsets
+                                                                          .only(
+                                                                          bottom:
+                                                                              16),
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .all(
+                                                                          12),
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    gradient:
+                                                                        LinearGradient(
+                                                                      colors: [
+                                                                        Colors
+                                                                            .blue
+                                                                            .shade50,
+                                                                        Colors
+                                                                            .indigo
+                                                                            .shade50,
+                                                                      ],
+                                                                      begin: Alignment
+                                                                          .topLeft,
+                                                                      end: Alignment
+                                                                          .bottomRight,
+                                                                    ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            12),
+                                                                    border: Border.all(
+                                                                        color: Colors
+                                                                            .blue
+                                                                            .shade200),
+                                                                    boxShadow: [
+                                                                      BoxShadow(
+                                                                        color: Colors
+                                                                            .grey
+                                                                            .shade200,
+                                                                        blurRadius:
+                                                                            4,
+                                                                        offset: const Offset(
+                                                                            0,
+                                                                            2),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                  child: Row(
+                                                                    mainAxisAlignment:
+                                                                        MainAxisAlignment
+                                                                            .spaceBetween,
+                                                                    children: [
+                                                                      Expanded(
+                                                                        child:
+                                                                            Column(
+                                                                          crossAxisAlignment:
+                                                                              CrossAxisAlignment.start,
+                                                                          children: [
+                                                                            const Text(
+                                                                              "Overall Total Arrears",
+                                                                              style: TextStyle(
+                                                                                fontSize: 12,
+                                                                                color: Colors.grey,
+                                                                              ),
+                                                                            ),
+                                                                            const SizedBox(height: 4),
+                                                                            Text(
+                                                                              _formatCurrency(_calculateOverallTotal(purposeList)),
+                                                                              style: const TextStyle(
+                                                                                fontSize: 20,
+                                                                                fontWeight: FontWeight.bold,
+                                                                                color: Colors.indigo,
+                                                                              ),
+                                                                            ),
+                                                                          ],
+                                                                        ),
+                                                                      ),
+                                                                      Row(
+                                                                        children: [
+                                                                          OutlinedButton(
+                                                                            onPressed:
+                                                                                () {
+                                                                              setState(() {
+                                                                                _selectAllPurposes(true);
+                                                                              });
+                                                                            },
+                                                                            style:
+                                                                                OutlinedButton.styleFrom(
+                                                                              side: const BorderSide(color: Colors.green),
+                                                                              foregroundColor: Colors.green,
+                                                                            ),
+                                                                            child:
+                                                                                const Text("Select All"),
+                                                                          ),
+                                                                          const SizedBox(
+                                                                              width: 8),
+                                                                          OutlinedButton(
+                                                                            onPressed:
+                                                                                () {
+                                                                              setState(() {
+                                                                                _selectAllPurposes(false);
+                                                                              });
+                                                                            },
+                                                                            style:
+                                                                                OutlinedButton.styleFrom(
+                                                                              side: const BorderSide(color: Colors.red),
+                                                                              foregroundColor: Colors.red,
+                                                                            ),
+                                                                            child:
+                                                                                const Text("Deselect All"),
+                                                                          ),
+                                                                        ],
+                                                                      ),
+                                                                      ElevatedButton
+                                                                          .icon(
+                                                                        style: ElevatedButton
+                                                                            .styleFrom(
+                                                                          backgroundColor:
+                                                                              Colors.green,
+                                                                          foregroundColor:
+                                                                              Colors.white,
+                                                                          padding: const EdgeInsets
+                                                                              .symmetric(
+                                                                              horizontal: 16,
+                                                                              vertical: 12),
+                                                                          shape:
+                                                                              RoundedRectangleBorder(
+                                                                            borderRadius:
+                                                                                BorderRadius.circular(8),
+                                                                          ),
+                                                                        ),
+                                                                        onPressed:
+                                                                            () {
+                                                                          setState(
+                                                                              () {
+                                                                            _proceedWithSelected();
+                                                                          });
+                                                                        },
+                                                                        icon: const Icon(
+                                                                            Icons
+                                                                                .payment,
+                                                                            size:
+                                                                                18),
+                                                                        label:
+                                                                            const Text(
+                                                                          "PROCEED",
+                                                                          style:
+                                                                              TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
+                                                                            fontSize:
+                                                                                14,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+
+                                                                // Purpose List Section
+                                                                // Purpose List Section
+                                                                ...purposeList
+                                                                    .asMap()
+                                                                    .entries
+                                                                    .expand(
+                                                                        (purposeEntry) {
+                                                                  final int
+                                                                      purposeIndex =
+                                                                      purposeEntry
+                                                                          .key;
+                                                                  final purposeData =
+                                                                      purposeEntry
+                                                                          .value;
+                                                                  final PaymentPurpose
+                                                                      purpose =
+                                                                      purposeData[
+                                                                          'purpose'];
+                                                                  final List<
+                                                                          Map<String,
+                                                                              dynamic>>
+                                                                      subPurposesWithTerms =
+                                                                      purposeData[
+                                                                              'subPurposesWithTerms'] ??
+                                                                          [];
+
+                                                                  if (subPurposesWithTerms
+                                                                      .isEmpty) {
+                                                                    return <Widget>[];
+                                                                  }
+
+                                                                  final String
+                                                                      purposeKey =
+                                                                      purpose.paymentPurpose ??
+                                                                          'purpose_$purposeIndex';
+
+                                                                  // ← Reset selections if length mismatch
+                                                                  if (_selectedSubPurposes
+                                                                      .containsKey(
+                                                                          purposeKey)) {
+                                                                    final currentLen =
+                                                                        _selectedSubPurposes[purposeKey]!
+                                                                            .length;
+                                                                    if (currentLen !=
+                                                                        subPurposesWithTerms
+                                                                            .length) {
+                                                                      _selectedSubPurposes[
+                                                                          purposeKey] = List<
+                                                                              bool>.filled(
+                                                                          subPurposesWithTerms
+                                                                              .length,
+                                                                          false);
+                                                                    }
+                                                                  } else {
+                                                                    _selectedSubPurposes[
+                                                                        purposeKey] = List<
+                                                                            bool>.filled(
+                                                                        subPurposesWithTerms
+                                                                            .length,
+                                                                        false);
+                                                                  }
+                                                                  // Color palette for different purposes
+                                                                  final List<
+                                                                          Color>
+                                                                      colorPalette =
+                                                                      [
+                                                                    Colors.blue,
+                                                                    Colors
+                                                                        .green,
+                                                                    Colors
+                                                                        .orange,
+                                                                    Colors
+                                                                        .purple,
+                                                                    Colors.teal,
+                                                                    Colors
+                                                                        .indigo,
+                                                                    Colors.pink,
+                                                                    Colors
+                                                                        .amber,
+                                                                  ];
+
+                                                                  final Color
+                                                                      purposeColor =
+                                                                      colorPalette[
+                                                                          purposeIndex %
+                                                                              colorPalette.length];
+                                                                  final Color
+                                                                      lightColor =
+                                                                      purposeColor
+                                                                          .withOpacity(
+                                                                              0.08);
+                                                                  final Color
+                                                                      borderColor =
+                                                                      purposeColor
+                                                                          .withOpacity(
+                                                                              0.4);
+
+                                                                  // Initialize selections
+
+                                                                  // Calculate total from the structured data
+                                                                  final double
+                                                                      totalAmount =
+                                                                      subPurposesWithTerms.fold(
+                                                                          0.0,
+                                                                          (sum, item) =>
+                                                                              sum +
+                                                                              (item['amount'] as double));
+
+                                                                  // Check if all sub-purposes are selected
+                                                                  bool
+                                                                      isAllSelected =
+                                                                      _selectedSubPurposes[purposeKey]?.every((selected) =>
+                                                                              selected) ??
+                                                                          false;
+
+                                                                  // Header card with gradient, total, and checkbox
+                                                                  final headerCard =
+                                                                      Container(
+                                                                    margin: const EdgeInsets
+                                                                        .only(
+                                                                        top: 8,
+                                                                        bottom:
+                                                                            4),
+                                                                    decoration:
+                                                                        BoxDecoration(
+                                                                      gradient:
+                                                                          LinearGradient(
+                                                                        colors: [
+                                                                          lightColor,
+                                                                          lightColor
+                                                                              .withOpacity(0.3),
+                                                                        ],
+                                                                        begin: Alignment
+                                                                            .topLeft,
+                                                                        end: Alignment
+                                                                            .bottomRight,
+                                                                      ),
+                                                                      borderRadius:
+                                                                          BorderRadius.circular(
+                                                                              8),
+                                                                      border: Border.all(
+                                                                          color:
+                                                                              borderColor),
+                                                                    ),
+                                                                    child:
+                                                                        CheckboxListTile(
+                                                                      value:
+                                                                          isAllSelected,
+                                                                      onChanged:
+                                                                          (bool?
+                                                                              checked) {
+                                                                        setState(
+                                                                            () {
+                                                                          final currentSelections =
+                                                                              _selectedSubPurposes[purposeKey] ?? [];
+                                                                          _selectedSubPurposes[purposeKey] =
+                                                                              List<bool>.filled(
+                                                                            currentSelections.length,
+                                                                            checked ??
+                                                                                false,
+                                                                          );
+                                                                        });
+                                                                      },
+                                                                      activeColor:
+                                                                          purposeColor,
+                                                                      checkboxShape:
+                                                                          RoundedRectangleBorder(
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(4),
+                                                                      ),
+                                                                      title:
+                                                                          Text(
+                                                                        purpose.paymentPurpose ??
+                                                                            '',
+                                                                        style:
+                                                                            TextStyle(
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                          color:
+                                                                              purposeColor,
+                                                                          fontSize:
+                                                                              16,
+                                                                        ),
+                                                                      ),
+                                                                      subtitle:
+                                                                          Text(
+                                                                        "Total Arrears: ${_formatCurrency(totalAmount)}",
+                                                                        style:
+                                                                            TextStyle(
+                                                                          color:
+                                                                              purposeColor,
+                                                                          fontWeight:
+                                                                              FontWeight.w600,
+                                                                          fontSize:
+                                                                              14,
+                                                                        ),
+                                                                      ),
+                                                                      secondary:
+                                                                          Container(
+                                                                        padding: const EdgeInsets
+                                                                            .symmetric(
+                                                                            horizontal:
+                                                                                12,
+                                                                            vertical:
+                                                                                6),
+                                                                        decoration:
+                                                                            BoxDecoration(
+                                                                          color:
+                                                                              purposeColor,
+                                                                          borderRadius:
+                                                                              BorderRadius.circular(20),
+                                                                        ),
+                                                                        child:
+                                                                            Text(
+                                                                          _formatCurrency(
+                                                                              totalAmount),
+                                                                          style:
+                                                                              const TextStyle(
+                                                                            color:
+                                                                                Colors.white,
+                                                                            fontWeight:
+                                                                                FontWeight.bold,
+                                                                            fontSize:
+                                                                                14,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  );
+
+                                                                  // Sub-purpose cards with individual checkboxes
+                                                                  final subCards =
+                                                                      subPurposesWithTerms
+                                                                          .asMap()
+                                                                          .entries
+                                                                          .map(
+                                                                              (subEntry) {
+                                                                    final int
+                                                                        subIndex =
+                                                                        subEntry
+                                                                            .key;
+                                                                    final subData =
+                                                                        subEntry
+                                                                            .value;
+                                                                    final String
+                                                                        subPurposePreview =
+                                                                        subData[
+                                                                            'preview'];
+                                                                    final double
+                                                                        subAmount =
+                                                                        subData[
+                                                                            'amount'];
+
+                                                                    // Get current selection state
+                                                                    final bool
+                                                                        isSelected =
+                                                                        _selectedSubPurposes[purposeKey]?[subIndex] ??
+                                                                            false;
+
+                                                                    return Container(
+                                                                      margin: const EdgeInsets.only(
+                                                                          left:
+                                                                              16,
+                                                                          top:
+                                                                              2,
+                                                                          bottom:
+                                                                              2,
+                                                                          right:
+                                                                              0),
+                                                                      decoration:
+                                                                          BoxDecoration(
+                                                                        color: isSelected
+                                                                            ? lightColor.withOpacity(0.5)
+                                                                            : lightColor,
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(6),
+                                                                        border:
+                                                                            Border.all(
+                                                                          color: isSelected
+                                                                              ? purposeColor
+                                                                              : borderColor.withOpacity(0.3),
+                                                                          width: isSelected
+                                                                              ? 1.5
+                                                                              : 0.5,
+                                                                        ),
+                                                                      ),
+                                                                      child:
+                                                                          CheckboxListTile(
+                                                                        value:
+                                                                            isSelected,
+                                                                        onChanged:
+                                                                            (bool?
+                                                                                checked) {
+                                                                          setState(
+                                                                              () {
+                                                                            final currentSelections =
+                                                                                _selectedSubPurposes[purposeKey] ?? [];
+                                                                            currentSelections[subIndex] =
+                                                                                checked ?? false;
+                                                                            _selectedSubPurposes[purposeKey] =
+                                                                                List.from(currentSelections);
+                                                                          });
+                                                                        },
+                                                                        activeColor:
+                                                                            purposeColor,
+                                                                        checkboxShape:
+                                                                            RoundedRectangleBorder(
+                                                                          borderRadius:
+                                                                              BorderRadius.circular(4),
+                                                                        ),
+                                                                        contentPadding: const EdgeInsets
+                                                                            .symmetric(
+                                                                            horizontal:
+                                                                                16,
+                                                                            vertical:
+                                                                                4),
+                                                                        title:
+                                                                            Text(
+                                                                          subPurposePreview,
+                                                                          style:
+                                                                              TextStyle(
+                                                                            fontSize:
+                                                                                13,
+                                                                            fontWeight: isSelected
+                                                                                ? FontWeight.w500
+                                                                                : FontWeight.normal,
+                                                                          ),
+                                                                        ),
+                                                                        secondary:
+                                                                            Container(
+                                                                          padding: const EdgeInsets
+                                                                              .symmetric(
+                                                                              horizontal: 8,
+                                                                              vertical: 4),
+                                                                          decoration:
+                                                                              BoxDecoration(
+                                                                            color: purposeColor.withOpacity(isSelected
+                                                                                ? 0.2
+                                                                                : 0.1),
+                                                                            borderRadius:
+                                                                                BorderRadius.circular(12),
+                                                                            border:
+                                                                                Border.all(
+                                                                              color: purposeColor.withOpacity(isSelected ? 0.5 : 0.3),
+                                                                            ),
+                                                                          ),
+                                                                          child:
+                                                                              Text(
+                                                                            _formatCurrency(subAmount),
+                                                                            style:
+                                                                                TextStyle(
+                                                                              fontSize: 13,
+                                                                              fontWeight: FontWeight.w600,
+                                                                              color: purposeColor,
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    );
+                                                                  }).toList();
+
+                                                                  // Add a separator between different purposes
+                                                                  final separator = purposeIndex <
+                                                                          purposeList.length -
+                                                                              1
+                                                                      ? Container(
+                                                                          margin: const EdgeInsets
+                                                                              .symmetric(
+                                                                              vertical: 8),
+                                                                          height:
+                                                                              1,
+                                                                          color:
+                                                                              Colors.grey[300],
+                                                                        )
+                                                                      : const SizedBox
+                                                                          .shrink();
+
+                                                                  return [
+                                                                    headerCard,
+                                                                    ...subCards,
+                                                                    separator
+                                                                  ];
+                                                                }).toList(),
+                                                                // Add a separator between different purposes
+
+                                                                const SizedBox(
+                                                                  height: 42,
+                                                                ),
+                                                                Center(
+                                                                  child:
+                                                                      ElevatedButton
+                                                                          .icon(
+                                                                    style: ElevatedButton
+                                                                        .styleFrom(
+                                                                      backgroundColor:
+                                                                          Colors
+                                                                              .green,
+                                                                      foregroundColor:
+                                                                          Colors
+                                                                              .white,
+                                                                      padding: const EdgeInsets
+                                                                          .symmetric(
+                                                                          horizontal:
+                                                                              16,
+                                                                          vertical:
+                                                                              12),
+                                                                      shape:
+                                                                          RoundedRectangleBorder(
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(8),
+                                                                      ),
+                                                                    ),
+                                                                    onPressed:
+                                                                        () {
+                                                                      _proceedWithSelected();
+                                                                    },
+                                                                    icon: const Icon(
+                                                                        Icons
+                                                                            .payment,
+                                                                        size:
+                                                                            18),
+                                                                    label:
+                                                                        const Text(
+                                                                      "PROCEED WITH SELECTED",
+                                                                      style:
+                                                                          TextStyle(
+                                                                        fontWeight:
+                                                                            FontWeight.bold,
+                                                                        fontSize:
+                                                                            14,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 20),
+                            Container(
+                              key: _dataTableKey, // Add this key
+
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  columns: const [
+                                    DataColumn(label: Text('')),
+                                    DataColumn(label: Text('Purpose')),
+                                    DataColumn(label: Text('Amount')),
+                                    DataColumn(label: Text('Term')),
+                                    DataColumn(label: Text('Action')),
+                                  ],
+                                  rows: _paymentPurposes
+                                      .asMap()
+                                      .entries
+                                      .map((entry) {
+                                    final int index = entry.key;
+                                    final payment = entry.value;
+                                    final PaymentPurpose purpose =
+                                        payment['purpose'];
+
+                                    final double originalAmount =
+                                        payment['originalAmount'] as double;
+                                    final double currentAmount =
+                                        payment['currentAmount'] as double;
+
+                                    final String termId = payment['termId'] ??
+                                        purpose.termId ??
+                                        '';
+                                    final term = _termsMap[termId];
+                                    final termDisplay = term != null
+                                        ? '(${term.termName})'
+                                        : '(Unknown)';
+
+                                    // ✅ Get or create controller for this row
+                                    if (!_amountControllers
+                                        .containsKey(index)) {
+                                      _amountControllers[index] =
+                                          TextEditingController(
+                                        text:
+                                            (payment['currentAmount'] as double)
+                                                .toStringAsFixed(2),
+                                      );
+                                    }
+                                    final controller =
+                                        _amountControllers[index]!;
+                                    final Map<int, FocusNode> _focusNodes = {};
+                                    if (!_focusNodes.containsKey(index)) {
+                                      _focusNodes[index] = FocusNode();
+                                    }
+                                    final focusNode = _focusNodes[index]!;
+                                    return DataRow(
+                                      color:
+                                          payment['isRemainingArrears'] == true
+                                              ? WidgetStateProperty.all(
+                                                  Colors.orange.shade50)
+                                              : null,
+                                      cells: [
+                                        DataCell(
+                                          Row(
+                                            children: [
+                                              if (payment[
+                                                      'isRemainingArrears'] ==
+                                                  true)
+                                                const Icon(Icons.info_outline,
+                                                    size: 16,
+                                                    color: Colors.orange),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  payment['purpose']
+                                                      .paymentPurpose,
+                                                  style: payment[
+                                                              'isRemainingArrears'] ==
+                                                          true
+                                                      ? const TextStyle(
+                                                          fontStyle:
+                                                              FontStyle.italic,
+                                                          color: Colors.orange)
+                                                      : null,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        DataCell(Text(
+                                            payment['purpose'].paymentPurpose)),
+                                        // Get or create focus node
+
+                                        // Remove the timer maps and timer-related code
+
+                                        // Updated DataCell with check icon that stays visible once editing starts
+                                        DataCell(
+                                          Row(
+                                            children: [
+                                              SizedBox(
+                                                width: 100,
+                                                child: TextFormField(
+                                                  controller: controller,
+                                                  focusNode: _focusManager
+                                                      .getFocusNode(index),
+                                                  keyboardType:
+                                                      TextInputType.number,
+                                                  decoration: InputDecoration(
+                                                    prefixText: '\$',
+                                                    border:
+                                                        const OutlineInputBorder(),
+                                                    contentPadding:
+                                                        const EdgeInsets
+                                                            .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    errorText:
+                                                        payment['amountError'],
+                                                  ),
+                                                  onChanged: (value) {
+                                                    // Mark as editing when user types - icon appears and STAYS
+                                                    _startEditing(index);
+
+                                                    if (value.isEmpty) {
+                                                      payment['currentAmount'] =
+                                                          0.0;
+                                                      payment['amountError'] =
+                                                          null;
+                                                    } else {
+                                                      final double? newAmount =
+                                                          double.tryParse(
+                                                              value);
+                                                      if (newAmount == null) {
+                                                        payment['amountError'] =
+                                                            'Invalid amount';
+                                                      } else if (newAmount >
+                                                          originalAmount) {
+                                                        payment['amountError'] =
+                                                            'Cannot exceed \$${originalAmount.toStringAsFixed(2)}';
+                                                        payment['currentAmount'] =
+                                                            originalAmount;
+                                                        controller.text =
+                                                            originalAmount
+                                                                .toStringAsFixed(
+                                                                    2);
+                                                      } else if (newAmount <=
+                                                          0) {
+                                                        payment['amountError'] =
+                                                            'Amount must be greater than zero';
+                                                        payment['currentAmount'] =
+                                                            0.0;
+                                                      } else {
+                                                        payment['amountError'] =
+                                                            null;
+                                                        payment['currentAmount'] =
+                                                            newAmount;
+                                                      }
+                                                    }
+                                                    _pmAmountCtrl.text =
+                                                        _totalEntered
+                                                            .toStringAsFixed(2);
+                                                  },
+                                                  onTap: () {
+                                                    // Mark as editing when field is tapped - icon appears and STAYS
+                                                    _startEditing(index);
+
+                                                    controller.selection =
+                                                        TextSelection(
+                                                      baseOffset: 0,
+                                                      extentOffset: controller
+                                                          .text.length,
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              // Show check icon ONLY if:
+                                              // 1. This is not a remaining arrears item
+                                              // 2. The user has started editing this field (icon stays once appeared)
+                                              // 3. The entered amount is partial (not full amount)
+                                              if (payment['isRemainingArrears'] !=
+                                                      true &&
+                                                  _isEditingAmount[index] ==
+                                                      true &&
+                                                  payment['currentAmount'] >
+                                                      0 &&
+                                                  payment['currentAmount'] <
+                                                      originalAmount)
+                                                IconButton(
+                                                  icon: const Icon(
+                                                      Icons.check_circle,
+                                                      color: Colors.green),
+                                                  tooltip:
+                                                      'Confirm partial payment and split remaining',
+                                                  onPressed: () {
+                                                    final double newAmount =
+                                                        payment['currentAmount']
+                                                            as double;
+                                                    if (newAmount > 0 &&
+                                                        newAmount <
+                                                            originalAmount) {
+                                                      _splitPaymentOnAmountChange(
+                                                        index,
+                                                        newAmount,
+                                                        originalAmount,
+                                                        payment,
+                                                      );
+                                                      // Icon disappears only after split is confirmed
+                                                      _stopEditing(index);
+                                                    }
+                                                  },
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        DataCell(Text(termDisplay)),
+                                        DataCell(
+                                          IconButton(
+                                            icon: const Icon(Icons.cancel,
+                                                color: Colors.red),
+                                            tooltip: 'Remove this purpose',
+                                            onPressed: () {
+                                              setState(() {
+                                                // If this was a partial payment, restore the original amount to the purpose list
+                                                final currentAmt =
+                                                    payment['currentAmount']
+                                                        as double;
+                                                final originalAmt =
+                                                    payment['originalAmount']
+                                                        as double;
+
+                                                if (currentAmt < originalAmt &&
+                                                    payment['isRemainingArrears'] !=
+                                                        true) {
+                                                  // Restore the difference back to the purpose list
+                                                  final difference =
+                                                      originalAmt - currentAmt;
+                                                  _updateRemainingArrearsInPurposeList(
+                                                    payment['purpose'],
+                                                    payment['termId'],
+                                                    difference,
+                                                  );
+                                                }
+
+                                                // Dispose controller
+                                                _amountControllers[index]
+                                                    ?.dispose();
+                                                _amountControllers
+                                                    .remove(index);
+                                                _paymentPurposes
+                                                    .removeAt(index);
+                                                // Re-index remaining controllers
+                                                final newControllers = <int,
+                                                    TextEditingController>{};
+                                                for (int i = 0;
+                                                    i < _paymentPurposes.length;
+                                                    i++) {
+                                                  if (_amountControllers
+                                                      .containsKey(i)) {
+                                                    newControllers[i] =
+                                                        _amountControllers[i]!;
+                                                  } else if (_amountControllers
+                                                      .containsKey(i + 1)) {
+                                                    newControllers[i] =
+                                                        _amountControllers[
+                                                            i + 1]!;
+                                                  }
+                                                }
+                                                _amountControllers.clear();
+                                                _amountControllers
+                                                    .addAll(newControllers);
+                                                _reindexControllers();
+                                                _updateTotalEntered();
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16.0),
+                              child: Text(
+                                'Total Amount Entered: \$$_currency ${_totalEntered.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _paymentPurposeSection(),
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  "Change Settled?",
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      _changeSettled ? "YES" : "NO",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: _changeSettled
+                                            ? Colors.green
+                                            : Colors.red,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Switch(
+                                      key: ValueKey(_changeSettled),
+                                      value: _changeSettled,
+                                      activeColor: Colors.green,
+                                      inactiveThumbColor: Colors.red,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _changeSettled = value;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            ElevatedButton(
+                              onPressed: _confirmPayment,
+                              child: const Text('Confirm Payment'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_isProcessingPayment)
+            Positioned.fill(
+              child: AbsorbPointer(
+                absorbing: true, // Prevent all taps
+                child: Container(
+                  color: Colors.black.withOpacity(0.4), // Greyout overlay
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text(
+                          "Processing payment, please wait...",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    } else {
+      // If globalTermId is null, show an alternative UI or a message
+      return Scaffold(
+          appBar: AppBar(
+            title: const Text('No Selected Term Found'),
+          ),
+          body: const Center(
+            child: Text(
+              'No term is currently active. Either switch to an existing term or create a new term to proceed.',
+              style: TextStyle(
+                fontSize: 16.0, // Set font size
+                fontWeight: FontWeight.bold, // Set font weight
+                color: Colors.redAccent, // Set text color
+                letterSpacing: 1.2, // Set spacing between letters
+                height: 1.5, // Set line height (space between lines)
+              ),
+              textAlign: TextAlign.center, // Align text to the center
+            ),
+          ));
+    }
+  }

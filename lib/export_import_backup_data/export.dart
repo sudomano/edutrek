@@ -1,16 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/accounting_module_models/account_type.dart';
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
 import 'package:zitf_system/database/projects/project_item_batch_model.dart';
@@ -33,6 +37,7 @@ import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class ExportClassesPages extends StatefulWidget {
   @override
@@ -41,7 +46,11 @@ class ExportClassesPages extends StatefulWidget {
 
 class _ExportClassesPagesState extends State<ExportClassesPages> {
   int _selectedIndex = 0;
+  bool _isExporting = false;
 
+  // Add this StreamController declaration
+  final StreamController<String> _exportProgress =
+      StreamController<String>.broadcast();
   void _handleItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
@@ -77,8 +86,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   Box<ReceiptSnapshot>? _receiptSnapshotBox;
 
   Box<ExceptionalStudents>? _exceptionalStudentsBox;
-
-  bool _isExporting = false; // To track export status
+  Box<PaymentLog>? _paymentLogBox;
 
   @override
   void initState() {
@@ -124,6 +132,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
       _receiptSnapshotBox =
           await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
+      _paymentLogBox = await Hive.openBox<PaymentLog>('payment_log');
     } catch (e) {
       print('Error opening Hive boxes: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -132,116 +141,977 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     }
   }
 
+  // Classes Box
+  Future<void> _serializeClassesBox(IOSink sink) async {
+    if (_classesBox == null || _classesBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _classesBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_classToJson(values[i])));
+      } catch (e) {
+        print('Error serializing class item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+  // Teacher Payments Purposes Box
+  Future<void> _serializePaymentLogBox(IOSink sink) async {
+    if (_paymentLogBox == null || _paymentLogBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _paymentLogBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_paymentLogToJson(values[i])));
+      } catch (e) {
+        print('Error serializing payment log item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Teacher Payments Purposes Box
+  Future<void> _serializeTeacherPaymentsPurposesBox(IOSink sink) async {
+    if (_teacherPaymentsPurposesBox == null ||
+        _teacherPaymentsPurposesBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _teacherPaymentsPurposesBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_teacherPaymentsPurposeToJson(values[i])));
+      } catch (e) {
+        print('Error serializing teacher payment purpose item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Payment Purposes Box
+  Future<void> _serializePaymentPurposesBox(IOSink sink) async {
+    if (_paymentPurposesBox == null || _paymentPurposesBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _paymentPurposesBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_paymentPurposeToJson(values[i])));
+      } catch (e) {
+        print('Error serializing payment purpose item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Student Payments Box
+  Future<void> _serializeStudentPaymentsBox(IOSink sink) async {
+    if (_studentPaymentsBox == null || _studentPaymentsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _studentPaymentsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_studentPaymentToJson(values[i])));
+      } catch (e) {
+        print('Error serializing student payment item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Teacher Payments Box
+  Future<void> _serializeTeacherPaymentsBox(IOSink sink) async {
+    if (_teacherPaymentsBox == null || _teacherPaymentsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _teacherPaymentsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_teacherPaymentclassToJson(values[i])));
+      } catch (e) {
+        print('Error serializing teacher payment item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Students Box
+  Future<void> _serializeStudentsBox(IOSink sink) async {
+    if (_studentsBox == null || _studentsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _studentsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_studentInfoToJson(values[i])));
+      } catch (e) {
+        print('Error serializing student item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Withdrawals Box
+  Future<void> _serializeWithdrawalsBox(IOSink sink) async {
+    if (_withdrawalsBox == null || _withdrawalsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _withdrawalsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_withdrawalToJson(values[i])));
+      } catch (e) {
+        print('Error serializing withdrawal item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Teachers Box
+  Future<void> _serializeTeachersBox(IOSink sink) async {
+    if (_teachersBox == null || _teachersBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _teachersBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_teacherToJson(values[i])));
+      } catch (e) {
+        print('Error serializing teacher item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// School Box
+  Future<void> _serializeSchoolBox(IOSink sink) async {
+    if (_schoolBox == null || _schoolBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _schoolBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_schoolToJson(values[i])));
+      } catch (e) {
+        print('Error serializing school item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Terms Box
+  Future<void> _serializeTermsBox(IOSink sink) async {
+    if (_termsBox == null || _termsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _termsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_termsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing term item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Domains Box
+  Future<void> _serializeDomainsBox(IOSink sink) async {
+    if (_domainRecordBox == null || _domainRecordBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _domainRecordBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_domainsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing domain item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Users Box
+  Future<void> _serializeUsersBox(IOSink sink) async {
+    if (_userBox == null || _userBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _userBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_usersToJson(values[i])));
+      } catch (e) {
+        print('Error serializing user item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Accounts Box
+  Future<void> _serializeAccountsBox(IOSink sink) async {
+    if (_accountBox == null || _accountBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _accountBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_accountsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing account item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Assets Box
+  Future<void> _serializeAssetsBox(IOSink sink) async {
+    if (_assetBox == null || _assetBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _assetBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_assetsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing asset item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Projects Box
+  Future<void> _serializeProjectsBox(IOSink sink) async {
+    if (_projectBox == null || _projectBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _projectBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_projectsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing project item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Project Items Box
+  Future<void> _serializeProjectItemsBox(IOSink sink) async {
+    if (_projectItemBox == null || _projectItemBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _projectItemBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_projectItemsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing project item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Daily Activities Box
+  Future<void> _serializeDailyActivitiesBox(IOSink sink) async {
+    if (_dailyActivityBox == null || _dailyActivityBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _dailyActivityBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_daily_activitiesToJson(values[i])));
+      } catch (e) {
+        print('Error serializing daily activity item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Exceptions Box
+  Future<void> _serializeExceptionsBox(IOSink sink) async {
+    if (_exceptionalStudentsBox == null || _exceptionalStudentsBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _exceptionalStudentsBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_exceptionsToJson(values[i])));
+      } catch (e) {
+        print('Error serializing exception item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Batch Units Box
+  Future<void> _serializeBatchUnitsBox(IOSink sink) async {
+    if (_batchUnitBox == null || _batchUnitBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _batchUnitBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_batchUnitToJson(values[i])));
+      } catch (e) {
+        print('Error serializing batch unit item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Product Batches Box
+  Future<void> _serializeProductBatchesBox(IOSink sink) async {
+    if (_productBatchBox == null || _productBatchBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _productBatchBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_productBatchToJson(values[i])));
+      } catch (e) {
+        print('Error serializing product batch item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Project Item Prices Box
+  Future<void> _serializeProjectItemPricesBox(IOSink sink) async {
+    if (_projectItemPriceBox == null || _projectItemPriceBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _projectItemPriceBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_projectItemPriceToJson(values[i])));
+      } catch (e) {
+        print('Error serializing project item price item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Project Sale Transactions Box
+  Future<void> _serializeProjectSaleTransactionsBox(IOSink sink) async {
+    if (_projectSaleTransactionBox == null ||
+        _projectSaleTransactionBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _projectSaleTransactionBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_projectSaleTransactionToJson(values[i])));
+      } catch (e) {
+        print('Error serializing project sale transaction item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Batch Sell Units Box
+  Future<void> _serializeBatchSellUnitsBox(IOSink sink) async {
+    if (_batchSellUnitBox == null || _batchSellUnitBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _batchSellUnitBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_batchSellUnitToJson(values[i])));
+      } catch (e) {
+        print('Error serializing batch sell unit item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Payment Methods Box
+  Future<void> _serializePaymentMethodsBox(IOSink sink) async {
+    if (_paymentMethodBox == null || _paymentMethodBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _paymentMethodBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_paymentMethodToJson(values[i])));
+      } catch (e) {
+        print('Error serializing payment method item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
+// Receipt Snapshots Box
+  Future<void> _serializeReceiptSnapshotsBox(IOSink sink) async {
+    if (_receiptSnapshotBox == null || _receiptSnapshotBox!.isEmpty) {
+      sink.write('[]');
+      return;
+    }
+    sink.write('[');
+    final values = _receiptSnapshotBox!.values.toList();
+    for (var i = 0; i < values.length; i++) {
+      if (i > 0) sink.write(',');
+      try {
+        sink.write(jsonEncode(_receiptSnapshotToJson(values[i])));
+      } catch (e) {
+        print('Error serializing receipt snapshot item $i: $e');
+        sink.write('null');
+      }
+      if ((i + 1) % 100 == 0) await Future.delayed(Duration.zero);
+    }
+    sink.write(']');
+  }
+
   Future<void> exportHiveData() async {
     setState(() {
-      _isExporting = true; // Start exporting
+      _isExporting = true;
     });
 
     try {
-      // Serialize data
-      Map<String, dynamic> exportData = {
-        'classes': _serializeBox(_classesBox, _classToJson),
-        'teacher_payments_purposes': _serializeBox(
-            _teacherPaymentsPurposesBox, _teacherPaymentsPurposeToJson),
-        'payment_purposes':
-            _serializeBox(_paymentPurposesBox, _paymentPurposeToJson),
-        'student_payments':
-            _serializeBox(_studentPaymentsBox, _studentPaymentToJson),
-        'teacher_payments':
-            _serializeBox(_teacherPaymentsBox, _teacherPaymentclassToJson),
-        'students': _serializeBox(_studentsBox, _studentInfoToJson),
-        'withdrawals': _serializeBox(_withdrawalsBox, _withdrawalToJson),
-        'teachers': _serializeBox(_teachersBox, _teacherToJson),
-        'school': _serializeBox(_schoolBox, _schoolToJson),
-        'terms': _serializeBox(_termsBox, _termsToJson),
-        'domains': _serializeBox(_domainRecordBox, _domainsToJson),
-        'users': _serializeBox(_userBox, _usersToJson),
-        'accounts': _serializeBox(_accountBox, _accountsToJson),
-        'assets': _serializeBox(_assetBox, _assetsToJson),
-        'projects': _serializeBox(_projectBox, _projectsToJson),
-        'project_items': _serializeBox(_projectItemBox, _projectItemsToJson),
-        'daily_activities':
-            _serializeBox(_dailyActivityBox, _daily_activitiesToJson),
-        'exceptions': _serializeBox(_exceptionalStudentsBox, _exceptionsToJson),
-        'batch_units': _serializeBox(_batchUnitBox, _batchUnitToJson),
-        'product_batches': _serializeBox(_productBatchBox, _productBatchToJson),
-        'project_item_prices':
-            _serializeBox(_projectItemPriceBox, _projectItemPriceToJson),
-        'project_sale_transactions': _serializeBox(
-            _projectSaleTransactionBox, _projectSaleTransactionToJson),
-        'batch_sell_units':
-            _serializeBox(_batchSellUnitBox, _batchSellUnitToJson),
-        'payment_methods':
-            _serializeBox(_paymentMethodBox, _paymentMethodToJson),
-        'receipt_snapshots':
-            _serializeBox(_receiptSnapshotBox, _receiptSnapshotToJson),
-      };
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              StreamBuilder<String>(
+                stream: _exportProgress.stream,
+                builder: (context, snapshot) {
+                  return Text(snapshot.data ?? 'Preparing export...');
+                },
+              ),
+            ],
+          ),
+        ),
+      );
 
-      String jsonData = jsonEncode(exportData);
+      if (Platform.isAndroid) {
+        await _saveToAndroidDirect();
+      } else if (Platform.isWindows) {
+        final tempFile = await _createTempFile();
+        final IOSink sink = tempFile.openWrite();
 
-      if (Platform.isWindows) {
-        // **Windows Platform Handling**
+        sink.write('{');
 
-        // Use File Picker to select a save location
-        String? selectedPath = await FilePicker.platform.saveFile(
-          dialogTitle: 'Save Hive Data Backup',
-          fileName: 'hive_data_backup.json',
-          allowedExtensions: ['json'],
-          type: FileType.custom,
+        // Classes
+        _exportProgress.add('Exporting classes...');
+        sink.write('"classes":');
+        await _serializeClassesBox(sink);
+
+        //  Payment Logs
+        _exportProgress.add('Exporting teacher_payments_purposes...');
+        sink.write(',"teacher_payments_purposes":');
+        await _serializeTeacherPaymentsPurposesBox(sink);
+
+        // Teacher Payments Purposes
+        _exportProgress.add('Exporting payment_log...');
+        sink.write(',"payment_log":');
+        await _serializePaymentLogBox(sink);
+
+        // Payment Purposes
+        _exportProgress.add('Exporting payment_purposes...');
+        sink.write(',"payment_purposes":');
+        await _serializePaymentPurposesBox(sink);
+
+        // Student Payments
+        _exportProgress.add('Exporting student_payments...');
+        sink.write(',"student_payments":');
+        await _serializeStudentPaymentsBox(sink);
+
+        // Teacher Payments
+        _exportProgress.add('Exporting teacher_payments...');
+        sink.write(',"teacher_payments":');
+        await _serializeTeacherPaymentsBox(sink);
+
+        // Students
+        _exportProgress.add('Exporting students...');
+        sink.write(',"students":');
+        await _serializeStudentsBox(sink);
+
+        // Withdrawals
+        _exportProgress.add('Exporting withdrawals...');
+        sink.write(',"withdrawals":');
+        await _serializeWithdrawalsBox(sink);
+
+        // Teachers
+        _exportProgress.add('Exporting teachers...');
+        sink.write(',"teachers":');
+        await _serializeTeachersBox(sink);
+
+        // School
+        _exportProgress.add('Exporting school...');
+        sink.write(',"school":');
+        await _serializeSchoolBox(sink);
+
+        // Terms
+        _exportProgress.add('Exporting terms...');
+        sink.write(',"terms":');
+        await _serializeTermsBox(sink);
+
+        // Domains
+        _exportProgress.add('Exporting domains...');
+        sink.write(',"domains":');
+        await _serializeDomainsBox(sink);
+
+        // Users
+        _exportProgress.add('Exporting users...');
+        sink.write(',"users":');
+        await _serializeUsersBox(sink);
+
+        // Accounts
+        _exportProgress.add('Exporting accounts...');
+        sink.write(',"accounts":');
+        await _serializeAccountsBox(sink);
+
+        // Assets
+        _exportProgress.add('Exporting assets...');
+        sink.write(',"assets":');
+        await _serializeAssetsBox(sink);
+
+        // Projects
+        _exportProgress.add('Exporting projects...');
+        sink.write(',"projects":');
+        await _serializeProjectsBox(sink);
+
+        // Project Items
+        _exportProgress.add('Exporting project_items...');
+        sink.write(',"project_items":');
+        await _serializeProjectItemsBox(sink);
+
+        // Daily Activities
+        _exportProgress.add('Exporting daily_activities...');
+        sink.write(',"daily_activities":');
+        await _serializeDailyActivitiesBox(sink);
+
+        // Exceptions
+        _exportProgress.add('Exporting exceptions...');
+        sink.write(',"exceptions":');
+        await _serializeExceptionsBox(sink);
+
+        // Batch Units
+        _exportProgress.add('Exporting batch_units...');
+        sink.write(',"batch_units":');
+        await _serializeBatchUnitsBox(sink);
+
+        // Product Batches
+        _exportProgress.add('Exporting product_batches...');
+        sink.write(',"product_batches":');
+        await _serializeProductBatchesBox(sink);
+
+        // Project Item Prices
+        _exportProgress.add('Exporting project_item_prices...');
+        sink.write(',"project_item_prices":');
+        await _serializeProjectItemPricesBox(sink);
+
+        // Project Sale Transactions
+        _exportProgress.add('Exporting project_sale_transactions...');
+        sink.write(',"project_sale_transactions":');
+        await _serializeProjectSaleTransactionsBox(sink);
+
+        // Batch Sell Units
+        _exportProgress.add('Exporting batch_sell_units...');
+        sink.write(',"batch_sell_units":');
+        await _serializeBatchSellUnitsBox(sink);
+
+        // Payment Methods
+        _exportProgress.add('Exporting payment_methods...');
+        sink.write(',"payment_methods":');
+        await _serializePaymentMethodsBox(sink);
+
+        // Receipt Snapshots
+        _exportProgress.add('Exporting receipt_snapshots...');
+        sink.write(',"receipt_snapshots":');
+        await _serializeReceiptSnapshotsBox(sink);
+
+        sink.write('}');
+        await sink.flush();
+        await sink.close();
+
+        _exportProgress.add('Saving file...');
+        await _saveToWindows(tempFile);
+
+        // Delete temp file after saving
+        await tempFile.delete();
+      }
+
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup exported successfully!')),
         );
-
-        if (selectedPath != null) {
-          File file = File(selectedPath);
-          await file.writeAsString(jsonData);
-          print('Backup file saved successfully at: $selectedPath');
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Backup saved successfully at: $selectedPath'),
-          ));
-        } else {
-          print('File saving was canceled by the user.');
-        }
-      } else if (Platform.isAndroid) {
-        // **Android Platform Handling**
-        print('Running on Android. Saving to app-specific directory.');
-
-        // Get the app-specific directory
-        Directory? directory = await getExternalStorageDirectory();
-        if (directory == null) {
-          throw Exception('Unable to access external storage directory.');
-        }
-
-        String backupDirPath = '${directory.path}/backup';
-        Directory backupDir = Directory(backupDirPath);
-        if (!await backupDir.exists()) {
-          print('Creating backup directory at: $backupDirPath');
-          await backupDir.create(recursive: true);
-        }
-
-        String filePath = '$backupDirPath/hive_data_backup.json';
-        File file = File(filePath);
-
-        // Write the JSON data to the file
-        await file.writeAsString(jsonData);
-
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Backup saved successfully at: $filePath'),
-        ));
-      } else {
-        // **Other Platforms (Optional)**
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Export not supported on this platform.'),
-        ));
       }
     } catch (e) {
       print('Error exporting data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error exporting data: $e'),
-      ));
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting data: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        _isExporting = false; // Reset exporting status
-      });
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
+        });
+      }
     }
+  }
+
+  Future<void> _saveToAndroidDirect() async {
+    try {
+      // Create filename with timestamp
+      final dateFormat = DateFormat('yyyyMMdd_HHmmss');
+      final fileName =
+          'hive_data_backup_${dateFormat.format(DateTime.now())}.json';
+
+      // Save to Downloads folder - this works on Android 11+ without permission
+      String downloadsPath = '/storage/emulated/0/Download';
+      String savePath = '$downloadsPath/$fileName';
+
+      // Ensure Downloads directory exists
+      final Directory downloadsDir = Directory(downloadsPath);
+      if (!await downloadsDir.exists()) {
+        // If Downloads doesn't exist, use app's external storage
+        Directory? externalDir = await getExternalStorageDirectory();
+        if (externalDir == null) {
+          throw Exception('Unable to access external storage');
+        }
+        String backupDirPath = '${externalDir.path}/backup';
+        Directory backupDir = Directory(backupDirPath);
+        if (!await backupDir.exists()) {
+          await backupDir.create(recursive: true);
+        }
+        savePath = '$backupDirPath/$fileName';
+        print('Downloads folder not found, saving to: $savePath');
+      }
+
+      final File outputFile = File(savePath);
+
+      // Write directly to the file with buffered writing for large files
+      final IOSink sink = outputFile.openWrite(mode: FileMode.write);
+
+      _exportProgress.add('Writing JSON data...');
+
+      // Write JSON start
+      sink.write('{');
+
+      // Write all boxes directly to the file
+      _exportProgress.add('Exporting classes...');
+      sink.write('"classes":');
+      await _serializeClassesBox(sink);
+
+      _exportProgress.add('Exporting payment logs...');
+      sink.write(',"payment_log":');
+      await _serializePaymentLogBox(sink);
+
+      _exportProgress.add('Exporting teacher payments purposes...');
+      sink.write(',"teacher_payments_purposes":');
+      await _serializeTeacherPaymentsPurposesBox(sink);
+
+      _exportProgress.add('Exporting payment purposes...');
+      sink.write(',"payment_purposes":');
+      await _serializePaymentPurposesBox(sink);
+
+      _exportProgress.add('Exporting student payments...');
+      sink.write(',"student_payments":');
+      await _serializeStudentPaymentsBox(sink);
+
+      _exportProgress.add('Exporting teacher payments...');
+      sink.write(',"teacher_payments":');
+      await _serializeTeacherPaymentsBox(sink);
+
+      _exportProgress.add('Exporting students...');
+      sink.write(',"students":');
+      await _serializeStudentsBox(sink);
+
+      _exportProgress.add('Exporting withdrawals...');
+      sink.write(',"withdrawals":');
+      await _serializeWithdrawalsBox(sink);
+
+      _exportProgress.add('Exporting teachers...');
+      sink.write(',"teachers":');
+      await _serializeTeachersBox(sink);
+
+      _exportProgress.add('Exporting school...');
+      sink.write(',"school":');
+      await _serializeSchoolBox(sink);
+
+      _exportProgress.add('Exporting terms...');
+      sink.write(',"terms":');
+      await _serializeTermsBox(sink);
+
+      _exportProgress.add('Exporting domains...');
+      sink.write(',"domains":');
+      await _serializeDomainsBox(sink);
+
+      _exportProgress.add('Exporting users...');
+      sink.write(',"users":');
+      await _serializeUsersBox(sink);
+
+      _exportProgress.add('Exporting accounts...');
+      sink.write(',"accounts":');
+      await _serializeAccountsBox(sink);
+
+      _exportProgress.add('Exporting assets...');
+      sink.write(',"assets":');
+      await _serializeAssetsBox(sink);
+
+      _exportProgress.add('Exporting projects...');
+      sink.write(',"projects":');
+      await _serializeProjectsBox(sink);
+
+      _exportProgress.add('Exporting project items...');
+      sink.write(',"project_items":');
+      await _serializeProjectItemsBox(sink);
+
+      _exportProgress.add('Exporting daily activities...');
+      sink.write(',"daily_activities":');
+      await _serializeDailyActivitiesBox(sink);
+
+      _exportProgress.add('Exporting exceptions...');
+      sink.write(',"exceptions":');
+      await _serializeExceptionsBox(sink);
+
+      _exportProgress.add('Exporting batch units...');
+      sink.write(',"batch_units":');
+      await _serializeBatchUnitsBox(sink);
+
+      _exportProgress.add('Exporting product batches...');
+      sink.write(',"product_batches":');
+      await _serializeProductBatchesBox(sink);
+
+      _exportProgress.add('Exporting project item prices...');
+      sink.write(',"project_item_prices":');
+      await _serializeProjectItemPricesBox(sink);
+
+      _exportProgress.add('Exporting project sale transactions...');
+      sink.write(',"project_sale_transactions":');
+      await _serializeProjectSaleTransactionsBox(sink);
+
+      _exportProgress.add('Exporting batch sell units...');
+      sink.write(',"batch_sell_units":');
+      await _serializeBatchSellUnitsBox(sink);
+
+      _exportProgress.add('Exporting payment methods...');
+      sink.write(',"payment_methods":');
+      await _serializePaymentMethodsBox(sink);
+
+      _exportProgress.add('Exporting receipt snapshots...');
+      sink.write(',"receipt_snapshots":');
+      await _serializeReceiptSnapshotsBox(sink);
+
+      sink.write('}');
+      await sink.flush();
+      await sink.close();
+
+      // Verify file was created and has content
+      final File savedFile = File(savePath);
+      if (await savedFile.exists()) {
+        final fileSize = await savedFile.length();
+        final fileSizeInKB = (fileSize / 1024).toStringAsFixed(2);
+        final fileSizeInMB = (fileSize / (1024 * 1024)).toStringAsFixed(2);
+
+        String sizeText = fileSizeInKB;
+        if (fileSize > 1024 * 1024) {
+          sizeText = '$fileSizeInMB MB';
+        } else {
+          sizeText = '$fileSizeInKB KB';
+        }
+
+        print('Backup saved successfully! File size: $sizeText at: $savePath');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('✓ Backup saved to Downloads/$fileName ($sizeText)'),
+            duration: const Duration(seconds: 5),
+          ));
+        }
+      } else {
+        throw Exception('File was not created successfully');
+      }
+    } catch (e) {
+      print('Error saving backup to Android: $e');
+      throw Exception('Failed to save backup: $e');
+    }
+  }
+
+// Permission handling for Android
+  Future<bool> _requestStoragePermission() async {
+    if (Platform.isAndroid) {
+      // For Android 11+, we don't need storage permission for Downloads folder
+      if (await _isAndroid11OrAbove()) {
+        print('Android 11+: Using scoped storage, no permission needed');
+        return true;
+      }
+
+      // For older Android versions, request permission
+      bool permissionGranted = await Permission.storage.request().isGranted;
+      if (!permissionGranted) {
+        print('Storage permission denied');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _isAndroid11OrAbove() async {
+    if (Platform.isAndroid) {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      return androidInfo.version.sdkInt >= 30; // Android 11 = API 30
+    }
+    return false;
+  }
+
+  Future<void> _saveToWindows(File sourceFile) async {
+    String? selectedPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save Hive Data Backup',
+      fileName: 'hive_data_backup_${DateTime.now().format()}.json',
+      allowedExtensions: ['json'],
+      type: FileType.custom,
+    );
+    if (selectedPath != null) {
+      await sourceFile.copy(selectedPath);
+      print('Backup saved to: $selectedPath');
+    }
+  }
+
+// Helper methods
+  Future<File> _createTempFile() async {
+    final directory = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return File('${directory.path}/temp_export_$timestamp.json');
   }
 
   // Helper function to serialize data
@@ -250,6 +1120,31 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
     print('Serializing box: ${box?.name ?? 'Unknown'}');
     return box?.values.map((data) => toJson(data as T)).toList() ?? [];
   }
+
+// Convert PaymentLog to JSON
+  /// Convert PaymentLog to JSON with ALL fields including sync fields
+  Map<String, dynamic> _paymentLogToJson(PaymentLog log) => {
+        // Core fields
+        'receiptNumber': log.receiptNumber,
+        'studentName': log.studentName,
+        'className': log.className,
+        'dateTime': log.dateTime,
+        'receiptLines': log.receiptLines,
+        'parentName': log.parentName,
+        'parentPhone': log.parentPhone,
+
+        // ✅ Reprint tracking fields
+        'isReprint': log.isReprint ?? false,
+        'originalReceiptNumber': log.originalReceiptNumber,
+        'reprintCount': log.reprintCount ?? 0,
+
+        // ✅ Sync fields
+        'logId': log.logId,
+        'syncStatus': log.syncStatus ?? false,
+        'lastModified': log.lastModified?.toIso8601String(),
+        'operationType': log.operationType ?? 'none',
+        'modifiedFields': log.modifiedFields ?? [],
+      };
 
   Map<String, dynamic> _productBatchToJson(ProductBatch b) => {
         'batchCode': b.batchCode,
@@ -267,8 +1162,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'lastModified': b.lastModified?.toIso8601String(),
         'operationType': b.operationType,
         'units': b.units?.map((u) => _batchUnitToJson(u)).toList(),
-        'modifiedFields':
-            b.modifiedFields != null ? jsonEncode(b.modifiedFields) : null,
+        //'modifiedFields': b.modifiedFields,
       };
 
   Map<String, dynamic> _batchUnitToJson(BatchUnit u) => {
@@ -290,8 +1184,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': p.syncStatus,
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
-        'modifiedFields':
-            p.modifiedFields != null ? jsonEncode(p.modifiedFields) : null,
+        //'modifiedFields': p.modifiedFields,
       };
   Map<String, dynamic> _projectSaleTransactionToJson(
           ProjectSaleTransaction t) =>
@@ -348,8 +1241,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': t.syncStatus,
         'lastModified': t.lastModified?.toIso8601String(),
         'operationType': t.operationType,
-        'modifiedFields':
-            t.modifiedFields != null ? jsonEncode(t.modifiedFields) : null,
+        //'modifiedFields': t.modifiedFields,
       };
 
   Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit u) {
@@ -418,12 +1310,10 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': exc.syncStatus,
       'lastModified': exc.lastModified?.toIso8601String(),
       'operationType': exc.operationType,
-      'modifiedFields': exc.modifiedFields != null
-          ? jsonEncode(exc.modifiedFields) // JSON encode the list
-          : null,
-      'terms': exc.terms != null
-          ? jsonEncode(exc.terms) // JSON encode the list
-          : null,
+      'priorityFlag': exc.priorityFlag ?? 0,
+
+      //'modifiedFields': exc.modifiedFields,
+      'terms': exc.terms,
     };
   }
 
@@ -440,10 +1330,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'operationType': cls.operationType,
       'terms': cls.terms != null
           ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+          : null, //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -459,9 +1346,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -499,9 +1384,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
+      'terms': cls.terms,
       'exceptions': cls.exceptions != null
           ? jsonEncode(
               cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
@@ -509,9 +1392,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'isNewComer': cls.isNewComer,
       'isNewComerFrom': cls.isNewComerFrom?.toIso8601String(),
       'isNewComerUntil': cls.isNewComerUntil?.toIso8601String(),
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -532,9 +1413,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'operationType': cls.operationType,
       'username': cls.username,
       'role': cls.role,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -553,9 +1432,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -576,9 +1453,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
               cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
           : null,
       'forNewcomersOnly': cls.forNewcomersOnly,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -597,9 +1472,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
           ? jsonEncode(
               cls.associatedStaff) // Explicit JSON encode for associatedStaff
           : null,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -629,12 +1502,8 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'assignedClasses': cls.assignedClasses != null
           ? jsonEncode(cls.assignedClasses) // JSON encode the list
           : null,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      'terms': cls.terms,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -650,9 +1519,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -667,9 +1534,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'syncStatus': cls.syncStatus,
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
-      'modifiedFields': cls.modifiedFields != null
-          ? jsonEncode(cls.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -679,9 +1544,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': domain.syncStatus,
         'operationType': domain.operationType,
         'lastModified': domain.lastModified?.toIso8601String(),
-        'modifiedFields': domain.modifiedFields != null
-            ? jsonEncode(domain.modifiedFields) // JSON encode the list
-            : null,
+        //'modifiedFields': domain.modifiedFields,
       };
   Map<String, dynamic> _usersToJson(User user) => {
         'username': user.username,
@@ -697,9 +1560,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'id': user.id,
         'isLogged': user.isLogged,
         'userCode': user.userCode,
-        'modifiedFields': user.modifiedFields != null
-            ? jsonEncode(user.modifiedFields) // JSON encode the list
-            : null,
+        'email': user.email,
+        'assignedClasses': user.assignedClasses ?? [],
+        'isActive': user.isActive ?? true,
+        'createdAt': user.createdAt?.toIso8601String(),
+        'modifiedFields': user.modifiedFields,
       };
 
   Map<String, dynamic> _accountsToJson(Account acc) => {
@@ -712,9 +1577,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': acc.syncStatus,
         'lastModified': acc.lastModified?.toIso8601String(),
         'isALiquidAccount': acc.isALiquidAccount,
-        'modifiedFields': acc.modifiedFields != null
-            ? jsonEncode(acc.modifiedFields) // JSON encode the list
-            : null,
+        //'modifiedFields': acc.modifiedFields,
       };
 
   Map<String, dynamic> _assetsToJson(Asset asset) {
@@ -763,9 +1626,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'hasDebitBalance': asset.hasDebitBalance,
       'hasCreditBalance': asset.hasCreditBalance,
       'option': asset.option,
-      'modifiedFields': asset.modifiedFields != null
-          ? jsonEncode(asset.modifiedFields) // JSON encode the list
-          : null,
+      //'modifiedFields': asset.modifiedFields,
     };
   }
 
@@ -779,10 +1640,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': p.syncStatus,
         'lastModified': p.lastModified?.toIso8601String(),
         'operationType': p.operationType,
-        'modifiedFields':
-            p.modifiedFields != null ? jsonEncode(p.modifiedFields) : null,
-
-        // ✅ NEW FIELDS
+        //'modifiedFields': p.modifiedFields,
         'projectType': p.projectType,
         'participationType': p.participationType,
         'studentPayable': p.studentPayable,
@@ -800,8 +1658,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': i.syncStatus,
         'lastModified': i.lastModified?.toIso8601String(),
         'operationType': i.operationType,
-        'modifiedFields':
-            i.modifiedFields != null ? jsonEncode(i.modifiedFields) : null,
+        //'modifiedFields': i.modifiedFields,
       };
 
   Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
@@ -814,9 +1671,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'syncStatus': a.syncStatus,
         'lastModified': a.lastModified?.toIso8601String(),
         'operationType': a.operationType,
-        'modifiedFields': a.modifiedFields != null
-            ? jsonEncode(a.modifiedFields) // JSON encode the list
-            : null,
+        //'modifiedFields': a.modifiedFields,
       };
 
   @override
@@ -882,31 +1737,24 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   @override
   void dispose() {
     super.dispose();
-    // Close Hive boxes if necessary
-    _classesBox?.close();
-    _teacherPaymentsPurposesBox?.close();
-    _paymentPurposesBox?.close();
-    _studentPaymentsBox?.close();
-    _teacherPaymentsBox?.close();
-    _studentsBox?.close();
-    _withdrawalsBox?.close();
-    _teachersBox?.close();
-    _schoolBox?.close();
-    _termsBox?.close();
-    _domainRecordBox?.close();
-    _userBox?.close();
-    _accountBox?.close();
-    _assetBox?.close();
-    _projectBox?.close();
-    _projectItemBox?.close();
-    _dailyActivityBox?.close();
-    _exceptionalStudentsBox?.close();
-    _batchUnitBox?.close();
-    _productBatchBox?.close();
-    _projectItemPriceBox?.close();
-    _projectSaleTransactionBox?.close();
-    _batchSellUnitBox?.close();
-    _paymentMethodBox?.close();
-    _receiptSnapshotBox?.close();
   }
+}
+
+// Extension for date formatting
+extension DateTimeFormat on DateTime {
+  String format() {
+    return '${year}_${month.toString().padLeft(2, '0')}_${day.toString().padLeft(2, '0')}_${hour.toString().padLeft(2, '0')}${minute.toString().padLeft(2, '0')}${second.toString().padLeft(2, '0')}';
+  }
+}
+
+class BoxExportInfo<T> {
+  final String name;
+  final Box<T>? box;
+  final Map<String, dynamic> Function(T) toJson;
+
+  BoxExportInfo({
+    required this.name,
+    required this.box,
+    required this.toJson,
+  });
 }

@@ -1,0 +1,24 @@
+-- DROP TABLE IF EXISTS `batch_units`;
+CREATE TABLE `batch_units` (
+  -- Primary Key
+  `unit_batch_code` varchar(50) NOT NULL,
+  
+  -- Foreign Key (for reference, not used in client sync)
+  `batch_code` varchar(50) DEFAULT NULL,
+  
+  -- Core Fields
+  `level` varchar(50) DEFAULT NULL,
+  `units_per_package` decimal(15,4) DEFAULT NULL,
+  `quantity` int(11) DEFAULT NULL,
+  `buying_price` decimal(15,2) DEFAULT NULL,
+  
+  -- ✅ NEW: Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`unit_batch_code`),
+  KEY `idx_batch_code` (`batch_code`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

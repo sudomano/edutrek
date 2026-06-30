@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/screens/network_settings/network_settings_screen.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -27,6 +28,17 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       ),
       actions: [
         ...(actions ?? []), // ✅ Custom passed actions (if any)
+        IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => const NetworkSettingsScreen()),
+            );
+          },
+          tooltip: 'Network Settings',
+        ),
         IconButton(
           icon: const Icon(
             Icons.home,

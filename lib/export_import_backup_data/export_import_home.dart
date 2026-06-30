@@ -133,6 +133,7 @@ class _MyPageState extends State<ExportImportHome> {
                                               target: ExportClassesPages(),
                                               isLargeScreen: true,
                                             ),
+
                                             ElevatedCard(
                                               icon: Icons.people,
                                               text:
@@ -152,6 +153,7 @@ class _MyPageState extends State<ExportImportHome> {
                                               target: ExportClassesPages(),
                                               isLargeScreen: false,
                                             ),
+
                                             ElevatedCard(
                                               icon: Icons.people,
                                               text:

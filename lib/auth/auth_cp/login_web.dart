@@ -1,10 +1,16 @@
+// login_web.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/auth/auth_cp/platform_auth_services.dart';
 import 'package:zitf_system/auth/auth_cp/school_interface.dart';
+import 'package:zitf_system/auth/userdb.dart';
 
 class PlatformAuthServiceWeb implements PlatformAuthService {
+  // ✅ Cache for logged-in user
+  User? _cachedLoggedInUser;
+
   @override
   Future<bool> syncUsersFromHostIfClient({bool force = false}) async {
     // 🌐 Web does not sync local users
@@ -45,6 +51,30 @@ class PlatformAuthServiceWeb implements PlatformAuthService {
       await prefs.setString('role', data['role'] ?? '');
       await prefs.setString('userCode', data['userCode'] ?? '');
 
+      // ✅ Store user info
+      await prefs.setString('logged_in_username', data['username'] ?? '');
+      await prefs.setString('logged_in_role', data['role'] ?? '');
+      await prefs.setString('logged_in_email', data['email'] ?? '');
+      await prefs.setString('logged_in_phone', data['phone'] ?? '');
+      await prefs.setStringList('logged_in_assigned_classes', []);
+      await prefs.setBool('logged_in_is_active', true);
+
+      // ✅ Create a user object for caching
+      _cachedLoggedInUser = User(
+        username: data['username'] ?? '',
+        password: '',
+        role: data['role'] ?? '',
+        securityQuestions: [],
+        securityAnswers: [],
+        phone: data['phone'] ?? '',
+        email: data['email'] ?? '',
+        userCode: data['userCode'] ?? '',
+        isLogged: true,
+        isActive: true,
+        assignedClasses: [],
+        createdAt: DateTime.now(),
+      );
+
       return true;
     } catch (e) {
       print('Web login error: $e');
@@ -62,6 +92,7 @@ class PlatformAuthServiceWeb implements PlatformAuthService {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    _cachedLoggedInUser = null;
   }
 
   @override
@@ -71,5 +102,62 @@ class PlatformAuthServiceWeb implements PlatformAuthService {
       DummySchool(name: 'Bilaal College'),
       DummySchool(name: 'Sunrise Academy'),
     ];
+  }
+
+  // ==============================
+  // 👤 GET LOGGED IN USER
+  // ==============================
+  @override
+  Future<User?> getLoggedInUser() async {
+    try {
+      // ✅ First check cache
+      if (_cachedLoggedInUser != null) {
+        return _cachedLoggedInUser;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('logged_in_username');
+
+      if (username == null || username.isEmpty) {
+        return null;
+      }
+
+      // For web, reconstruct from preferences
+      final role = prefs.getString('logged_in_role') ?? '';
+      final email = prefs.getString('logged_in_email') ?? '';
+      final phone = prefs.getString('logged_in_phone') ?? '';
+      final assignedClasses =
+          prefs.getStringList('logged_in_assigned_classes') ?? [];
+      final isActive = prefs.getBool('logged_in_is_active') ?? true;
+
+      final user = User(
+        username: username,
+        password: '',
+        role: role,
+        securityQuestions: [],
+        securityAnswers: [],
+        phone: phone,
+        email: email,
+        userCode: prefs.getString('userCode') ?? '',
+        isLogged: true,
+        isActive: isActive,
+        assignedClasses: assignedClasses,
+        createdAt: DateTime.now(),
+      );
+
+      _cachedLoggedInUser = user;
+      return user;
+    } catch (e) {
+      debugPrint('❌ Error getting web logged-in user: $e');
+      return null;
+    }
+  }
+
+  // ==============================
+  // 👤 GET LOGGED IN USER (SYNC)
+  // ==============================
+  @override
+  User? getLoggedInUserSync() {
+    return _cachedLoggedInUser;
   }
 }

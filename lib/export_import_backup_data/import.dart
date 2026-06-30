@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +12,7 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
+import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/packaging_level.dart';
 import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
@@ -45,7 +47,9 @@ class ImportClassesPages extends StatefulWidget {
 
 class _ImportClassesPagesState extends State<ImportClassesPages> {
   int _selectedIndex = 0;
-
+// Add progress stream controller for import progress
+  final StreamController<String> _importProgress =
+      StreamController<String>.broadcast();
   void _handleItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
@@ -81,6 +85,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
   Box<BatchSellUnit>? _batchSellUnitBox;
   Box<PaymentMethod>? _paymentMethodBox;
   Box<ReceiptSnapshot>? _receiptSnapshotBox;
+  Box<PaymentLog>? _paymentLogBox;
 
   bool _isImporting = false; // To track import status
 
@@ -127,6 +132,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
     _receiptSnapshotBox =
         await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
+    _paymentLogBox = await Hive.openBox<PaymentLog>('payment_log');
   }
 
   Future<void> importHiveData() async {
@@ -140,11 +146,27 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           .pickFiles(type: FileType.custom, allowedExtensions: ['json']);
       if (result != null) {
         String filePath = result.files.single.path!;
-        String jsonData = await File(filePath).readAsString();
+        String jsonData;
+        _importProgress.add('Reading JSON file...');
+        jsonData = await File(filePath).readAsString();
         Map<String, dynamic> importData = jsonDecode(jsonData);
 
         // Clear existing data (optional)
-        await _clearHiveData();
+
+        _importProgress.add('Clearing existing data...');
+
+        // Clear existing data (optional - ask user first)
+        bool? shouldClear = await _showClearDataDialog();
+        if (shouldClear == true) {
+          await _clearHiveData();
+          _importProgress.add('Existing data cleared.');
+        } else if (shouldClear == null) {
+          // User cancelled
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+
+        _importProgress.add('Importing data...');
 
         // Deserialize and save data
         await _deserializeAndSave(
@@ -200,9 +222,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             _paymentMethodFromJson, _paymentMethodBox);
         await _deserializeAndSave(importData['receipt_snapshots'],
             _receiptSnapshotFromJson, _receiptSnapshotBox);
+        await _deserializeAndSave(
+            importData['payment_log'], _paymentLogFromJson, _paymentLogBox);
+
+        _importProgress.add('Import completed successfully!');
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Data imported successfully.'),
+          backgroundColor: Colors.green,
         ));
       } else {
         print('File selection canceled.');
@@ -215,6 +242,64 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         _isImporting = false; // Reset importing status
       });
     }
+  }
+
+  // Show dialog to ask if user wants to clear existing data
+  Future<bool?> _showClearDataDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Existing Data?'),
+        content: const Text(
+          'Do you want to clear all existing data before importing?\n\n'
+          '• Yes: Clear existing data and import new data\n'
+          '• No: Merge with existing data (may cause duplicates)\n'
+          '• Cancel: Cancel import',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Yes (Clear All)'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Update the build method to show progress dialog during import
+  Future<void> _importWithProgress() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            StreamBuilder<String>(
+              stream: _importProgress.stream,
+              builder: (context, snapshot) {
+                return Text(snapshot.data ?? 'Preparing import...');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await importHiveData();
+
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _clearHiveData() async {
@@ -243,6 +328,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     await _batchSellUnitBox?.clear();
     await _paymentMethodBox?.clear();
     await _receiptSnapshotBox?.clear();
+    await _paymentLogBox?.clear();
   }
 
   Future<void> _deserializeAndSave<T>(List<dynamic>? data,
@@ -272,6 +358,40 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
     return [];
   }
 
+// Create PaymentLog from JSON
+  /// Convert JSON to PaymentLog with ALL fields including sync fields
+  PaymentLog _paymentLogFromJson(Map<String, dynamic> json) => PaymentLog(
+        // Core fields
+        receiptNumber: json['receiptNumber'] as int? ?? 0,
+        studentName: json['studentName'] as String? ?? '',
+        className: json['className'] as String? ?? '',
+        dateTime:
+            json['dateTime'] as String? ?? DateTime.now().toIso8601String(),
+        receiptLines: (json['receiptLines'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [],
+        parentName: json['parentName'] as String?,
+        parentPhone: json['parentPhone'] as String?,
+
+        // ✅ Reprint tracking fields
+        isReprint: json['isReprint'] as bool? ?? false,
+        originalReceiptNumber: json['originalReceiptNumber'] as String?,
+        reprintCount: json['reprintCount'] as int? ?? 0,
+
+        // ✅ Sync fields
+        logId: json['logId'] as String?,
+        syncStatus: json['syncStatus'] as bool? ?? false,
+        lastModified: json['lastModified'] != null
+            ? DateTime.tryParse(json['lastModified'] as String)
+            : null,
+        operationType: json['operationType'] as String? ?? 'none',
+        modifiedFields: (json['modifiedFields'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            [],
+      );
+
   ProductBatch _productBatchFromJson(Map<String, dynamic> json) => ProductBatch(
         batchCode: json['batchCode'],
         productCode: json['productCode'],
@@ -296,7 +416,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
         units: (json['units'] as List?)
             ?.map((e) => _batchUnitFromJson(e))
             .toList(),
@@ -325,7 +445,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
       );
 
   ProjectSaleTransaction _projectSaleTransactionFromJson(
@@ -388,7 +508,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -407,8 +527,8 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.tryParse(json["last_modified"])
           : null,
       operationType: json["operation_type"],
-      modifiedFields:
-          (json["modified_fields"] as List?)?.map((e) => e.toString()).toList(),
+      //modifiedFields:
+      // (json["modified_fields"] as List?)?.map((e) => e.toString()).toList(),
       baseUnitsPerSellUnit:
           (json["base_units_per_sell_unit"] as num?)?.toDouble(),
       baseUnit: json["base_unit"],
@@ -468,10 +588,13 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
       terms: json['terms'] != null
-          ? List<String>.from(jsonDecode(json['terms']))
+          ? (json['terms'] is String
+              ? List<String>.from(jsonDecode(json['terms']))
+              : List<String>.from(json['terms']))
           : null,
+      priorityFlag: json['priorityFlag'] ?? 0,
     );
   }
 
@@ -489,9 +612,11 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
       operationType: json['operationType'],
       terms: json['terms'] != null
-          ? List<String>.from(jsonDecode(json['terms']))
+          ? (json['terms'] is String
+              ? List<String>.from(jsonDecode(json['terms']))
+              : List<String>.from(json['terms']))
           : null,
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -509,7 +634,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -555,7 +680,9 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
       operationType: json['operationType'],
       terms: json['terms'] != null
-          ? List<String>.from(jsonDecode(json['terms']))
+          ? (json['terms'] is String
+              ? List<String>.from(jsonDecode(json['terms']))
+              : List<String>.from(json['terms']))
           : null,
       exceptions: json['exceptions'] != null
           ? (jsonDecode(json['exceptions']) as List<dynamic>)
@@ -569,7 +696,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       isNewComerUntil: json['isNewComerUntil'] != null
           ? DateTime.parse(json['isNewComerUntil'])
           : null,
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -592,7 +719,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       operationType: json['operationType'],
       username: json['username'],
       role: json['role'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -613,7 +740,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -636,7 +763,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
               .toList()
           : null,
       forNewcomersOnly: json['forNewcomersOnly'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -656,7 +783,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null, // Handle nullable dates
       operationType: json['operationType'] ?? '',
       associatedStaff: _decodeToList(json['associatedStaff']),
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
 
 // Default empty string
     );
@@ -704,9 +831,11 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       operationType: json['operationType'],
       assignedClasses: _decodeToList(json['assignedClasses']),
       terms: json['terms'] != null
-          ? List<String>.from(jsonDecode(json['terms']))
+          ? (json['terms'] is String
+              ? List<String>.from(jsonDecode(json['terms']))
+              : List<String>.from(json['terms']))
           : null,
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -730,7 +859,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
 
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
       // Matches 'operationType'
     );
   }
@@ -761,7 +890,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
 
       operationType: json['operationType'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -773,7 +902,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         lastModified: json['lastModified'] != null
             ? DateTime.parse(json['lastModified'])
             : null,
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
       );
 
   User _usersFromJson(Map<String, dynamic> json) => User(
@@ -792,7 +921,15 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         id: json['id'],
         isLogged: json['isLogged'],
         userCode: json['userCode'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        email: json['email'],
+        assignedClasses: json['assignedClasses'] != null
+            ? List<String>.from(json['assignedClasses'])
+            : [],
+        isActive: json['isActive'] ?? true,
+        createdAt: json['createdAt'] != null
+            ? DateTime.parse(json['createdAt'])
+            : null,
+        modifiedFields: json['modifiedFields'],
       );
 
   Account _accountsFromJson(Map<String, dynamic> json) => Account(
@@ -807,7 +944,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         isALiquidAccount: json['isALiquidAccount'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
       );
 
   Asset _assetsFromJson(Map<String, dynamic> json) {
@@ -877,7 +1014,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       hasDebitBalance: json['hasDebitBalance'],
       hasCreditBalance: json['hasCreditBalance'],
       option: json['option'],
-      modifiedFields: parseStringList(json['modifiedFields']),
+      //modifiedFields: json['modifiedFields'],
     );
   }
 
@@ -893,7 +1030,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
 
         // ✅ NEW REQUIRED FIELDS
         projectType: json['projectType'] ?? 'sales',
@@ -915,7 +1052,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
       );
 
   DailyActivity _daily_activitiesFromJson(Map<String, dynamic> json) =>
@@ -931,7 +1068,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['lastModified'])
             : null,
         operationType: json['operationType'],
-        modifiedFields: parseStringList(json['modifiedFields']),
+        //modifiedFields: json['modifiedFields'],
       );
 
   @override
@@ -970,15 +1107,17 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
                     ? null
                     : () async {
                         print('import button clicked.');
-                        await importHiveData();
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(
-                          content: Text(
-                              'All records have been imported successfully.'),
-                        ));
+                        await _importWithProgress();
                       },
                 child: _isImporting
-                    ? const CircularProgressIndicator(color: Colors.white)
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.0,
+                        ),
+                      )
                     : const Text('Import All Database Records'),
               ),
             ),

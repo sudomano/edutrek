@@ -1,0 +1,33 @@
+
+//////////////////////////////school/////////////////////////////
+
+-- DROP TABLE IF EXISTS `school`;
+CREATE TABLE `school` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `schoolCode` varchar(200) DEFAULT NULL,
+  
+  -- School Information Fields (matching client exactly)
+  `schoolName` varchar(255) DEFAULT NULL,
+  `schoolAddress` varchar(255) DEFAULT NULL,
+  `schoolPhoneNumber` varchar(20) DEFAULT NULL,
+  `schoolEmail` varchar(255) DEFAULT NULL,
+  `schoolLogoPath` varchar(500) DEFAULT NULL, -- ✅ NEW FIELD
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_schoolCode` (`schoolCode`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

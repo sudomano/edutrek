@@ -1,0 +1,47 @@
+-- DROP TABLE IF EXISTS `teachers`;
+CREATE TABLE `teachers` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `IdNumber` varchar(255) NOT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Personal Information
+  `name` varchar(255) NOT NULL,
+  `surname` varchar(255) NOT NULL,
+  `gender` varchar(50) NOT NULL,
+  `dateOfBirth` date NOT NULL,
+  `phoneNumber` varchar(50) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `address` text NOT NULL,
+  
+  -- Employment Information
+  `hireDate` date NOT NULL,
+  `qualifications` text NOT NULL,
+  `employmentStatus` varchar(100) NOT NULL,
+  
+  -- Class Assignment
+  `assignedClass` varchar(255) DEFAULT NULL,
+  `assignedClasses` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL, -- ✅ NEW FIELD
+  `isPaid` tinyint(1) DEFAULT 1,
+  `paymentAmount` double NOT NULL,
+  `paymentDate` datetime DEFAULT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `terms` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_IdNumber` (`IdNumber`),
+  KEY `idx_name` (`name`, `surname`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

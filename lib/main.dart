@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zitf_system/admin/device_few_settings.dart';
 import 'package:zitf_system/admin/forgotten.dart';
 import 'package:zitf_system/admin/login_screen.dart';
 import 'package:zitf_system/auth/crud_auth/crud_auth_home.dart';
 import 'package:zitf_system/auth/crud_auth/dev_login.dart';
+import 'package:zitf_system/auth/crud_auth/developer_device_few_settings.dart';
 import 'package:zitf_system/auth/crud_auth/secretary/view_secretary.dart';
 import 'package:zitf_system/auth/crud_auth/view_admin_auth.dart';
 import 'package:zitf_system/auth/update_auth.dart';
@@ -14,6 +18,13 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/auto_logout_timer/auto_logou_timer.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
+import 'package:zitf_system/database/id_assignment_log.dart';
+import 'package:zitf_system/database/id_client_reservation.dart';
+import 'package:zitf_system/database/id_counter.dart';
+import 'package:zitf_system/database/id_lock.dart';
+import 'package:zitf_system/database/id_range.dart';
+import 'package:zitf_system/database/id_sync_status.dart';
+import 'package:zitf_system/database/network_utils/network_settings.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/packaging_level.dart';
@@ -29,6 +40,7 @@ import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
 import 'package:zitf_system/database/projects/stock_unit_type.dart';
 import 'package:zitf_system/database/projects/unitbatching.dart';
 import 'package:zitf_system/database/school_info.dart';
+import 'package:zitf_system/database/settings.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
@@ -47,10 +59,13 @@ import 'package:zitf_system/flutter_codes_for_a_restful_api/data_sync/classes_fi
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/projects/projects_home.dart';
 import 'package:zitf_system/reusable_codes/auto_logout_user_when_app_in_background/auto_logout_user_when_app_in_background.dart';
+import 'package:zitf_system/server/save_gateway_to_shared_prefs.dart';
+import 'package:zitf_system/services/payments_id_service.dart';
 
 import 'package:zitf_system/settings/developer_options/developer_home.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/device_role_settings.dart';
 import 'package:zitf_system/settings/developer_options/domainConfigs/ip_address_settings.dart';
+import 'package:zitf_system/student_payments/id_service.dart.dart';
 import 'package:zitf_system/terms/term_switcher.dart';
 import 'package:zitf_system/welcome/welcome_admin.dart';
 import 'package:zitf_system/welcome/welcome_secretary.dart';
@@ -77,25 +92,6 @@ void main() async {
       ),
     );
     return;
-  }
-
-  final role = await getDeviceRole();
-
-  if (role == null) {
-    await Hive.initFlutter(); // temporary minimal init
-    runApp(const MaterialApp(
-      home: RoleSelectionScreen(isLoggedIn: false),
-    ));
-    return;
-  }
-
-  await HiveBootstrap.initialize(role);
-
-// Hive initialization for host
-  try {
-    await Hive.openBox('financial_position_box');
-  } catch (e) {
-    print("Error opening financial_position_box: $e");
   }
 
   Hive.registerAdapter(StudentAdapter());
@@ -127,6 +123,43 @@ void main() async {
   Hive.registerAdapter(PackagingLevelAdapter());
   Hive.registerAdapter(PaymentMethodAdapter());
   Hive.registerAdapter(ReceiptSnapshotAdapter());
+  Hive.registerAdapter(NetworkSettingsAdapter());
+  Hive.registerAdapter(SettingsAdapter()); // ✅ Register Settings adapter
+  Hive.registerAdapter(IdCounterAdapter());
+  Hive.registerAdapter(IdLockAdapter());
+  Hive.registerAdapter(IdAssignmentLogAdapter());
+  Hive.registerAdapter(ClientIdReservationAdapter());
+  Hive.registerAdapter(IdRangeAdapter());
+  Hive.registerAdapter(IdSyncStatusAdapter());
+  final role = await getDeviceRole();
+
+  if (role == null) {
+    await Hive.initFlutter(); // temporary minimal init
+    runApp(const MaterialApp(
+      home: RoleSelectionScreen(isLoggedIn: false),
+    ));
+    return;
+  }
+
+  await loadLastTermId();
+
+  await HiveBootstrap.initialize(role);
+  if (role == DeviceRole.client) {
+    print('🌐 CLIENT BOOTSTRAP: syncing network model...');
+
+    await Hive.openBox<NetworkSettings>('network_settings_box');
+
+    final ip = await saveGatewayToPrefs();
+
+    print('🎯 CLIENT BOOTSTRAP host_ip: $ip');
+  }
+
+// Hive initialization for host
+  try {
+    await Hive.openBox('financial_position_box');
+  } catch (e) {
+    print("Error opening financial_position_box: $e");
+  }
 
   final prefs = await SharedPreferences.getInstance();
 
@@ -188,6 +221,15 @@ class HiveService {
     await Hive.openBox<BatchUnit>('batch_units');
     await Hive.openBox<PaymentMethod>('payment_methods');
     await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
+    await Hive.openBox<NetworkSettings>('network_settings_box');
+    await Hive.openBox<Settings>('settings'); // ✅ Open settings box
+
+    await IdService().initialize();
+
+    // Start periodic cleanup
+    Timer.periodic(const Duration(days: 1), (timer) {
+      IdService().cleanupOldLogs();
+    });
   }
 }
 
@@ -416,6 +458,9 @@ class _MyAppState extends State<MyApp> {
           '/home': (context) => const HomeScreen(),
           '/homedeveloper': (context) => ViewSecurityScreen(),
           '/forgot': (context) => ForgottenPasswordScreen(),
+          '/device_few_settings': (context) => DeviceFewSettingsScreen(),
+          '/developer_device_few_settings': (context) =>
+              DeveloperDeviceFewSettingsScreen(),
           '/admin': (context) => EditSecurityScreen(),
           '/sync': (context) => const ClassesFinal(),
           '/secretary': (context) => ViewSecretaryScreen(),

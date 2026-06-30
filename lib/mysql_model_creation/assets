@@ -1,0 +1,69 @@
+-- DROP TABLE IF EXISTS `assets`;
+CREATE TABLE `assets` (
+  -- Primary Key
+  `assetCode` varchar(255) NOT NULL,
+  
+  -- General Asset Information
+  `id` int(11) DEFAULT NULL,
+  `assetName` varchar(255) DEFAULT NULL,
+  `assetType` varchar(100) DEFAULT NULL,
+  `assetSubType` varchar(100) DEFAULT NULL,
+  `assetSerialNo` varchar(255) DEFAULT NULL,
+  
+  -- Acquisition
+  `acquisitionDate` datetime DEFAULT NULL,
+  `acquisitionCost` double DEFAULT NULL,
+  `acquisitionMethod` varchar(100) DEFAULT NULL,
+  
+  -- Location & Tracking
+  `department` varchar(100) DEFAULT NULL,
+  `location` varchar(100) DEFAULT NULL,
+  
+  -- Depreciation & Valuation
+  `depreciationRate` double DEFAULT NULL,
+  `depreciationMethod` varchar(100) DEFAULT NULL,
+  `lastDepreciationDate` datetime DEFAULT NULL,
+  `accumulatedDepreciation` double DEFAULT NULL,
+  `bookValue` double DEFAULT NULL,
+  `isImpaired` tinyint(1) DEFAULT NULL,
+  `impairmentLoss` double DEFAULT NULL,
+  `revaluationDate` datetime DEFAULT NULL,
+  `revaluationAmount` double DEFAULT NULL,
+  
+  -- Maintenance & Improvement
+  `lastMaintenanceDate` datetime DEFAULT NULL,
+  `maintenanceCost` double DEFAULT NULL,
+  `maintenanceDescription` text DEFAULT NULL,
+  `capitalImprovementCost` double DEFAULT NULL,
+  `capitalImprovementDescription` text DEFAULT NULL,
+  
+  -- Disposal
+  `disposalDate` datetime DEFAULT NULL,
+  `disposalProceeds` double DEFAULT NULL,
+  `disposalReason` text DEFAULT NULL,
+  `gainOrLossOnDisposal` double DEFAULT NULL,
+  
+  -- Leasing
+  `isLeased` tinyint(1) DEFAULT NULL,
+  `leaseType` varchar(100) DEFAULT NULL,
+  `leaseStartDate` datetime DEFAULT NULL,
+  `leaseEndDate` datetime DEFAULT NULL,
+  `leasePaymentAmount` double DEFAULT NULL,
+  
+  -- Sync & Audit
+  `lastAuditDate` datetime DEFAULT NULL,
+  `syncStatus` tinyint(1) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `createdAt` datetime DEFAULT NULL,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(100) DEFAULT NULL,
+  `usefulLife` varchar(100) DEFAULT NULL,
+  `hasDebitBalance` tinyint(1) DEFAULT NULL,
+  `hasCreditBalance` tinyint(1) DEFAULT NULL,
+  `option` varchar(100) DEFAULT NULL,
+  `modifiedFields` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  PRIMARY KEY (`assetCode`),
+  KEY `idx_assetName` (`assetName`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

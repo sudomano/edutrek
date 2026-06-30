@@ -27,6 +27,7 @@ class ExceptionalStudentsAdapter extends TypeAdapter<ExceptionalStudents> {
       lastModified: fields[7] as DateTime?,
       operationType: fields[8] as String?,
       modifiedFields: (fields[9] as List?)?.cast<String>(),
+      priorityFlag: fields[11] as int?,
       terms: (fields[10] as List?)?.cast<String>(),
     );
   }
@@ -34,7 +35,7 @@ class ExceptionalStudentsAdapter extends TypeAdapter<ExceptionalStudents> {
   @override
   void write(BinaryWriter writer, ExceptionalStudents obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class ExceptionalStudentsAdapter extends TypeAdapter<ExceptionalStudents> {
       ..writeByte(9)
       ..write(obj.modifiedFields)
       ..writeByte(10)
-      ..write(obj.terms);
+      ..write(obj.terms)
+      ..writeByte(11)
+      ..write(obj.priorityFlag);
   }
 
   @override

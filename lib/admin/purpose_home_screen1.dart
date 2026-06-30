@@ -163,7 +163,7 @@ class PurposeHome1 extends StatelessWidget {
                   context,
                   icon: Icons.people,
                   text: 'Filter Search Student Payments ',
-                  target: const ViewByScreen(),
+                  target: const StudentsArrearsStatementScreen(),
                 ),
                 _buildElevatedCard(
                   context,

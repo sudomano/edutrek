@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:alfred/alfred.dart';
 import 'package:flutter/material.dart';
@@ -7,12 +8,17 @@ import 'package:zitf_system/database/accounting_module_models/account_type.dart'
 import 'package:zitf_system/database/accounting_module_models/assets.dart';
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
+import 'package:zitf_system/database/id_assignment_log.dart';
 import 'package:zitf_system/database/payment_purpose.dart';
 import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_model.dart';
+import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart';
 import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
-//import 'package:zitf_system/database/projects/project_student_payment_model.dart';
+import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/stock_unit_type.dart';
+import 'package:zitf_system/database/settings.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
 import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
@@ -23,15 +29,17 @@ import 'package:zitf_system/database/terms.dart';
 import 'package:zitf_system/database/withdrawalshome.dart';
 import 'package:zitf_system/reusable_codes/serializers/accounts_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/assets_serializer.dart';
+import 'package:zitf_system/reusable_codes/serializers/batch_sell_unit_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/class_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/daily_activities_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/domains_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/exceptions_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/payment_log_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/payment_purpose_serializer.dart';
+import 'package:zitf_system/reusable_codes/serializers/product_batch_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/project_items_serializer.dart';
-import 'package:zitf_system/reusable_codes/serializers/project_student_payments_serializer.dart';
-import 'package:zitf_system/reusable_codes/serializers/projects_serializer.dart';
+import 'package:zitf_system/reusable_codes/serializers/project_sale_transaction_serializer.dart';
+import 'package:zitf_system/reusable_codes/serializers/projects_serializerr.dart';
 import 'package:zitf_system/reusable_codes/serializers/school_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/student_payments_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart';
@@ -42,10 +50,10 @@ import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/users_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/withdrawals_serializer.dart';
 import 'package:zitf_system/school_info/school_validator.dart';
+import 'package:zitf_system/server/routes/independent_alfred_api/id_assignment_api.dart';
 import 'package:zitf_system/server/routes/student_factory.dart';
 import 'package:zitf_system/terms/term_validator.dart';
-
-import '../database/school_info.dart'; // Your School model
+import '../database/school_info.dart';
 
 late final Box<School> schoolBox;
 late final Box<Terms> _termsBox;
@@ -64,8 +72,53 @@ late final Box<Asset> _assetBox;
 late final Box<Project> _projectBox;
 late final Box<ProjectItem> _projectItemBox;
 late final Box<DailyActivity> _dailyActivityBox;
-//late final Box<ProjectStudentPayment> _projectStudentPaymentBox;
 late final Box<ExceptionalStudents> _exceptionalStudentsBox;
+late final Box<ProductBatch> _productBatchBox;
+late final Box<BatchSellUnit> _batchSellUnitBox;
+late final Box<Settings> _settingsBox;
+late final Box<ProjectSaleTransaction> _projectSaleTransactionBox;
+late final Box<PaymentLog> _paymentLogBox;
+
+Future<void> initializeSettings() async {
+  try {
+    // Check if settings already exist
+    if (_settingsBox.isEmpty) {
+      // Create default settings
+      final defaultSettings = Settings(
+        id: 'app_settings',
+        lastUpdated: DateTime.now(),
+        allowAttendanceUpdate: false, // Default: block updates
+        allowStudentSync: true,
+        allowPaymentSync: true,
+        autoSyncEnabled: false,
+        syncIntervalMinutes: 5,
+        maintenanceMode: false,
+        enableBackup: false,
+        backupFrequency: 'Daily',
+        maxStudentsPerClass: 30,
+        allowMultipleTerms: true,
+        enableNotifications: true,
+        debugMode: false,
+        syncStatus: true,
+        modifiedFields: [],
+        operationType: 'create',
+      );
+
+      await _settingsBox.add(defaultSettings);
+      debugPrint(
+          '✅ Default settings initialized: allowAttendanceUpdate = false');
+    } else {
+      final settings = _settingsBox.values.first;
+      debugPrint(
+          '✅ Settings already exist: allowAttendanceUpdate = ${settings.allowAttendanceUpdate}');
+    }
+
+    debugPrint('✅ Settings box ready with ${_settingsBox.length} entries');
+  } catch (e) {
+    debugPrint('❌ Error initializing settings: $e');
+    rethrow;
+  }
+}
 
 Future<void> startAlfredServer() async {
   final app = Alfred();
@@ -79,6 +132,253 @@ Future<void> startAlfredServer() async {
 
   app.get("/api/health", (req, res) => {"status": "ok"});
 
+  // ============================================================
+// ============================================================
+// ID ASSIGNMENT API ENDPOINTS (Fully Fixed)
+// ============================================================
+
+  /// *********************** GET last assigned ID *********************/
+  app.get('/api/ids/last', (req, res) async {
+    try {
+      final result = await getLastAssignedId();
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/last: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+  /// *********************** RESERVE IDs (batch) *********************/
+  app.post('/api/ids/reserve', (req, res) async {
+    try {
+      final body = await req.body as String?;
+      if (body == null || body.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Request body is required'});
+        return;
+      }
+
+      final data = jsonDecode(body);
+      final count = data['count'] as int? ?? 1;
+      final clientId = data['clientId'] as String?;
+
+      // Validate count
+      if (count < 1 || count > 1000) {
+        res.statusCode = 400;
+        res.json(
+            {'success': false, 'error': 'Count must be between 1 and 1000'});
+        return;
+      }
+
+      final result = await reserveIds(count: count, clientId: clientId);
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/reserve: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+  /// *********************** MARK ID as used *********************/
+  app.post('/api/ids/mark-used', (req, res) async {
+    try {
+      final body = await req.body as String?;
+      if (body == null || body.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Request body is required'});
+        return;
+      }
+
+      final data = jsonDecode(body);
+      final id = data['id'] as int?;
+      final receiptNumber = data['receiptNumber'] as String?;
+
+      // Validate required fields
+      if (id == null) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'ID is required'});
+        return;
+      }
+
+      if (receiptNumber == null || receiptNumber.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Receipt number is required'});
+        return;
+      }
+
+      final result = await markIdAsUsed(id: id, receiptNumber: receiptNumber);
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/mark-used: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+  /// *********************** CHECK if ID exists *********************/
+  app.get('/api/ids/check/:id', (req, res) async {
+    try {
+      final idParam = req.params['id'];
+      if (idParam == null || idParam.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'ID parameter is required'});
+        return;
+      }
+
+      final id = int.tryParse(idParam);
+      if (id == null) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Invalid ID format'});
+        return;
+      }
+
+      final result = await checkIdExists(id);
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/check/:id: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+  /// *********************** GET pending IDs *********************/
+  app.get('/api/ids/pending', (req, res) async {
+    try {
+      final result = await getPendingIds();
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/pending: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+  /// *********************** GET assignment history *********************/
+  app.get('/api/ids/history', (req, res) async {
+    try {
+      final limitParam = req.uri.queryParameters['limit'] ?? '50';
+      final offsetParam = req.uri.queryParameters['offset'] ?? '0';
+
+      final limit = int.tryParse(limitParam) ?? 50;
+      final offset = int.tryParse(offsetParam) ?? 0;
+
+      // Validate pagination parameters
+      if (limit < 1 || limit > 500) {
+        res.statusCode = 400;
+        res.json(
+            {'success': false, 'error': 'Limit must be between 1 and 500'});
+        return;
+      }
+
+      if (offset < 0) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Offset must be >= 0'});
+        return;
+      }
+
+      final result = await getAssignmentHistory(limit: limit, offset: offset);
+      res.json(result);
+    } catch (e) {
+      print('❌ Error in /api/ids/history: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+// ============================================================
+// NEW: Get ID by receipt number (Integration endpoint)
+// ============================================================
+
+  /// *********************** GET ID by receipt number *********************/
+  app.get('/api/ids/by-receipt/:receiptNumber', (req, res) async {
+    try {
+      final receiptNumber = req.params['receiptNumber'];
+
+      if (receiptNumber == null || receiptNumber.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Receipt number is required'});
+        return;
+      }
+
+      // Check the local ID assignment logs
+      final box = await Hive.openBox<IdAssignmentLog>('id_assignment_log');
+
+      try {
+        final log = box.values.firstWhere(
+          (log) => log.paymentReceiptNumber == receiptNumber,
+        );
+
+        res.json({
+          'success': true,
+          'id': log.id,
+          'receiptNumber': receiptNumber,
+          'isUsed': log.isUsed,
+          'assignedAt': log.assignedAt.toIso8601String(),
+          'usedAt': log.usedAt?.toIso8601String(),
+        });
+      } catch (e) {
+        res.statusCode = 404;
+        res.json({
+          'success': false,
+          'error': 'No ID found for receipt number: $receiptNumber'
+        });
+      }
+    } catch (e) {
+      print('❌ Error in /api/ids/by-receipt/:receiptNumber: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
+// ============================================================
+// NEW: Mark ID as used and link to transaction (Combined endpoint)
+// ============================================================
+
+  /// *********************** Mark ID as used and link to transaction *********************/
+  app.post('/api/ids/mark-used-with-transaction', (req, res) async {
+    try {
+      final body = await req.body as String?;
+      if (body == null || body.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Request body is required'});
+        return;
+      }
+
+      final data = jsonDecode(body);
+      final id = data['id'] as int?;
+      final receiptNumber = data['receiptNumber'] as String?;
+
+      // Validate required fields
+      if (id == null) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'ID is required'});
+        return;
+      }
+
+      if (receiptNumber == null || receiptNumber.isEmpty) {
+        res.statusCode = 400;
+        res.json({'success': false, 'error': 'Receipt number is required'});
+        return;
+      }
+
+      // Step 1: Mark the ID as used
+      final idResult = await markIdAsUsed(id: id, receiptNumber: receiptNumber);
+
+      if (!idResult['success']) {
+        res.statusCode = 400;
+        res.json(idResult);
+        return;
+      }
+
+      // Step 3: Update transaction with the ID
+    } catch (e) {
+      print('❌ Error in /api/ids/mark-used-with-transaction: $e');
+      res.statusCode = 500;
+      res.json({'success': false, 'error': e.toString()});
+    }
+  });
+
   schoolBox = await Hive.openBox<School>('school');
   _termsBox = await Hive.openBox<Terms>('terms');
   _classesBox = await Hive.openBox<Classes>('classes');
@@ -91,20 +391,838 @@ Future<void> startAlfredServer() async {
   _withdrawalsBox = await Hive.openBox<Withdrawal>('withdrawals');
   _teachersBox = await Hive.openBox<Teachers>('teachers');
   _domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
+  _settingsBox = await Hive.openBox<Settings>('settings');
   _userBox = await Hive.openBox<User>('users'); // Open the box for users
   _accountBox = await Hive.openBox<Account>('account');
   _assetBox = await Hive.openBox<Asset>('asset');
   _projectBox = await Hive.openBox<Project>('projects');
   _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
   _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-  //_projectStudentPaymentBox =
-  //  await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
   _exceptionalStudentsBox =
       await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
+  _productBatchBox = await Hive.openBox<ProductBatch>('product_batches');
+  _batchSellUnitBox = await Hive.openBox<BatchSellUnit>('batch_sell_units');
+  _projectSaleTransactionBox =
+      await Hive.openBox<ProjectSaleTransaction>('project_sale_transactions');
+  _paymentLogBox = await Hive.openBox<PaymentLog>('payment_log');
+  await initializeSettings();
 
-  ////////////////////////////////exceptionalStudents api////////////////////
+// ========================================================================
 
-  //***********************get exceptionalStudents method *********************/
+// PROJECT SALE TRANSACTION API ENDPOINTS
+// ========================================================================
+  /// *********************** Helper: Deep match for project sale transaction *********************/
+  bool deepMatchProjectSaleTransaction(ProjectSaleTransaction t, String query) {
+    if (query.trim().isEmpty) return true;
+
+    final q = query.toLowerCase().trim();
+    final parts = q.split(RegExp(r'\s+'));
+
+    final fields = [
+      (t.transactionCode).toLowerCase(),
+      (t.studentId).toLowerCase(),
+      (t.projectCode).toLowerCase(),
+      (t.projectItemCode).toLowerCase(),
+      (t.batchCode).toLowerCase(),
+      (t.paymentMethod).toLowerCase(),
+      (t.reference ?? '').toLowerCase(),
+      (t.financialType).toLowerCase(),
+      (t.parentTransactionCode ?? '').toLowerCase(),
+    ];
+
+    return parts.every((part) => fields.any((field) => field.contains(part)));
+  }
+
+  /// *********************** GET project sale transactions *********************/
+  app.get("/api/projectSaleTransactions", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+      final studentId = req.uri.queryParameters['studentId'];
+      final projectCode = req.uri.queryParameters['projectCode'];
+      final financialType = req.uri.queryParameters['financialType'];
+
+      print('🔍 /api/projectSaleTransactions called');
+      print('📋 search: "$search"');
+      print('📋 studentId: "$studentId"');
+      print('📋 projectCode: "$projectCode"');
+      print('📋 financialType: "$financialType"');
+
+      // Start with all transactions
+      var filteredTransactions = _projectSaleTransactionBox.values
+          .where((t) => t.transactionCode != null)
+          .toList();
+
+      // Filter by studentId if provided
+      if (studentId != null && studentId.isNotEmpty) {
+        filteredTransactions = filteredTransactions
+            .where((t) => t.studentId == studentId)
+            .toList();
+      }
+
+      // Filter by projectCode if provided
+      if (projectCode != null && projectCode.isNotEmpty) {
+        filteredTransactions = filteredTransactions
+            .where((t) => t.projectCode == projectCode)
+            .toList();
+      }
+
+      // Filter by financialType if provided
+      if (financialType != null && financialType.isNotEmpty) {
+        filteredTransactions = filteredTransactions
+            .where((t) => t.financialType == financialType)
+            .toList();
+      }
+
+      // Apply search filter
+      if (search.isNotEmpty) {
+        filteredTransactions = filteredTransactions
+            .where((t) => deepMatchProjectSaleTransaction(t, search))
+            .toList();
+      }
+
+      const maxResults = 100;
+      final transactionJson = filteredTransactions
+          .take(maxResults)
+          .map(projectSaleTransactionToJson)
+          .toList();
+
+      print(
+          "✅ Returning ${transactionJson.length} transactions (max $maxResults)");
+
+      return transactionJson;
+    } catch (e) {
+      print("❌ Error fetching project sale transactions: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch project sale transactions"};
+    }
+  });
+
+  /// *********************** GET all project sale transactions (unlimited) *********************/
+  app.get("/api/projectSaleTransactions/all", (req, res) async {
+    try {
+      print('📘 /api/projectSaleTransactions/all called');
+
+      // Get ALL transactions without limit
+      final allTransactions = _projectSaleTransactionBox.values
+          .where((t) => t.transactionCode != null)
+          .toList();
+
+      print('✅ Returning ${allTransactions.length} transactions (unlimited)');
+
+      return allTransactions.map(projectSaleTransactionToJson).toList();
+    } catch (e) {
+      print("❌ Error serving all project sale transactions: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch all project sale transactions"};
+    }
+  });
+
+  /// *********************** GET project sale transaction by ID *********************/
+  app.get("/api/projectSaleTransactions/:id", (req, res) async {
+    try {
+      final transactionCode = req.params['id'];
+
+      if (transactionCode == null || transactionCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Transaction code is required"};
+      }
+
+      ProjectSaleTransaction? transaction;
+      try {
+        transaction = _projectSaleTransactionBox.values.firstWhere(
+          (t) => t.transactionCode == transactionCode,
+        );
+      } catch (e) {
+        // firstWhere throws if no element matches, treat as not found
+        transaction = null;
+      }
+
+      if (transaction == null) {
+        res.statusCode = 404;
+        return {"error": "Transaction not found"};
+      }
+
+      return projectSaleTransactionToJson(transaction);
+    } catch (e) {
+      print("❌ Error fetching transaction: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch transaction"};
+    }
+  });
+
+  /// *********************** GET transactions by student *********************/
+  app.get("/api/projectSaleTransactions/student/:studentId", (req, res) async {
+    try {
+      final studentId = req.params['studentId'];
+
+      if (studentId == null || studentId.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Student ID is required"};
+      }
+
+      final transactions = _projectSaleTransactionBox.values
+          .where((t) => t.studentId == studentId)
+          .map(projectSaleTransactionToJson)
+          .toList();
+
+      print(
+          '✅ Found ${transactions.length} transactions for student $studentId');
+
+      return transactions;
+    } catch (e) {
+      print("❌ Error fetching student transactions: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch student transactions"};
+    }
+  });
+
+  /// *********************** GET transactions by project *********************/
+  app.get("/api/projectSaleTransactions/project/:projectCode",
+      (req, res) async {
+    try {
+      final projectCode = req.params['projectCode'];
+
+      if (projectCode == null || projectCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Project code is required"};
+      }
+
+      final transactions = _projectSaleTransactionBox.values
+          .where((t) => t.projectCode == projectCode)
+          .map(projectSaleTransactionToJson)
+          .toList();
+
+      print(
+          '✅ Found ${transactions.length} transactions for project $projectCode');
+
+      return transactions;
+    } catch (e) {
+      print("❌ Error fetching project transactions: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch project transactions"};
+    }
+  });
+
+  /// *********************** GET obligation transactions for student *********************/
+  app.get("/api/projectSaleTransactions/student/:studentId/obligations",
+      (req, res) async {
+    try {
+      final studentId = req.params['studentId'];
+
+      if (studentId == null || studentId.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Student ID is required"};
+      }
+
+      final obligations = _projectSaleTransactionBox.values
+          .where((t) =>
+              t.studentId == studentId &&
+              t.createsObligation == true &&
+              t.isDeleted != true)
+          .map(projectSaleTransactionToJson)
+          .toList();
+
+      print('✅ Found ${obligations.length} obligations for student $studentId');
+
+      return obligations;
+    } catch (e) {
+      print("❌ Error fetching student obligations: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch student obligations"};
+    }
+  });
+
+  /// *********************** POST /api/projectSaleTransactions ************************/
+  app.post("/api/projectSaleTransactions", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+      final transaction = projectSaleTransactionFromJson(body);
+
+      final key = await _projectSaleTransactionBox.add(transaction);
+
+      return {
+        "success": true,
+        "key": key,
+        "transaction": projectSaleTransactionToJson(transaction),
+      };
+    } catch (e) {
+      res.statusCode = 400;
+      return {
+        "error": "Failed to process project sale transaction",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// *********************** POST /api/projectSaleTransactions/bulk ************************/
+  app.post("/api/projectSaleTransactions/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('transactions') || body['transactions'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected a list under the 'transactions' key"
+        };
+      }
+
+      final List<dynamic> transactionsJson = body['transactions'];
+
+      final List<ProjectSaleTransaction> insertedTransactions = [];
+      for (final item in transactionsJson) {
+        try {
+          final transaction = projectSaleTransactionFromJson(item);
+          await _projectSaleTransactionBox.add(transaction);
+          insertedTransactions.add(transaction);
+        } catch (e) {
+          print("❌ Skipping invalid transaction: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedTransactions.length,
+        "insertedTransactions":
+            insertedTransactions.map(projectSaleTransactionToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk project sale transactions",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// *********************** PUT /api/projectSaleTransactions/:id ************************/
+  app.put("/api/projectSaleTransactions/:id", (req, res) async {
+    try {
+      final transactionCode = req.params['id'];
+
+      if (transactionCode == null || transactionCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Transaction code is required"};
+      }
+
+      final contentType = req.headers.contentType?.mimeType;
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      // Find the transaction by code
+      final index = _projectSaleTransactionBox.values.toList().indexWhere(
+            (t) => t.transactionCode == transactionCode,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {"error": "Transaction not found"};
+      }
+
+      // Get existing transaction
+      final existingTransaction = _projectSaleTransactionBox.getAt(index)!;
+
+      // Update with new data (preserve fields not in update)
+      final updatedTransaction = ProjectSaleTransaction(
+        transactionCode: transactionCode,
+        studentId: body['studentId'] ?? existingTransaction.studentId,
+        projectCode: body['projectCode'] ?? existingTransaction.projectCode,
+        projectItemCode:
+            body['projectItemCode'] ?? existingTransaction.projectItemCode,
+        batchCode: body['batchCode'] ?? existingTransaction.batchCode,
+        sellUnitCode: body['sellUnitCode'] ?? existingTransaction.sellUnitCode,
+        sellUnitNameSnapshot: body['sellUnitNameSnapshot'] ??
+            existingTransaction.sellUnitNameSnapshot,
+        quantitySold: body['quantitySold'] ?? existingTransaction.quantitySold,
+        unitSellingPrice:
+            body['unitSellingPrice'] ?? existingTransaction.unitSellingPrice,
+        totalAmount: body['totalAmount'] ?? existingTransaction.totalAmount,
+        baseUnitsPerSellUnit: body['baseUnitsPerSellUnit'] ??
+            existingTransaction.baseUnitsPerSellUnit,
+        totalBaseUnitsSold: body['totalBaseUnitsSold'] ??
+            existingTransaction.totalBaseUnitsSold,
+        baseUnit: body['baseUnit'] ?? existingTransaction.baseUnit,
+        baseUnitType: body['baseUnitType'] != null
+            ? StockUnitType.values.firstWhere(
+                (e) => e.name == body['baseUnitType'],
+                orElse: () => existingTransaction.baseUnitType,
+              )
+            : existingTransaction.baseUnitType,
+        transactionDate: body['transactionDate'] != null
+            ? DateTime.parse(body['transactionDate'])
+            : existingTransaction.transactionDate,
+        paymentMethod:
+            body['paymentMethod'] ?? existingTransaction.paymentMethod,
+        reference: body['reference'] ?? existingTransaction.reference,
+        syncStatus: body['syncStatus'] ?? existingTransaction.syncStatus,
+        lastModified: DateTime.now(),
+        operationType: 'update',
+        modifiedFields:
+            body['modifiedFields'] ?? existingTransaction.modifiedFields,
+        isDeleted: body['isDeleted'] ?? existingTransaction.isDeleted,
+        deletedAt: existingTransaction.deletedAt,
+        restoredAt: existingTransaction.restoredAt,
+        deletedByUsers: existingTransaction.deletedByUsers,
+        restoredByUsers: existingTransaction.restoredByUsers,
+        amountPaid: body['amountPaid'] ?? existingTransaction.amountPaid,
+        arrears: body['arrears'] ?? existingTransaction.arrears,
+        paymentMethodCode:
+            body['paymentMethodCode'] ?? existingTransaction.paymentMethodCode,
+        methodType: body['methodType'] ?? existingTransaction.methodType,
+        amountPaidInPaymentMethod: body['amountPaidInPaymentMethod'] ??
+            existingTransaction.amountPaidInPaymentMethod,
+        currency: body['currency'] ?? existingTransaction.currency,
+        provider: body['provider'] ?? existingTransaction.provider,
+        referenceNumber:
+            body['referenceNumber'] ?? existingTransaction.referenceNumber,
+        phoneNumber: body['phoneNumber'] ?? existingTransaction.phoneNumber,
+        accountNumber:
+            body['accountNumber'] ?? existingTransaction.accountNumber,
+        accountName: body['accountName'] ?? existingTransaction.accountName,
+        paymentDatetransacted: body['paymentDatetransacted'] != null
+            ? DateTime.parse(body['paymentDatetransacted'])
+            : existingTransaction.paymentDatetransacted,
+        isReversed: body['isReversed'] ?? existingTransaction.isReversed,
+        lineTransactionCodes: body['lineTransactionCodes'] ??
+            existingTransaction.lineTransactionCodes,
+        financialType:
+            body['financialType'] ?? existingTransaction.financialType,
+        parentTransactionCode: body['parentTransactionCode'] ??
+            existingTransaction.parentTransactionCode,
+        affectsStock: body['affectsStock'] ?? existingTransaction.affectsStock,
+        createsObligation:
+            body['createsObligation'] ?? existingTransaction.createsObligation,
+        settlesObligation:
+            body['settlesObligation'] ?? existingTransaction.settlesObligation,
+      );
+
+      await _projectSaleTransactionBox.putAt(index, updatedTransaction);
+
+      return {
+        "success": true,
+        "transaction": projectSaleTransactionToJson(updatedTransaction),
+      };
+    } catch (e) {
+      print("❌ Error updating transaction: $e");
+      res.statusCode = 500;
+      return {
+        "error": "Failed to update transaction",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// *********************** DELETE /api/projectSaleTransactions/:id ************************/
+  app.delete("/api/projectSaleTransactions/:id", (req, res) async {
+    try {
+      final transactionCode = req.params['id'];
+
+      if (transactionCode == null || transactionCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Transaction code is required"};
+      }
+
+      // Find the transaction by code
+      final index = _projectSaleTransactionBox.values.toList().indexWhere(
+            (t) => t.transactionCode == transactionCode,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {"error": "Transaction not found"};
+      }
+
+      // Soft delete - mark as deleted
+      final transaction = _projectSaleTransactionBox.getAt(index)!;
+      transaction.isDeleted = true;
+      transaction.deletedAt ??= [];
+      transaction.deletedAt!.add(DateTime.now());
+      transaction.lastModified = DateTime.now();
+      transaction.operationType = 'delete';
+      await transaction.save();
+
+      return {
+        "success": true,
+        "message": "Transaction marked as deleted",
+        "transactionCode": transactionCode,
+      };
+    } catch (e) {
+      print("❌ Error deleting transaction: $e");
+      res.statusCode = 500;
+      return {
+        "error": "Failed to delete transaction",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// *********************** PATCH /api/projectSaleTransactions/:id/restore ************************/
+  app.patch("/api/projectSaleTransactions/:id/restore", (req, res) async {
+    try {
+      final transactionCode = req.params['id'];
+
+      if (transactionCode == null || transactionCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Transaction code is required"};
+      }
+
+      // Find the transaction by code
+      final index = _projectSaleTransactionBox.values.toList().indexWhere(
+            (t) => t.transactionCode == transactionCode,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {"error": "Transaction not found"};
+      }
+
+      // Restore - mark as not deleted
+      final transaction = _projectSaleTransactionBox.getAt(index)!;
+      transaction.isDeleted = false;
+      transaction.restoredAt ??= [];
+      transaction.restoredAt!.add(DateTime.now());
+      transaction.lastModified = DateTime.now();
+      transaction.operationType = 'restore';
+      await transaction.save();
+
+      return {
+        "success": true,
+        "message": "Transaction restored successfully",
+        "transactionCode": transactionCode,
+      };
+    } catch (e) {
+      print("❌ Error restoring transaction: $e");
+      res.statusCode = 500;
+      return {
+        "error": "Failed to restore transaction",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// *********************** POST /api/projectSaleTransactions/mark-paid ************************/
+  app.post("/api/projectSaleTransactions/mark-paid", (req, res) async {
+    try {
+      final body = await req.bodyAsJsonMap;
+      final transactionCode = body['transactionCode'];
+      final amountPaid = body['amountPaid'] as double?;
+
+      if (transactionCode == null || transactionCode.isEmpty) {
+        res.statusCode = 400;
+        return {"error": "Transaction code is required"};
+      }
+
+      if (amountPaid == null || amountPaid <= 0) {
+        res.statusCode = 400;
+        return {"error": "Valid amount paid is required"};
+      }
+
+      // Find the transaction by code
+      final index = _projectSaleTransactionBox.values.toList().indexWhere(
+            (t) => t.transactionCode == transactionCode,
+          );
+
+      if (index == -1) {
+        res.statusCode = 404;
+        return {"error": "Transaction not found"};
+      }
+
+      final transaction = _projectSaleTransactionBox.getAt(index)!;
+      transaction.amountPaid = (transaction.amountPaid ?? 0) + amountPaid;
+      transaction.arrears = (transaction.totalAmount - transaction.amountPaid)
+          .clamp(0, double.infinity);
+      transaction.lastModified = DateTime.now();
+      transaction.operationType = 'update';
+      await transaction.save();
+
+      return {
+        "success": true,
+        "transaction": projectSaleTransactionToJson(transaction),
+      };
+    } catch (e) {
+      print("❌ Error marking transaction as paid: $e");
+      res.statusCode = 500;
+      return {
+        "error": "Failed to mark transaction as paid",
+        "details": e.toString(),
+      };
+    }
+  });
+
+////////////////////////////////batchSellUnit api////////////////////
+
+  //***********************get batchSellUnit method *********************/
+
+  bool deepMatchsellUnit(BatchSellUnit u, String query) {
+    if (query.trim().isEmpty) return true;
+
+    final q = query.toLowerCase().trim();
+    final parts = q.split(RegExp(r'\s+'));
+
+    final fields = [
+      (u.sellUnitCode).toLowerCase(),
+      (u.unitName).toLowerCase(),
+      (u.baseUnit ?? '').toLowerCase(),
+    ];
+
+    return parts.every((part) => fields.any((field) => field.contains(part)));
+  }
+
+  app.get("/api/batchSellUnit", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+
+      print('🔍 /api/batchSellUnit called with search="$search"');
+
+      final filteredbatchSellUnit = _batchSellUnitBox.values
+          .where((u) => deepMatchsellUnit(u, search))
+          .toList();
+
+      const maxResults = 100;
+      final batchSellUnitJson = filteredbatchSellUnit
+          .take(maxResults)
+          .map(batchSellUnitToJson)
+          .toList();
+
+      print("✅ Returning ${batchSellUnitJson.length} units (max $maxResults)");
+
+      return batchSellUnitJson;
+    } catch (e) {
+      print("❌ Error fetching sell units: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch sell units"};
+    }
+  });
+  //************************* POST /api/batchSellUnit ************************/
+
+  app.post("/api/batchSellUnit", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      // Parse body safely
+      final body = await req.bodyAsJsonMap;
+
+      final batchSellUnits = batchSellUnitFromJson(body);
+
+      // Save to Hive (or any backend storage you use)
+      final key = await _batchSellUnitBox.add(batchSellUnits);
+
+      // Return success with serialized data
+      return {
+        "success": true,
+        "key": key,
+        "batchSellUnit": batchSellUnitToJson(batchSellUnits),
+      };
+    } catch (e) {
+      res.statusCode = 400;
+      return {
+        "error": "Failed to process product batch sell unit",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  //************************* POST /api/batchSellUnit/bulk ************************/
+
+  app.post("/api/batchSellUnit/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('batchSellUnits') ||
+          body['batchSellUnits'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected a list under the 'batchSellUnits' key"
+        };
+      }
+
+      final List<dynamic> batchSellUnitsJson = body['batchSellUnits'];
+
+      final List<BatchSellUnit> insertedBatches = [];
+      for (final item in batchSellUnitsJson) {
+        try {
+          final batchSellUnit = batchSellUnitFromJson(item);
+          await _batchSellUnitBox.add(batchSellUnit);
+          insertedBatches.add(batchSellUnit);
+        } catch (e) {
+          // Skip malformed individual entries but log them
+          print("❌ Skipping invalid BatchSellUnit: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedBatches.length,
+        "insertedBatches": insertedBatches.map(batchSellUnitToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk product batch unit sell",
+        "details": e.toString(),
+      };
+    }
+  });
+
+////////////////////////////////ProductBatch api////////////////////
+
+  //***********************get ProductBatch method *********************/
+  app.get("/api/productBatches", (req, res) async {
+    try {
+      final productBatchesJsonList = _productBatchBox.values
+          .where((productBatch) => productBatch.batchCode != null)
+          .map(productBatchesToJson)
+          .toList();
+
+      return productBatchesJsonList;
+    } catch (e) {
+      print("Error serving productBatches data: $e");
+      res.statusCode = 500;
+
+      return {"error": "Failed to fetch productBatches info"};
+    }
+  });
+
+  //************************* POST /api/productBatches ************************/
+
+  app.post("/api/productBatches", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      // Parse body safely
+      final body = await req.bodyAsJsonMap;
+
+      // Deserialize the incoming JSON into a ProductBatch object
+      final productBatches = productBatchesFromJson(body);
+
+      // Save to Hive (or any backend storage you use)
+      final key = await _productBatchBox.add(productBatches);
+
+      // Return success with serialized data
+      return {
+        "success": true,
+        "key": key,
+        "productBatch": productBatchesToJson(productBatches),
+      };
+    } catch (e) {
+      res.statusCode = 400;
+      return {
+        "error": "Failed to process product batch",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  //************************* POST /api/productBatches/bulk ************************/
+
+  app.post("/api/productBatches/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('batches') || body['batches'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected a list under the 'batches' key"
+        };
+      }
+
+      final List<dynamic> batchesJson = body['batches'];
+
+      final List<ProductBatch> insertedBatches = [];
+      for (final item in batchesJson) {
+        try {
+          final batch = productBatchesFromJson(item);
+          await _productBatchBox.add(batch);
+          insertedBatches.add(batch);
+        } catch (e) {
+          // Skip malformed individual entries but log them
+          print("❌ Skipping invalid batch: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedBatches.length,
+        "insertedBatches": insertedBatches.map(productBatchesToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk product batches",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  //************************* POST /api/exceptionalStudents/bulk ************************/
+
   app.get("/api/exceptionalStudents", (req, res) async {
     try {
       final exceptionalStudentsJsonList = _exceptionalStudentsBox.values
@@ -174,81 +1292,6 @@ Future<void> startAlfredServer() async {
     }
   });
 
-  ////////////////////////////////projectStudentPayments api////////////////////
-
-  //***********************get projectStudentPayments method *********************/
-  /* app.get("/api/projectStudentPayments", (req, res) async {
-    try {
-      final projectStudentPaymentsJsonList = _projectStudentPaymentBox.values
-          .where((schoolItem) => schoolItem.projectStudentPaymentCode != null)
-          .map(projectStudentPaymentsToJson)
-          .toList();
-
-      return projectStudentPaymentsJsonList;
-    } catch (e) {
-      print("Error serving projectStudentPayments data: $e");
-      res.statusCode = 500;
-
-      return {"error": "Failed to fetch projectStudentPayments info"};
-    }
-  });
-*/
-  //************************* POST /api/projectStudentPayments/bulk ************************/
-
-  /* app.post("/api/projectStudentPayments/bulk", (req, res) async {
-    try {
-      final contentType = req.headers.contentType?.mimeType;
-
-      if (contentType != 'application/json') {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid content type",
-          "details": "Expected application/json, got $contentType"
-        };
-      }
-
-      final body = await req.bodyAsJsonMap;
-
-      if (!body.containsKey('projectstudentpayments') ||
-          body['projectstudentpayments'] is! List) {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid request format",
-          "details": "Expected a list under the 'projectstudentpayments' key"
-        };
-      }
-
-      final List<dynamic> projectstudentpaymentsJson =
-          body['projectstudentpayments'];
-
-      final List<ProjectStudentPayment> insertedprojectstudentpayments = [];
-      for (final item in projectstudentpaymentsJson) {
-        try {
-          final projectstudentpayment = projectStudentPaymentsFromJson(item);
-          await _projectStudentPaymentBox.add(projectstudentpayment);
-          insertedprojectstudentpayments.add(projectstudentpayment);
-        } catch (e) {
-          // Skip malformed individual entries but log them
-          print("❌ Skipping invalid projectstudentpayment: $e");
-        }
-      }
-
-      return {
-        "success": true,
-        "insertedCount": insertedprojectstudentpayments.length,
-        "insertedprojectstudentpayments": insertedprojectstudentpayments
-            .map(projectStudentPaymentsToJson)
-            .toList(),
-      };
-    } catch (e) {
-      res.statusCode = 500;
-      return {
-        "error": "Failed to process bulk projectstudentpayments",
-        "details": e.toString(),
-      };
-    }
-  });
-*/
   ////////////////////////////////dailyActivities api////////////////////
 
   //***********************get dailyActivities method *********************/
@@ -322,148 +1365,6 @@ Future<void> startAlfredServer() async {
     }
   });
 
-  ////////////////////////////////projectItems api////////////////////
-
-  //***********************get projectItems method *********************/
-  app.get("/api/projectItems", (req, res) async {
-    try {
-      final projectItemsJsonList = _projectItemBox.values
-          .where((schoolItem) => schoolItem.projectItemCode != null)
-          .map(projectItemsToJson)
-          .toList();
-
-      return projectItemsJsonList;
-    } catch (e) {
-      print("Error serving projectItems data: $e");
-      res.statusCode = 500;
-
-      return {"error": "Failed to fetch projectItems info"};
-    }
-  });
-
-  //************************* POST /api/projectItem/bulk ************************/
-
-  app.post("/api/projectItems/bulk", (req, res) async {
-    try {
-      final contentType = req.headers.contentType?.mimeType;
-
-      if (contentType != 'application/json') {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid content type",
-          "details": "Expected application/json, got $contentType"
-        };
-      }
-
-      final body = await req.bodyAsJsonMap;
-
-      if (!body.containsKey('projectitems') || body['projectitems'] is! List) {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid request format",
-          "details": "Expected a list under the 'projectitems' key"
-        };
-      }
-
-      final List<dynamic> projectitemsJson = body['projectitems'];
-
-      final List<ProjectItem> insertedProjectitems = [];
-      for (final item in projectitemsJson) {
-        try {
-          final projectItem = projectItemsFromJson(item);
-          await _projectItemBox.add(projectItem);
-          insertedProjectitems.add(projectItem);
-        } catch (e) {
-          // Skip malformed individual entries but log them
-          print("❌ Skipping invalid projectItem: $e");
-        }
-      }
-
-      return {
-        "success": true,
-        "insertedCount": insertedProjectitems.length,
-        "insertedProjectitems":
-            insertedProjectitems.map(projectItemsToJson).toList(),
-      };
-    } catch (e) {
-      res.statusCode = 500;
-      return {
-        "error": "Failed to process bulk projectitems",
-        "details": e.toString(),
-      };
-    }
-  });
-
-  ////////////////////////////////projects api////////////////////
-
-  //***********************get projects method *********************/
-  app.get("/api/projects", (req, res) async {
-    try {
-      final projectsJsonList = _projectBox.values
-          .where((schoolItem) => schoolItem.projectCode != null)
-          .map(projectsToJson)
-          .toList();
-
-      return projectsJsonList;
-    } catch (e) {
-      print("Error serving projects data: $e");
-      res.statusCode = 500;
-
-      return {"error": "Failed to fetch projects info"};
-    }
-  });
-
-  //************************* POST /api/projects/bulk ************************/
-
-  app.post("/api/projects/bulk", (req, res) async {
-    try {
-      final contentType = req.headers.contentType?.mimeType;
-
-      if (contentType != 'application/json') {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid content type",
-          "details": "Expected application/json, got $contentType"
-        };
-      }
-
-      final body = await req.bodyAsJsonMap;
-
-      if (!body.containsKey('projects') || body['projects'] is! List) {
-        res.statusCode = 400;
-        return {
-          "error": "Invalid request format",
-          "details": "Expected a list under the 'projects' key"
-        };
-      }
-
-      final List<dynamic> projectsJson = body['projects'];
-
-      final List<Project> insertedProjects = [];
-      for (final item in projectsJson) {
-        try {
-          final project = projectsFromJson(item);
-          await _projectBox.add(project);
-          insertedProjects.add(project);
-        } catch (e) {
-          // Skip malformed individual entries but log them
-          print("❌ Skipping invalid project: $e");
-        }
-      }
-
-      return {
-        "success": true,
-        "insertedCount": insertedProjects.length,
-        "insertedProjects": insertedProjects.map(projectsToJson).toList(),
-      };
-    } catch (e) {
-      res.statusCode = 500;
-      return {
-        "error": "Failed to process bulk projects",
-        "details": e.toString(),
-      };
-    }
-  });
   ////////////////////////////////asset api////////////////////
 
   //***********************get asset method *********************/
@@ -760,6 +1661,325 @@ Future<void> startAlfredServer() async {
       return {"error": "Failed to fetch user", "details": e.toString()};
     }
   });
+// ***************************projects **********************
+
+////////////////////////////////projects api////////////////////
+  bool deepMatchProjects(Project u, String query) {
+    if (query.trim().isEmpty) return true;
+
+    final q = query.toLowerCase().trim();
+    final parts = q.split(RegExp(r'\s+'));
+
+    final fields = [
+      (u.name).toLowerCase(),
+      (u.projectType).toLowerCase(),
+      (u.status).toLowerCase(),
+    ];
+
+    return parts.every((part) => fields.any((field) => field.contains(part)));
+  }
+
+  /// ************************ GET all projects for client sync ************************
+  app.get("/api/projects/all", (req, res) async {
+    print("📥 /api/projects/all called");
+
+    try {
+      final box = _projectBox;
+      print("📦 Project box length: ${box.length}");
+
+      final projectsJson = <Map<String, dynamic>>[];
+
+      for (var u in box.values) {
+        try {
+          final json = projectsToJson(u);
+          projectsJson.add(json);
+        } catch (e) {
+          print("❌ JSON encode failed for projects ${u.name}: $e");
+        }
+      }
+
+      print("✅ Returning ${projectsJson.length} projects out of ${box.length}");
+      return projectsJson;
+    } catch (e, st) {
+      print("❌ SERVER CRASH in /api/projects/all: $e");
+      print(st);
+      res.statusCode = 500;
+      return {"error": "$e"};
+    }
+  });
+
+  /// ************************ GET all projects ************************
+  app.get("/api/projects", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+
+      print('🔍 /api/projects called with search="$search"');
+
+      final filteredProjects = _projectBox.values
+          .where((u) => deepMatchProjects(u, search))
+          .toList();
+
+      const maxResults = 100;
+      final projectsJson =
+          filteredProjects.take(maxResults).map(projectsToJson).toList();
+
+      print("✅ Returning ${projectsJson.length} projects (max $maxResults)");
+
+      return projectsJson;
+    } catch (e) {
+      print("❌ Error fetching projects: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch projects"};
+    }
+  });
+
+  /// *********************** POST /api/projects/bulk ************************
+  app.post("/api/projects/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != "application/json") {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('projects') || body['projects'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected 'projects': [ ... ]"
+        };
+      }
+
+      final List<dynamic> projectsJson = body['projects'];
+
+      final List<Project> insertedProjects = [];
+      for (final item in projectsJson) {
+        try {
+          final project = projectsFromJson(item);
+          await _projectBox.add(project);
+          insertedProjects.add(project);
+        } catch (e) {
+          print("⚠️ Skipping invalid project entry: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedProjects.length,
+        "insertedProjects": insertedProjects.map(projectsToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk projects",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// ************************ GET /api/projects/:id ************************
+  app.get("/api/projects/:id", (req, res) async {
+    try {
+      final projectCode = int.tryParse(req.params['projectCode'] ?? "");
+
+      if (projectCode == null) {
+        res.statusCode = 400;
+        return {"error": "Invalid projectCode"};
+      }
+
+      final project = _projectBox.values.firstWhere(
+        (u) => u.projectCode == projectCode.toString(),
+        orElse: () => Project(
+          projectCode: '-1',
+          name: '',
+          status: '',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          projectType: '',
+          participationType: '',
+          // Add other required fields with default values if needed
+        ),
+      );
+
+      if (project.projectCode == '-1') {
+        res.statusCode = 404;
+        return {"error": "User not found"};
+      }
+
+      return projectsToJson(project);
+    } catch (e) {
+      res.statusCode = 500;
+      return {"error": "Failed to fetch project", "details": e.toString()};
+    }
+  });
+
+  // ***************************project items **********************
+
+////////////////////////////////project Items api////////////////////
+  bool deepMatchProjectItems(ProjectItem u, String query) {
+    if (query.trim().isEmpty) return true;
+
+    final q = query.toLowerCase().trim();
+    final parts = q.split(RegExp(r'\s+'));
+
+    final fields = [
+      (u.name!).toLowerCase(),
+      (u.itemType!).toLowerCase(),
+      (u.projectItemCode!).toLowerCase(),
+    ];
+
+    return parts.every((part) => fields.any((field) => field.contains(part)));
+  }
+
+  /// ************************ GET all project items for client sync ************************
+  app.get("/api/projectItems/all", (req, res) async {
+    print("📥 /api/projectItems/all called");
+
+    try {
+      final box = _projectItemBox;
+      print("📦 Project item box length: ${box.length}");
+
+      final projectItemsJson = <Map<String, dynamic>>[];
+
+      for (var u in box.values) {
+        try {
+          final json = projectItemsToJson(u);
+          projectItemsJson.add(json);
+        } catch (e) {
+          print("❌ JSON encode failed for project items ${u.name}: $e");
+        }
+      }
+
+      print(
+          "✅ Returning ${projectItemsJson.length} project items out of ${box.length}");
+      return projectItemsJson;
+    } catch (e, st) {
+      print("❌ SERVER CRASH in /api/projectItems/all: $e");
+      print(st);
+      res.statusCode = 500;
+      return {"error": "$e"};
+    }
+  });
+
+  /// ************************ GET all project items ************************
+  app.get("/api/projectItems", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+
+      print('🔍 /api/projectItems called with search="$search"');
+
+      final filteredProjectItems = _projectItemBox.values
+          .where((u) => deepMatchProjectItems(u, search))
+          .toList();
+
+      const maxResults = 100;
+      final projectItemsJson = filteredProjectItems
+          .take(maxResults)
+          .map(projectItemsToJson)
+          .toList();
+
+      print(
+          "✅ Returning ${projectItemsJson.length} project items (max $maxResults)");
+
+      return projectItemsJson;
+    } catch (e) {
+      print("❌ Error fetching project items: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch project items"};
+    }
+  });
+
+  /// *********************** POST /api/projectItems/bulk ************************
+  app.post("/api/projectItems/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != "application/json") {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('projectItems') || body['projectItems'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected 'projectItems': [ ... ]"
+        };
+      }
+
+      final List<dynamic> projectItemsJson = body['projectItems'];
+
+      final List<ProjectItem> insertedProjectItems = [];
+      for (final item in projectItemsJson) {
+        try {
+          final projectItem = projectItemsFromJson(item);
+          await _projectItemBox.add(projectItem);
+          insertedProjectItems.add(projectItem);
+        } catch (e) {
+          print("⚠️ Skipping invalid project item entry: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedProjectItems.length,
+        "insertedProjectItems":
+            insertedProjectItems.map(projectItemsToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk project items",
+        "details": e.toString(),
+      };
+    }
+  });
+
+  /// ************************ GET /api/projectItems/:id ************************
+  app.get("/api/projectItems/:id", (req, res) async {
+    try {
+      final projectItemCode = int.tryParse(req.params['projectItemCode'] ?? "");
+
+      if (projectItemCode == null) {
+        res.statusCode = 400;
+        return {"error": "Invalid projectItemCode"};
+      }
+
+      final projectItem = _projectItemBox.values.firstWhere(
+        (u) => u.projectItemCode.toString() == projectItemCode.toString(),
+        orElse: () => ProjectItem(
+          projectItemCode: '-1',
+          name: '',
+          itemType: '',
+
+          // Add other required fields with default values if needed
+        ),
+      );
+
+      if (projectItem.projectItemCode == '-1') {
+        res.statusCode = 404;
+        return {"error": "User not found"};
+      }
+
+      return projectItemsToJson(projectItem);
+    } catch (e) {
+      res.statusCode = 500;
+      return {"error": "Failed to fetch project", "details": e.toString()};
+    }
+  });
 
   /// ************************ LOGIN ************************
   app.post("/api/users/login", (req, res) async {
@@ -851,6 +2071,156 @@ Future<void> startAlfredServer() async {
   }
 
 //////////////////////////////////////////////////////////////////////////////////////////
+
+  /// ************************ GET all receipt logs (unlimited) ************************
+  app.get("/api/receipt_logs/all", (req, res) async {
+    try {
+      debugPrint('📘 /api/receipt_logs/all called');
+
+      // Get ALL receipt logs without limit
+      final allLogs = _paymentLogBox.values
+          .where((log) => log.receiptNumber != null)
+          .toList();
+
+      debugPrint('✅ Returning ${allLogs.length} receipt logs (unlimited)');
+
+      return allLogs.map(paymentLogToJson).toList();
+    } catch (e) {
+      print("❌ Error serving all receipt logs data: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch all receipt logs info"};
+    }
+  });
+
+  /// ************************ GET receipt logs with search ************************
+  app.get("/api/receipt_logs", (req, res) async {
+    try {
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+      final studentName =
+          req.uri.queryParameters['studentName']?.toLowerCase().trim() ?? '';
+      final className =
+          req.uri.queryParameters['className']?.toLowerCase().trim() ?? '';
+      final fromDate = req.uri.queryParameters['fromDate'];
+      final toDate = req.uri.queryParameters['toDate'];
+
+      debugPrint('📘 /api/receipt_logs called');
+      debugPrint('  search: "$search"');
+      debugPrint('  studentName: "$studentName"');
+      debugPrint('  className: "$className"');
+
+      // Start with all logs
+      var filteredLogs = _paymentLogBox.values
+          .where((log) => log.receiptNumber != null)
+          .toList();
+
+      // Apply filters
+      if (search.isNotEmpty) {
+        filteredLogs = filteredLogs
+            .where((log) =>
+                log.studentName.toLowerCase().contains(search) ||
+                log.className.toLowerCase().contains(search) ||
+                log.receiptNumber.toString().contains(search) ||
+                log.dateTime.toLowerCase().contains(search))
+            .toList();
+      }
+
+      if (studentName.isNotEmpty) {
+        filteredLogs = filteredLogs
+            .where((log) => log.studentName.toLowerCase().contains(studentName))
+            .toList();
+      }
+
+      if (className.isNotEmpty) {
+        filteredLogs = filteredLogs
+            .where((log) => log.className.toLowerCase().contains(className))
+            .toList();
+      }
+
+      if (fromDate != null) {
+        final fromDateTime = DateTime.parse(fromDate);
+        filteredLogs = filteredLogs.where((log) {
+          final logDate = DateTime.tryParse(log.dateTime);
+          return logDate != null && logDate.isAfter(fromDateTime);
+        }).toList();
+      }
+
+      if (toDate != null) {
+        final toDateTime = DateTime.parse(toDate);
+        filteredLogs = filteredLogs.where((log) {
+          final logDate = DateTime.tryParse(log.dateTime);
+          return logDate != null && logDate.isBefore(toDateTime);
+        }).toList();
+      }
+
+      // Sort by receipt number descending (newest first)
+      filteredLogs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
+
+      const maxResults = 100;
+      final logsJson =
+          filteredLogs.take(maxResults).map(paymentLogToJson).toList();
+
+      debugPrint(
+          '✅ Returning ${logsJson.length} receipt logs (max $maxResults)');
+
+      return logsJson;
+    } catch (e) {
+      print("❌ Error serving receipt logs data: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch receipt logs info"};
+    }
+  });
+
+  /// ************************ POST /api/receipt_logs/bulk ************************/
+  app.post("/api/receipt_logs/bulk", (req, res) async {
+    try {
+      final contentType = req.headers.contentType?.mimeType;
+
+      if (contentType != 'application/json') {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid content type",
+          "details": "Expected application/json, got $contentType"
+        };
+      }
+
+      final body = await req.bodyAsJsonMap;
+
+      if (!body.containsKey('logs') || body['logs'] is! List) {
+        res.statusCode = 400;
+        return {
+          "error": "Invalid request format",
+          "details": "Expected a list under the 'logs' key"
+        };
+      }
+
+      final List<dynamic> logsJson = body['logs'];
+
+      final List<PaymentLog> insertedLogs = [];
+      for (final item in logsJson) {
+        try {
+          final log = paymentLogFromJson(item);
+          await _paymentLogBox.add(log);
+          insertedLogs.add(log);
+        } catch (e) {
+          print("❌ Skipping invalid log: $e");
+        }
+      }
+
+      return {
+        "success": true,
+        "insertedCount": insertedLogs.length,
+        "insertedLogs": insertedLogs.map(paymentLogToJson).toList(),
+      };
+    } catch (e) {
+      res.statusCode = 500;
+      return {
+        "error": "Failed to process bulk receipt logs",
+        "details": e.toString(),
+      };
+    }
+  });
+
   /// GET /api/receipt_logs
 //////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1347,18 +2717,70 @@ Future<void> startAlfredServer() async {
 
       final studentsBox = await Hive.openBox<Student>('students');
 
-      // 🔒 PREVENT DOUBLE MARKING
+      // 🔒 CHECK FOR DOUBLE MARKING
       final alreadyMarked = studentsBox.values.any((s) =>
           s.class_ == className &&
           s.terms!.contains(termId) &&
           (s.presentDates.contains(date) || s.absentDates.contains(date)));
 
+      // ✅ Check if updates are allowed
+      final allowUpdate =
+          (_settingsBox.get('allowAttendanceUpdate') as bool?) ?? false;
+
       if (alreadyMarked) {
-        res.statusCode = 409;
-        return {"error": "Attendance already marked for this class and date"};
+        if (allowUpdate) {
+          // ✅ Updates are allowed - proceed with updating
+          print(
+              "📝 Attendance already marked but updates are allowed. Updating records...");
+
+          // Clear existing marks for this date for all students in the class
+          for (final student in studentsBox.values.where(
+              (s) => s.class_ == className && s.terms!.contains(termId))) {
+            student.presentDates.remove(date);
+            student.absentDates.remove(date);
+            await student.save();
+          }
+
+          // Now apply the new marks
+          for (final record in records) {
+            final studentId = record['studentId'];
+            final bool isPresent = record['isPresent'];
+
+            final student = studentsBox.values.firstWhere(
+              (s) => s.studentIdNumber == studentId,
+              orElse: () => throw Exception("Student not found: $studentId"),
+            );
+
+            if (isPresent) {
+              student.presentDates.add(date);
+              student.absentDates.remove(date);
+            } else {
+              student.absentDates.add(date);
+              student.presentDates.remove(date);
+            }
+
+            await student.save();
+          }
+
+          return {
+            "status": "success",
+            "marked": records.length,
+            "updated": true,
+            "message": "Attendance updated successfully"
+          };
+        } else {
+          // ❌ Updates are blocked
+          res.statusCode = 409;
+          return {
+            "error": "Attendance already marked for this class and date",
+            "allowUpdate": false,
+            "message":
+                "Updates are currently blocked by the host. Please contact administrator."
+          };
+        }
       }
 
-      // ✅ APPLY ATTENDANCE
+      // ✅ APPLY ATTENDANCE (first time marking)
       for (final record in records) {
         final studentId = record['studentId'];
         final bool isPresent = record['isPresent'];
@@ -1379,14 +2801,35 @@ Future<void> startAlfredServer() async {
         await student.save();
       }
 
-      return {"status": "success", "marked": records.length};
+      return {
+        "status": "success",
+        "marked": records.length,
+        "updated": false,
+        "message": "Attendance marked successfully"
+      };
     } catch (e) {
       print("❌ Bulk register error: $e");
       res.statusCode = 500;
-      return {"error": "Failed to mark attendance"};
+      return {"error": "Failed to mark attendance", "details": e.toString()};
     }
   });
 
+  /// ************************ CHECK if attendance update is allowed ************************
+  app.get("/api/register/allow-update", (req, res) async {
+    try {
+      final allowUpdate =
+          (_settingsBox.get('allowAttendanceUpdate') as bool?) ?? false;
+      return {
+        "allowUpdate": allowUpdate,
+        "message":
+            allowUpdate ? "Updates are allowed" : "Updates are blocked by host"
+      };
+    } catch (e) {
+      print("❌ Error checking update permission: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to check update permission"};
+    }
+  });
   app.get("/api/students", (req, res) async {
     try {
       // Grab search query, normalize it
@@ -1416,6 +2859,522 @@ Future<void> startAlfredServer() async {
     }
   });
 
+  /// ************************ GET all students (unlimited) ************************
+  app.get("/api/students/all", (req, res) async {
+    try {
+      debugPrint('📘 /api/students/all called');
+
+      // Get ALL students without limit
+      final allStudents =
+          _studentsBox.values.where((s) => s.termId != null).toList();
+
+      debugPrint('✅ Returning ${allStudents.length} students (unlimited)');
+
+      return allStudents.map(studentsToJson).toList();
+    } catch (e) {
+      print("❌ Error serving all students data: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch all students info"};
+    }
+  });
+
+// ✅ Check if attendance is already marked for a class on a date
+  app.get("/api/students/registers/check", (req, res) async {
+    try {
+      final className = req.uri.queryParameters['class'];
+      final dateParam = req.uri.queryParameters['date'];
+
+      if (className == null || dateParam == null) {
+        res.statusCode = 400;
+        return {"error": "class and date parameters are required"};
+      }
+
+      final date = DateTime.parse(dateParam);
+      final normalizedDate = DateTime(date.year, date.month, date.day);
+
+      // Check if any student in the class has attendance marked for this date
+      final students =
+          _studentsBox.values.where((s) => s.class_ == className).toList();
+
+      var isMarked = false;
+      for (final student in students) {
+        // Check present dates
+        for (final presentDate in student.presentDates) {
+          final pNormalized =
+              DateTime(presentDate.year, presentDate.month, presentDate.day);
+          if (pNormalized.compareTo(normalizedDate) == 0) {
+            isMarked = true;
+            break;
+          }
+        }
+        if (isMarked) break;
+
+        // Check absent dates
+        for (final absentDate in student.absentDates) {
+          final aNormalized =
+              DateTime(absentDate.year, absentDate.month, absentDate.day);
+          if (aNormalized.compareTo(normalizedDate) == 0) {
+            isMarked = true;
+            break;
+          }
+        }
+        if (isMarked) break;
+      }
+
+      return {"isMarked": isMarked};
+    } catch (e) {
+      print("❌ Error checking attendance: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to check attendance"};
+    }
+  });
+
+// ✅ Get attendance status for a specific student
+  app.get("/api/students/:studentId/attendance", (req, res) async {
+    try {
+      final studentId = req.params['studentId'];
+      final dateParam = req.uri.queryParameters['date'];
+
+      if (dateParam == null) {
+        res.statusCode = 400;
+        return {"error": "date parameter is required"};
+      }
+
+      final date = DateTime.parse(dateParam);
+      final normalizedDate = DateTime(date.year, date.month, date.day);
+
+      final matches = _studentsBox.values
+          .where((s) => s.studentIdNumber == studentId)
+          .toList();
+      if (matches.isEmpty) {
+        res.statusCode = 404;
+        return {"error": "Student not found"};
+      }
+      final student = matches.first;
+
+      var isMarked = false;
+      String? status;
+
+      // Check present dates
+      for (final presentDate in student.presentDates) {
+        final pNormalized =
+            DateTime(presentDate.year, presentDate.month, presentDate.day);
+        if (pNormalized.compareTo(normalizedDate) == 0) {
+          isMarked = true;
+          status = 'present';
+          break;
+        }
+      }
+
+      if (!isMarked) {
+        // Check absent dates
+        for (final absentDate in student.absentDates) {
+          final aNormalized =
+              DateTime(absentDate.year, absentDate.month, absentDate.day);
+          if (aNormalized.compareTo(normalizedDate) == 0) {
+            isMarked = true;
+            status = 'absent';
+            break;
+          }
+        }
+      }
+
+      return {
+        "isMarked": isMarked,
+        "status": status,
+        "date": normalizedDate.toIso8601String(),
+        "studentId": studentId
+      };
+    } catch (e) {
+      print("❌ Error checking student attendance: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to check student attendance"};
+    }
+  });
+
+  /// ************************ GET attendance settings ************************
+  app.get("/api/settings/attendance", (req, res) async {
+    try {
+      debugPrint('📋 GET /api/settings/attendance - START');
+      debugPrint('📋 Settings box length: ${_settingsBox.length}');
+      debugPrint('📋 Settings box keys: ${_settingsBox.keys.toList()}');
+
+      // Get the first settings object
+      final settings = _settingsBox.values.firstOrNull;
+
+      if (settings == null) {
+        debugPrint('⚠️ No settings found! Creating default...');
+        // Create default settings
+        final defaultSettings = Settings(
+          id: 'app_settings',
+          lastUpdated: DateTime.now(),
+          allowAttendanceUpdate: false,
+          allowStudentSync: true,
+          allowPaymentSync: true,
+          autoSyncEnabled: false,
+          syncIntervalMinutes: 5,
+          maintenanceMode: false,
+          enableBackup: false,
+          backupFrequency: 'Daily',
+          maxStudentsPerClass: 30,
+          allowMultipleTerms: true,
+          enableNotifications: true,
+          debugMode: false,
+          syncStatus: true,
+          modifiedFields: [],
+          operationType: 'create',
+        );
+
+        await _settingsBox.add(defaultSettings);
+        final allowUpdate = defaultSettings.allowAttendanceUpdate ?? false;
+
+        debugPrint(
+            '✅ Created default settings: allowAttendanceUpdate = $allowUpdate');
+
+        return {
+          "allowUpdate": allowUpdate,
+          "message":
+              "Default settings created. Attendance updates are blocked by default."
+        };
+      }
+
+      final allowUpdate = settings.allowAttendanceUpdate ?? false;
+      debugPrint('✅ Found settings: allowAttendanceUpdate = $allowUpdate');
+      debugPrint('✅ Settings lastUpdated: ${settings.lastUpdated}');
+      debugPrint('✅ Settings modifiedFields: ${settings.modifiedFields}');
+
+      return {
+        "allowUpdate": allowUpdate,
+        "message": allowUpdate
+            ? "Attendance updates are allowed"
+            : "Attendance updates are blocked"
+      };
+    } catch (e) {
+      debugPrint("❌ Error getting attendance settings: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to get attendance settings"};
+    }
+  });
+
+  /// ************************ UPDATE attendance settings ************************
+  app.put("/api/settings/attendance", (req, res) async {
+    try {
+      debugPrint('📋 PUT /api/settings/attendance - START');
+
+      final body = await req.bodyAsJsonMap;
+      final allowUpdate = body['allowUpdate'] as bool?;
+
+      debugPrint('📋 Request body: $body');
+      debugPrint('📋 allowUpdate value: $allowUpdate');
+
+      if (allowUpdate == null) {
+        debugPrint('❌ allowUpdate is null');
+        res.statusCode = 400;
+        return {"error": "allowUpdate parameter is required"};
+      }
+
+      // Get the first settings object
+      var settings = _settingsBox.values.firstOrNull;
+
+      if (settings == null) {
+        debugPrint('⚠️ No settings found! Creating new...');
+        settings = Settings(
+          id: 'app_settings',
+          lastUpdated: DateTime.now(),
+          allowAttendanceUpdate: allowUpdate,
+          allowStudentSync: true,
+          allowPaymentSync: true,
+          autoSyncEnabled: false,
+          syncIntervalMinutes: 5,
+          maintenanceMode: false,
+          enableBackup: false,
+          backupFrequency: 'Daily',
+          maxStudentsPerClass: 30,
+          allowMultipleTerms: true,
+          enableNotifications: true,
+          debugMode: false,
+          syncStatus: true,
+          modifiedFields: ['allowAttendanceUpdate'],
+          operationType: 'create',
+        );
+
+        await _settingsBox.add(settings);
+        debugPrint(
+            '✅ Created new settings with allowAttendanceUpdate = $allowUpdate');
+      } else {
+        // Update existing settings
+        settings.allowAttendanceUpdate = allowUpdate;
+        settings.lastUpdated = DateTime.now();
+        settings.markFieldModified('allowAttendanceUpdate');
+        await settings.save();
+        debugPrint('✅ Updated settings: allowAttendanceUpdate = $allowUpdate');
+      }
+
+      // Verify the setting was saved
+      final savedSettings = _settingsBox.values.firstOrNull;
+      final savedValue = savedSettings?.allowAttendanceUpdate;
+      debugPrint('✅ Verified saved value: $savedValue');
+
+      return {
+        "success": true,
+        "allowUpdate": allowUpdate,
+        "verified": savedValue == allowUpdate,
+        "message": allowUpdate
+            ? "Attendance updates are now allowed"
+            : "Attendance updates are now blocked"
+      };
+    } catch (e) {
+      debugPrint("❌ Error updating attendance settings: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to update attendance settings"};
+    }
+  });
+
+  /// ************************ CHECK if attendance update is allowed ************************
+  app.get("/api/register/allow-update", (req, res) async {
+    try {
+      debugPrint('📋 GET /api/register/allow-update - START');
+
+      // Get the first settings object
+      final settings = _settingsBox.values.firstOrNull;
+
+      if (settings == null) {
+        debugPrint('⚠️ No settings found! Creating default...');
+        // Create default settings
+        final defaultSettings = Settings(
+          id: 'app_settings',
+          lastUpdated: DateTime.now(),
+          allowAttendanceUpdate: false,
+          allowStudentSync: true,
+          allowPaymentSync: true,
+          autoSyncEnabled: false,
+          syncIntervalMinutes: 5,
+          maintenanceMode: false,
+          enableBackup: false,
+          backupFrequency: 'Daily',
+          maxStudentsPerClass: 30,
+          allowMultipleTerms: true,
+          enableNotifications: true,
+          debugMode: false,
+          syncStatus: true,
+          modifiedFields: [],
+          operationType: 'create',
+        );
+
+        await _settingsBox.add(defaultSettings);
+        final allowUpdate = defaultSettings.allowAttendanceUpdate ?? false;
+
+        debugPrint(
+            '✅ Created default settings: allowAttendanceUpdate = $allowUpdate');
+
+        return {
+          "allowUpdate": allowUpdate,
+          "message": "Default settings created. Updates are blocked by default."
+        };
+      }
+
+      final allowUpdate = settings.allowAttendanceUpdate ?? false;
+      debugPrint('✅ Found settings: allowUpdate = $allowUpdate');
+
+      return {
+        "allowUpdate": allowUpdate,
+        "message":
+            allowUpdate ? "Updates are allowed" : "Updates are blocked by host"
+      };
+    } catch (e) {
+      debugPrint("❌ Error checking update permission: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to check update permission"};
+    }
+  });
+
+  /// ************************ DEBUG: View all settings ************************
+  app.get("/api/settings/debug", (req, res) async {
+    try {
+      final allSettings = _settingsBox.values.toList();
+      final settingsMap = allSettings
+          .map((s) => {
+                'id': s.id,
+                'allowAttendanceUpdate': s.allowAttendanceUpdate,
+                'lastUpdated': s.lastUpdated?.toIso8601String(),
+                'modifiedFields': s.modifiedFields,
+                'operationType': s.operationType,
+                'syncStatus': s.syncStatus,
+              })
+          .toList();
+
+      debugPrint('📋 DEBUG: All settings = ${jsonEncode(settingsMap)}');
+
+      return {
+        "count": allSettings.length,
+        "settings": settingsMap,
+        "boxName": _settingsBox.name,
+        "boxLength": _settingsBox.length,
+        "keys": _settingsBox.keys.toList(),
+      };
+    } catch (e) {
+      debugPrint("❌ Error debugging settings: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to debug settings"};
+    }
+  });
+
+  /// ************************ DEBUG: Reset settings ************************
+  app.post("/api/settings/reset", (req, res) async {
+    try {
+      // Clear all settings
+      await _settingsBox.clear();
+
+      // Create default settings
+      final defaultSettings = Settings(
+        id: 'app_settings',
+        lastUpdated: DateTime.now(),
+        allowAttendanceUpdate: false,
+        allowStudentSync: true,
+        allowPaymentSync: true,
+        autoSyncEnabled: false,
+        syncIntervalMinutes: 5,
+        maintenanceMode: false,
+        enableBackup: false,
+        backupFrequency: 'Daily',
+        maxStudentsPerClass: 30,
+        allowMultipleTerms: true,
+        enableNotifications: true,
+        debugMode: false,
+        syncStatus: true,
+        modifiedFields: [],
+        operationType: 'create',
+      );
+
+      await _settingsBox.add(defaultSettings);
+      debugPrint('✅ Settings reset to default: allowAttendanceUpdate = false');
+
+      return {
+        "success": true,
+        "message": "Settings reset to default",
+        "defaultSettings": {
+          "allowAttendanceUpdate": defaultSettings.allowAttendanceUpdate,
+        }
+      };
+    } catch (e) {
+      debugPrint("❌ Error resetting settings: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to reset settings"};
+    }
+  });
+
+  /// ************************ BULK REGISTER ************************
+  app.post("/api/register/mark/bulk", (req, res) async {
+    try {
+      final body = await req.bodyAsJsonMap;
+
+      final String className = body['className'];
+      final String termId = body['termId'];
+      final DateTime date = DateTime.parse(body['date']);
+      final List records = body['records'];
+
+      // 🔒 CHECK FOR DOUBLE MARKING
+      final alreadyMarked = _studentsBox.values.any((s) =>
+          s.class_ == className &&
+          s.terms!.contains(termId) &&
+          (s.presentDates.contains(date) || s.absentDates.contains(date)));
+
+      // ✅ Get settings from typed box
+      final settings = _settingsBox.values.first;
+      final allowUpdate = settings.allowAttendanceUpdate ?? false;
+
+      debugPrint(
+          '📋 Bulk register - className: $className, termId: $termId, date: $date');
+      debugPrint('📋 alreadyMarked: $alreadyMarked, allowUpdate: $allowUpdate');
+
+      if (alreadyMarked) {
+        if (allowUpdate) {
+          // ✅ Updates are allowed - proceed with updating
+          debugPrint(
+              "📝 Attendance already marked but updates are allowed. Updating records...");
+
+          // Clear existing marks for this date for all students in the class
+          for (final student in _studentsBox.values.where(
+              (s) => s.class_ == className && s.terms!.contains(termId))) {
+            student.presentDates.remove(date);
+            student.absentDates.remove(date);
+            await student.save();
+          }
+
+          // Now apply the new marks
+          for (final record in records) {
+            final studentId = record['studentId'];
+            final bool isPresent = record['isPresent'];
+
+            final student = _studentsBox.values.firstWhere(
+              (s) => s.studentIdNumber == studentId,
+              orElse: () => throw Exception("Student not found: $studentId"),
+            );
+
+            if (isPresent) {
+              student.presentDates.add(date);
+              student.absentDates.remove(date);
+            } else {
+              student.absentDates.add(date);
+              student.presentDates.remove(date);
+            }
+
+            await student.save();
+          }
+
+          return {
+            "status": "success",
+            "marked": records.length,
+            "updated": true,
+            "message": "Attendance updated successfully"
+          };
+        } else {
+          // ❌ Updates are blocked
+          debugPrint("❌ Attendance already marked and updates are blocked");
+          res.statusCode = 409;
+          return {
+            "error": "Attendance already marked for this class and date",
+            "allowUpdate": false,
+            "message":
+                "Updates are currently blocked by the host. Please contact administrator."
+          };
+        }
+      }
+
+      // ✅ APPLY ATTENDANCE (first time marking)
+      debugPrint("✅ Marking attendance for the first time");
+      for (final record in records) {
+        final studentId = record['studentId'];
+        final bool isPresent = record['isPresent'];
+
+        final student = _studentsBox.values.firstWhere(
+          (s) => s.studentIdNumber == studentId,
+          orElse: () => throw Exception("Student not found: $studentId"),
+        );
+
+        if (isPresent) {
+          student.presentDates.add(date);
+          student.absentDates.remove(date);
+        } else {
+          student.absentDates.add(date);
+          student.presentDates.remove(date);
+        }
+
+        await student.save();
+      }
+
+      return {
+        "status": "success",
+        "marked": records.length,
+        "updated": false,
+        "message": "Attendance marked successfully"
+      };
+    } catch (e) {
+      debugPrint("❌ Bulk register error: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to mark attendance", "details": e.toString()};
+    }
+  });
   //************************* POST /api/student/bulk ************************/
 
   app.post("/api/students/bulk", (req, res) async {
@@ -1961,7 +3920,70 @@ Future<void> startAlfredServer() async {
     }
   });
   ////////////////////////////////classes api////////////////////
+  /// ************************ GET all classes (unlimited) ************************
+  app.get("/api/classes/all", (req, res) async {
+    try {
+      debugPrint('📘 /api/classes/all called');
 
+      // Get ALL classes without limit
+      final allClasses =
+          _classesBox.values.where((c) => c.className != null).toList();
+
+      debugPrint('✅ Returning ${allClasses.length} classes (unlimited)');
+
+      return allClasses.map(classesToJson).toList();
+    } catch (e) {
+      print("❌ Error serving all classes data: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch all classes info"};
+    }
+  });
+
+  /// ************************ GET classes with filters ************************
+  app.get("/api/classes", (req, res) async {
+    try {
+      final termId = req.uri.queryParameters['termId'];
+      final search =
+          req.uri.queryParameters['search']?.toLowerCase().trim() ?? '';
+
+      debugPrint('📘 /api/classes called');
+      debugPrint('  termId: "$termId"');
+      debugPrint('  search: "$search"');
+
+      // Start with all classes
+      var filteredClasses =
+          _classesBox.values.where((c) => c.className != null).toList();
+
+      // Filter by term if provided
+      if (termId != null && termId.isNotEmpty) {
+        filteredClasses = filteredClasses
+            .where((c) => c.terms != null && c.terms!.contains(termId))
+            .toList();
+      }
+
+      // Apply search filter
+      if (search.isNotEmpty) {
+        filteredClasses = filteredClasses
+            .where((c) => c.className.toLowerCase().contains(search))
+            .toList();
+      }
+
+      // Sort alphabetically
+      filteredClasses.sort((a, b) => a.className.compareTo(b.className));
+
+      const maxResults = 100;
+      final classesJson =
+          filteredClasses.take(maxResults).map(classesToJson).toList();
+
+      debugPrint('✅ Returning ${classesJson.length} classes (max $maxResults)');
+
+      return classesJson;
+    } catch (e) {
+      print("❌ Error serving classes data: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch classes info"};
+    }
+  });
   //***********************get classes method *********************/
   app.get("/api/classes", (req, res) async {
     try {

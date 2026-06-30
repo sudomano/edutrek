@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/screens/network_settings/network_settings_screen.dart';
 
 class CenteredFormContainer extends StatelessWidget {
   final Widget child;
@@ -25,6 +27,30 @@ class CenteredFormContainer extends StatelessWidget {
             ),
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const NetworkSettingsScreen()),
+              );
+            },
+            tooltip: 'Network Settings',
+          ),
+          IconButton(
+            icon: const Icon(Icons.home,
+                size: 30,
+                color: Color.fromARGB(255, 255, 255, 255)), // Home button
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
+              );
+            },
+          ),
+        ],
         backgroundColor: const Color.fromARGB(
             255, 38, 140, 191), // Optional: Customize AppBar background color
         elevation: 4.0, // Optional: Add a subtle shadow

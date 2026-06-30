@@ -25,13 +25,14 @@ class BatchUnitAdapter extends TypeAdapter<BatchUnit> {
       lastModified: fields[5] as DateTime?,
       operationType: fields[6] as String?,
       modifiedFields: (fields[7] as List?)?.cast<String>(),
+      unitBatchCode: fields[8] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, BatchUnit obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.level)
       ..writeByte(1)
@@ -47,7 +48,9 @@ class BatchUnitAdapter extends TypeAdapter<BatchUnit> {
       ..writeByte(6)
       ..write(obj.operationType)
       ..writeByte(7)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(8)
+      ..write(obj.unitBatchCode);
   }
 
   @override

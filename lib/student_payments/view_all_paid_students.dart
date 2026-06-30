@@ -38,6 +38,16 @@ class ViewAllStudentPayments extends StatefulWidget {
 
 class _ViewByScreenState extends State<ViewAllStudentPayments> {
   String? _selectedStudent;
+
+  String? _selectedReceiptNumber;
+  String? _selectedReferenceNumber;
+
+  List<String> _selectedPaymentMethods = [];
+  List<String> _selectedUsers = [];
+
+  List<String> _paymentMethods = [];
+  List<String> _users = [];
+
   DateTime? _selectedStartDate;
   DateTime? _selectedEndDate;
   bool _isSortAscending = true;
@@ -250,8 +260,20 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
           .toList());
       _selectedClasses = ['All']; // Default selection
 
+      _paymentMethods = ['All'];
+      _paymentMethods.addAll(filteredPayments
+          .map((student) => student.paymentMethodType)
+          .toSet()
+          .toList());
+      _selectedPaymentMethods = ['All'];
+
+      _users = ['All'];
+      _users.addAll(filteredPayments
+          .map((student) => student.username.toString())
+          .toSet()
+          .toList());
+      _selectedUsers = ['All'];
       // Fetch unique payment purposes from filtered payments
-      // Fetch unique classes from filtered payments
       _purposes = ['All'];
       _purposes.addAll(filteredPayments
           .map((student) => student.paymentPurpose)
@@ -339,11 +361,40 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         }).toList();
       }
 
+      if (_selectedPaymentMethods.isNotEmpty &&
+          !_selectedPaymentMethods.contains("All")) {
+        filteredPayments = filteredPayments.where((payment) {
+          return _selectedPaymentMethods.contains(payment.paymentMethodType);
+        }).toList();
+      }
+      if (_selectedUsers.isNotEmpty && !_selectedUsers.contains("All")) {
+        filteredPayments = filteredPayments.where((payment) {
+          return _selectedUsers.contains(payment.username.toString());
+        }).toList();
+      }
+
       if (_selectedStudent != null && _selectedStudent!.isNotEmpty) {
         filteredPayments = filteredPayments
             .where((payment) => payment.studentSurname
                 .toLowerCase()
                 .contains(_selectedStudent!.toLowerCase()))
+            .toList();
+      }
+      if (_selectedReceiptNumber != null &&
+          _selectedReceiptNumber!.isNotEmpty) {
+        filteredPayments = filteredPayments
+            .where((payment) => payment.id
+                .toString()
+                .toLowerCase()
+                .contains(_selectedReceiptNumber!.toLowerCase()))
+            .toList();
+      }
+      if (_selectedReferenceNumber != null &&
+          _selectedReferenceNumber!.isNotEmpty) {
+        filteredPayments = filteredPayments
+            .where((payment) => payment.paymentReference
+                .toLowerCase()
+                .contains(_selectedReferenceNumber!.toLowerCase()))
             .toList();
       }
 
@@ -357,13 +408,30 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       if (_selectedStartDate != null || _selectedEndDate != null) {
         filteredPayments = filteredPayments.where((payment) {
           final paymentDate = payment.paymentDate;
+          // Normalize payment date to just year/month/day for comparison
+          final paymentDateOnly =
+              DateTime(paymentDate.year, paymentDate.month, paymentDate.day);
+
           if (_selectedStartDate != null && _selectedEndDate != null) {
-            return paymentDate.isAfter(_selectedStartDate!) &&
-                paymentDate.isBefore(_selectedEndDate!);
+            final startDateOnly = DateTime(_selectedStartDate!.year,
+                _selectedStartDate!.month, _selectedStartDate!.day);
+            final endDateOnly = DateTime(_selectedEndDate!.year,
+                _selectedEndDate!.month, _selectedEndDate!.day);
+
+            return paymentDateOnly
+                    .isAfter(startDateOnly.subtract(const Duration(days: 1))) &&
+                paymentDateOnly
+                    .isBefore(endDateOnly.add(const Duration(days: 1)));
           } else if (_selectedStartDate != null) {
-            return paymentDate.isAfter(_selectedStartDate!);
+            final startDateOnly = DateTime(_selectedStartDate!.year,
+                _selectedStartDate!.month, _selectedStartDate!.day);
+            return paymentDateOnly
+                .isAfter(startDateOnly.subtract(const Duration(days: 1)));
           } else if (_selectedEndDate != null) {
-            return paymentDate.isBefore(_selectedEndDate!);
+            final endDateOnly = DateTime(_selectedEndDate!.year,
+                _selectedEndDate!.month, _selectedEndDate!.day);
+            return paymentDateOnly
+                .isBefore(endDateOnly.add(const Duration(days: 1)));
           }
           return true;
         }).toList();
@@ -442,7 +510,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
     final pdf = pw.Document();
 
     final headers = [
-      'Receipt',
+      'Receipt No.',
       'Payment Purpose',
       'Amount',
       'Method',
@@ -919,6 +987,15 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
 
   @override
   Widget build(BuildContext context) {
+    final _loggedInUsername = loggedInUser.role;
+
+    bool mat = false;
+    if (_loggedInUsername.toLowerCase() == 'admin' ||
+        _loggedInUsername.toLowerCase() == 'administration') {
+      mat = true;
+    }
+    print(mat);
+    // ✅ ALWAYS filter by logged-in cashier
     return Scaffold(
       appBar: AppBar(
         title: const Center(
@@ -943,7 +1020,8 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ViewByScreen(),
+                    builder: (context) =>
+                        const StudentsArrearsStatementScreen(),
                   ),
                 );
               },
@@ -1018,7 +1096,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                           child: _buildTermMultiSelect(),
                         ),
                         _buildCard(
-                          title: 'View by Class',
+                          title: 'Filter by Class',
                           child: _buildClassDropdown(),
                         ),
                         const SizedBox(height: 20),
@@ -1028,10 +1106,29 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
                         ),
                         const SizedBox(height: 20),
                         _buildCard(
+                          title: 'Search by Receipt Number',
+                          child: _buildSearchReceiptField(),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildCard(
+                          title: 'Search by Payment Method Reference',
+                          child: _buildSearchReferenceField(),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildCard(
                           title: 'Filter by Payment Purpose',
                           child: _buildPaymentPurposeDropdown(),
                         ),
                         const SizedBox(height: 20),
+                        _buildCard(
+                          title: 'Filter by Payment Method',
+                          child: _buildPaymentMethodDropdown(),
+                        ),
+                        if (mat)
+                          _buildCard(
+                            title: 'Payments Done By',
+                            child: _buildUsersDropdown(),
+                          ),
                         const SizedBox(height: 20),
                         _buildCard(
                           title: 'Filter by Payment Period',
@@ -1127,6 +1224,10 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       _selectedStartDate = null;
       _selectedEndDate = null;
       _filteredPayments = [];
+      _selectedReceiptNumber = '';
+      _selectedReferenceNumber = '';
+      _selectedPaymentMethods = [];
+      _selectedUsers = [];
     });
 
     try {
@@ -1155,6 +1256,17 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       _classes = ['All'];
       _classes.addAll(
         termPayments.map((p) => p.studentClass).toSet().toList(),
+      );
+
+      // ✅ Rebuild payment methods
+      _paymentMethods = ['All'];
+      _paymentMethods.addAll(
+        termPayments.map((p) => p.paymentMethodType).toSet().toList(),
+      );
+      // ✅ Rebuild users
+      _users = ['All'];
+      _users.addAll(
+        termPayments.map((p) => p.username.toString()).toSet().toList(),
       );
 
       // ✅ Rebuild purposes
@@ -1199,6 +1311,30 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
     );
   }
 
+  Widget _buildPaymentMethodDropdown() {
+    return MultiSelectChip(
+      items: _paymentMethods,
+      initialSelectedItems: _selectedPaymentMethods,
+      onSelectionChanged: (selectedPaymentMethods) {
+        setState(() {
+          _selectedPaymentMethods = selectedPaymentMethods;
+        });
+      },
+    );
+  }
+
+  Widget _buildUsersDropdown() {
+    return MultiSelectChip(
+      items: _users,
+      initialSelectedItems: _selectedUsers,
+      onSelectionChanged: (selectedUsers) {
+        setState(() {
+          _selectedUsers = selectedUsers;
+        });
+      },
+    );
+  }
+
   Widget _buildPaymentPurposeDropdown() {
     return MultiSelectChip(
       items: _purposes,
@@ -1238,7 +1374,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   Widget _buildSearchStudentField() {
     return TextField(
       decoration: InputDecoration(
-        labelText: 'Search Student by Surame',
+        labelText: 'Search Student by Name',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         filled: true,
         fillColor: Colors.white,
@@ -1246,6 +1382,38 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       onChanged: (value) {
         setState(() {
           _selectedStudent = value;
+        });
+      },
+    );
+  }
+
+  Widget _buildSearchReceiptField() {
+    return TextField(
+      decoration: InputDecoration(
+        labelText: 'Search by Receipt Number',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        filled: true,
+        fillColor: Colors.white,
+      ),
+      onChanged: (value) {
+        setState(() {
+          _selectedReceiptNumber = value;
+        });
+      },
+    );
+  }
+
+  Widget _buildSearchReferenceField() {
+    return TextField(
+      decoration: InputDecoration(
+        labelText: 'Search by Payment Reference',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        filled: true,
+        fillColor: Colors.white,
+      ),
+      onChanged: (value) {
+        setState(() {
+          _selectedReferenceNumber = value;
         });
       },
     );
@@ -1405,7 +1573,7 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
               DataCell(Text(_buildPaymentMethodDetails(payment))),
               DataCell(Text(payment.paymentDate.toString())),
               DataCell(Text(payment.termId.toString())),
-              DataCell(Text(payment.role ?? '')),
+              DataCell(Text(payment.username ?? '')),
             ],
           ),
         );

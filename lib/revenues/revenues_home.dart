@@ -141,7 +141,8 @@ class _MyPageState extends State<RevenuesHome> {
                                                 icon: Icons.person_add,
                                                 text: 'Detailed Incomes',
                                                 //target: ViewAllRevenuesFilter(),
-                                                target: ViewByScreen(),
+                                                target:
+                                                    StudentsArrearsStatementScreen(),
                                                 isLargeScreen: true,
                                               ),
 

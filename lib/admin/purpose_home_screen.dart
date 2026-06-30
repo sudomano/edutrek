@@ -118,10 +118,7 @@ class _MyPageState extends State<PurposeHome> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+                                            if (admin || administration)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -147,12 +144,14 @@ class _MyPageState extends State<PurposeHome> {
                                             if (admin ||
                                                 administration ||
                                                 secretary ||
-                                                subadmin)
+                                                subadmin ||
+                                                teacher)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text:
-                                                    'Detailed Student Payments ',
-                                                target: ViewByScreen(),
+                                                    'Student Arrears Statements',
+                                                target:
+                                                    StudentsArrearsStatementScreen(),
                                                 isLargeScreen:
                                                     true, // Flag to check screen size
                                               ),
@@ -171,10 +170,7 @@ class _MyPageState extends State<PurposeHome> {
                                         )
                                       : Column(
                                           children: [
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+                                            if (admin || administration)
 
                                               // Elevated cards with icons
                                               const ElevatedCard(
@@ -200,12 +196,14 @@ class _MyPageState extends State<PurposeHome> {
                                             if (admin ||
                                                 administration ||
                                                 secretary ||
-                                                subadmin)
+                                                subadmin ||
+                                                teacher)
                                               const ElevatedCard(
                                                 icon: Icons.people,
                                                 text:
-                                                    'Detailed Student Payments ',
-                                                target: ViewByScreen(),
+                                                    'Student Arrears Statements',
+                                                target:
+                                                    StudentsArrearsStatementScreen(),
                                                 isLargeScreen:
                                                     false, // Flag to check screen size
                                               ),

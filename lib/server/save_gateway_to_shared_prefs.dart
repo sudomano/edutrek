@@ -1,73 +1,208 @@
 import 'dart:io';
+
+import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:network_info_plus/network_info_plus.dart';
+import 'package:zitf_system/database/network_utils/network_settings.dart';
 
-/// On the CLIENT side, find the likely GATEWAY IP (host IP)
-/// and store it for use in API communication.
-Future<void> saveGatewayToPrefs() async {
-  final prefs = await SharedPreferences.getInstance();
-  final gatewayIp = await getActualGatewayIp();
-  if (gatewayIp != null) {
-    await prefs.setString('host_ip', gatewayIp);
-    print("✅ Gateway IP saved to prefs: $gatewayIp");
-  } else {
-    print("⚠️ No gateway IP detected");
-  }
-}
-
-Future<String?> getActualGatewayIp() async {
+/// Synchronizes SharedPreferences host_ip
+/// with the ACTIVE NETWORK model.
+///
+/// RULES:
+/// 1. MODEL is the source of truth.
+/// 2. If prefs is empty -> overwrite prefs.
+/// 3. If prefs mismatches model -> overwrite prefs.
+/// 4. If model has no valid IP -> do nothing.
+/// 5. Always validate before saving.
+Future<String?> saveGatewayToPrefs() async {
   try {
-    if (Platform.isWindows) {
-      return await getWindowsGateway();
-    } else {
-      return await getUnixGateway();
+    print('\n');
+    print('============= GATEWAY PREF SYNC START =============');
+
+    final prefs = await SharedPreferences.getInstance();
+
+    print('📦 SharedPreferences opened');
+
+    final box = await Hive.openBox<NetworkSettings>(
+      'network_settings_box',
+    );
+
+    print('📂 Hive box opened');
+    print('📊 Total network records: ${box.length}');
+
+    if (box.isEmpty) {
+      print('❌ NETWORK SETTINGS BOX IS EMPTY');
+      print('==================================================');
+      return null;
     }
-  } catch (e) {
-    print("⚠️ Failed to get gateway IP: $e");
+
+    NetworkSettings? activeNetwork;
+
+    for (int i = 0; i < box.length; i++) {
+      final network = box.getAt(i);
+
+      if (network == null) {
+        print('⚠️ NULL network at index $i');
+        continue;
+      }
+
+      print('----------------------------------------');
+      print('📌 RECORD INDEX: $i');
+      print('🌐 Network Name: ${network.networkName}');
+      print('📡 Host IP: ${network.hostIpAddress}');
+      print('🛣 Gateway: ${network.gateway}');
+      print('🟢 isActive: ${network.isActive}');
+      print('----------------------------------------');
+
+      if (network.isActive == true) {
+        activeNetwork = network;
+
+        print('✅ ACTIVE NETWORK FOUND');
+        break;
+      }
+    }
+
+    /// FALLBACK TO FIRST RECORD
+    activeNetwork ??= box.getAt(0);
+
+    if (activeNetwork == null) {
+      print('❌ ACTIVE NETWORK STILL NULL');
+      print('==================================================');
+      return null;
+    }
+
+    print('🎯 FINAL NETWORK SELECTED:');
+    print('🌐 ${activeNetwork.networkName}');
+    print('📡 ${activeNetwork.hostIpAddress}');
+
+    final modelIp = activeNetwork.hostIpAddress?.trim();
+
+    print('🧹 Trimmed IP: $modelIp');
+
+    if (modelIp == null || modelIp.isEmpty) {
+      print('❌ MODEL IP IS NULL OR EMPTY');
+      print('==================================================');
+      return null;
+    }
+
+    final isValid = _isValidIPv4(modelIp);
+
+    print('🧪 IPv4 Validation Result: $isValid');
+
+    if (!isValid) {
+      print('❌ INVALID IPv4 FORMAT');
+      print('==================================================');
+      return null;
+    }
+
+    final prefsIp = prefs.getString('host_ip')?.trim();
+
+    print('📦 Existing Pref IP: $prefsIp');
+
+    if (prefsIp != modelIp) {
+      print('🔄 PREFS MISMATCH DETECTED');
+      print('📥 Saving model IP into prefs...');
+
+      await prefs.setString(
+        'host_ip',
+        modelIp,
+      );
+
+      print('✅ PREFS UPDATED SUCCESSFULLY');
+    } else {
+      print('✅ PREFS ALREADY MATCH MODEL');
+    }
+
+    final verifyIp = prefs.getString('host_ip');
+
+    print('🔍 VERIFIED SAVED PREF IP: $verifyIp');
+
+    print('============= GATEWAY PREF SYNC END =============');
+    print('\n');
+
+    return verifyIp;
+  } catch (e, stack) {
+    print('❌ GATEWAY SYNC CRASH: $e');
+    print(stack);
+
     return null;
   }
 }
 
-Future<String?> getWindowsGateway() async {
-  final result = await Process.run('ipconfig', []);
-  final lines = result.stdout.toString().split('\n');
-  for (var line in lines) {
-    if (line.toLowerCase().contains("default gateway")) {
-      final parts = line.trim().split(RegExp(r'\s+'));
-      if (parts.length >= 3) {
-        return parts.last.trim();
+/// Fetch ACTIVE NETWORK HOST IP from Hive
+Future<String?> getActiveNetworkGatewayIp() async {
+  try {
+    final box = await Hive.openBox<NetworkSettings>(
+      'network_settings_box',
+    );
+
+    if (box.isEmpty) {
+      print('⚠️ Network settings box empty');
+      return null;
+    }
+
+    NetworkSettings? activeNetwork;
+
+    /// Find ACTIVE NETWORK
+    for (int i = 0; i < box.length; i++) {
+      final network = box.getAt(i);
+
+      if (network == null) continue;
+
+      print('🌐 Checking: ${network.networkName}');
+      print('📡 Host IP: ${network.hostIpAddress}');
+      print('🟢 Active : ${network.isActive}');
+
+      if (network.isActive == true) {
+        activeNetwork = network;
+        break;
       }
     }
+
+    /// FALLBACK:
+    /// Use first available network if none active
+    activeNetwork ??= box.getAt(0);
+
+    if (activeNetwork == null) {
+      print('⚠️ No network records found');
+      return null;
+    }
+
+    final hostIp = activeNetwork.hostIpAddress?.trim();
+
+    if (hostIp == null || hostIp.isEmpty || !_isValidIPv4(hostIp)) {
+      print('⚠️ Invalid host IP in model');
+      return null;
+    }
+
+    print('✅ Active Network IP Selected: $hostIp');
+
+    return hostIp;
+  } catch (e) {
+    print('❌ Error fetching active network IP: $e');
+    return null;
   }
-  return null;
 }
 
+/// IPv4 validator
+bool _isValidIPv4(String ip) {
+  final regex = RegExp(
+    r'^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$',
+  );
+
+  return regex.hasMatch(ip);
+}
+
+/// LEGACY COMPATIBILITY
+Future<String?> getActualGatewayIp() async {
+  return await getActiveNetworkGatewayIp();
+}
+
+/// LEGACY WINDOWS METHOD
+Future<String?> getWindowsGateway() async {
+  return await getActiveNetworkGatewayIp();
+}
+
+/// LEGACY UNIX METHOD
 Future<String?> getUnixGateway() async {
-  final prefs = await SharedPreferences.getInstance();
-  final interfaces = await NetworkInterface.list();
-
-  for (var interface in interfaces) {
-    for (var addr in interface.addresses) {
-      final ip = addr.address;
-
-      if (addr.type == InternetAddressType.IPv4 &&
-          !ip.startsWith("127.") &&
-          !ip.endsWith(".255") && // Skip broadcast
-          ip != "0.0.0.0") {
-        // Convert to assumed gateway IP
-        final segments = ip.split('.');
-        if (segments.length == 4) {
-          final gatewayIp = '${segments[0]}.${segments[1]}.${segments[2]}.2';
-          await prefs.setString('host_ip', gatewayIp);
-          print("📡 Found IP: $ip");
-          print("🎯 Converted to Gateway IP: $gatewayIp");
-          print("✅ Saved host_ip to SharedPreferences");
-          return gatewayIp;
-        }
-      }
-    }
-  }
-
-  print("⚠️ No suitable local IP address found.");
-  return null;
+  return await getActiveNetworkGatewayIp();
 }

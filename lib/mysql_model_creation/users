@@ -1,0 +1,40 @@
+
+/////////////////////////////////////users////////////////////////////
+-- DROP TABLE IF EXISTS `user`;
+CREATE TABLE `user` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `userCode` varchar(200) DEFAULT NULL,
+  
+  -- Core User Fields (matching client exactly)
+  `username` varchar(255) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `role` varchar(50) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `isActive` tinyint(1) DEFAULT 1,
+  
+  -- Security Fields (JSON for List support)
+  `securityQuestions` json DEFAULT NULL,
+  `securityAnswers` json DEFAULT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `assignedClasses` json DEFAULT NULL, -- JSON array for class names
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`),
+  UNIQUE KEY `uk_userCode` (`userCode`),
+  KEY `idx_role` (`role`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

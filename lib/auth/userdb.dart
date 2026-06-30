@@ -49,6 +49,16 @@ class User extends HiveObject {
   @HiveField(14)
   String? email;
 
+  // ✅ NEW: Fields for teacher class assignment
+  @HiveField(15)
+  List<String>? assignedClasses; // List of class names assigned to teacher
+
+  @HiveField(16)
+  bool? isActive = true; // Whether the user account is active
+
+  @HiveField(17)
+  DateTime? createdAt; // When the account was created
+
   User({
     required this.username,
     required this.password,
@@ -65,6 +75,9 @@ class User extends HiveObject {
     this.userCode,
     this.modifiedFields,
     this.email,
+    this.assignedClasses, // ✅ New field
+    this.isActive = true, // ✅ New field with default
+    this.createdAt, // ✅ New field
   });
 
   User copyWith({
@@ -83,6 +96,9 @@ class User extends HiveObject {
     String? userCode,
     List<String>? modifiedFields,
     String? email,
+    List<String>? assignedClasses,
+    bool? isActive,
+    DateTime? createdAt,
   }) {
     return User(
       username: username ?? this.username,
@@ -100,6 +116,38 @@ class User extends HiveObject {
       userCode: userCode ?? this.userCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
       email: email ?? this.email,
+      assignedClasses: assignedClasses ?? this.assignedClasses,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
+
+  // ✅ Helper method to check if user is a teacher
+  bool get isTeacher => role.toLowerCase() == 'teacher';
+
+  // ✅ Helper method to check if user has a specific class
+  bool hasClass(String className) {
+    if (assignedClasses == null) return false;
+    return assignedClasses!.contains(className);
+  }
+
+  // ✅ Helper method to assign a class
+  void assignClass(String className) {
+    if (assignedClasses == null) {
+      assignedClasses = [];
+    }
+    if (!assignedClasses!.contains(className)) {
+      assignedClasses!.add(className);
+    }
+  }
+
+  // ✅ Helper method to remove a class
+  void removeClass(String className) {
+    if (assignedClasses != null) {
+      assignedClasses!.remove(className);
+    }
+  }
+
+  // ✅ Helper method to get class count
+  int get classCount => assignedClasses?.length ?? 0;
 }

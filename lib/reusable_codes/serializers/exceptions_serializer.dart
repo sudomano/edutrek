@@ -12,6 +12,7 @@ Map<String, dynamic> exceptionalStudentsToJson(ExceptionalStudents exc) {
     'exceptionStatus': exc.exceptionStatus,
     'exceptionType': exc.exceptionType,
     'exceptionFigure': exc.exceptionFigure,
+    'priorityFlag': exc.priorityFlag ?? 0, // ✅ ADD THIS LINE
     'syncStatus': exc.syncStatus,
     'lastModified': exc.lastModified?.toIso8601String(),
     'operationType': exc.operationType,
@@ -33,6 +34,7 @@ ExceptionalStudents exceptionalStudentsFromJson(Map<String, dynamic> json) {
     exceptionStatus: json['exceptionStatus'],
     exceptionType: json['exceptionType'],
     exceptionFigure: json['exceptionFigure'],
+    priorityFlag: json['priorityFlag'] ?? 0, // ✅ ADD THIS LINE
     syncStatus: json['syncStatus'],
     lastModified: json['lastModified'] != null
         ? DateTime.parse(json['lastModified'])

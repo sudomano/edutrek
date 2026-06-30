@@ -1,0 +1,35 @@
+-- DROP TABLE IF EXISTS `teacherpayment`;
+CREATE TABLE `teacherpayment` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `receiptNumber` varchar(250) DEFAULT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Student Information
+  `studentName` varchar(255) NOT NULL,
+  `studentSurname` varchar(255) NOT NULL,
+  `studentClass` varchar(255) NOT NULL,
+  `phoneNumber` varchar(255) NOT NULL,
+  
+  -- Payment Information
+  `paymentPurpose` varchar(255) NOT NULL,
+  `amountToPay` double NOT NULL,
+  `paymentDate` datetime NOT NULL,
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Staff Association ✅ NEW FIELD
+  `associatedStaff` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_receiptNumber` (`receiptNumber`),
+  KEY `idx_studentName` (`studentName`, `studentSurname`),
+  KEY `idx_paymentDate` (`paymentDate`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

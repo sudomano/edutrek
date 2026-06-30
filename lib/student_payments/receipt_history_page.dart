@@ -2,7 +2,12 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:background_sms/background_sms.dart';
 import 'package:bluetooth_print/bluetooth_print.dart';
 import 'package:bluetooth_print/bluetooth_print_model.dart';
@@ -10,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/auth/userdb.dart';
 import 'package:zitf_system/database/payment_receipts_log.dart';
@@ -19,11 +25,11 @@ import 'package:zitf_system/main.dart';
 import 'package:zitf_system/reusable_codes/bluetooth_helper_codes/bluetooth_tips_helper.dart';
 import 'package:zitf_system/reusable_codes/serializers/payment_log_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/school_serializer.dart';
-import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart';
 import 'package:zitf_system/reusable_codes/serializers/users_serializer.dart';
 import 'package:zitf_system/student_payments/reprint_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 import 'package:http/http.dart' as http;
+import 'package:zitf_system/utils/windows_printer_helper_for_reprints.dart';
 
 class ReceiptHistoryPage extends StatefulWidget {
   const ReceiptHistoryPage({super.key});
@@ -57,7 +63,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   String filterLineContent = "";
   DateTime? filterFromDate;
   DateTime? filterToDate;
-
+  bool get _isWindows => Platform.isWindows;
+  bool get _isAndroid => Platform.isAndroid;
   bool showFilters = false;
 
   int _batchSize = 100;
@@ -71,12 +78,69 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
   List<School>? _cachedServerSchoolInfo;
 
+  List<String> _windowsPrinters = [];
+  String? _selectedWindowsPrinter;
+  String? _lastUsedPrinter;
+  bool _isLoadingPrinters = false;
+  bool _isTestingConnection = false;
+  SharedPreferences? _prefs;
+  bool _isLoadingLastPrinter = false;
+
+  bool _isMultiSelectMode = false;
+  final Set<PaymentLog> _selectedReceiptsForAction = {};
+  bool _isDeleting = false;
+  bool _isUpdating = false;
+
+  Future<void> _loadPreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+    _lastUsedPrinter = _prefs?.getString('last_windows_printer');
+
+    // Auto-connect after printers are loaded
+    if (_lastUsedPrinter != null && _lastUsedPrinter!.isNotEmpty) {
+      // Wait for printers to load (add a small delay)
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _autoConnectLastPrinter();
+      });
+    }
+  }
+
+  Future<void> _autoConnectLastPrinter() async {
+    // Don't auto-connect if already connected or already trying
+    if (_connected || _isTestingConnection) return;
+
+    // Check if the last used printer exists in current list
+    if (_windowsPrinters.contains(_lastUsedPrinter)) {
+      setState(() {
+        _selectedWindowsPrinter = _lastUsedPrinter;
+      });
+
+      // Call your existing connection method
+      await _connectWindowsPrinter();
+    } else if (_windowsPrinters.isNotEmpty && _lastUsedPrinter != null) {
+      // Last printer not found, show notification
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Last printer "$_lastUsedPrinter" not found. Please select a new printer.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  /// Print to Windows printer
+
   @override
   void initState() {
     super.initState();
+
     _loadSavedPrinter();
     _initData();
-
+    if (_isWindows) {
+      _loadWindowsPrinters(); // Load printers first
+      _loadPreferences(); // Then load saved printer preference
+    }
     WidgetsBinding.instance.addObserver(this);
 
     _logBox = Hive.box<PaymentLog>("payment_log");
@@ -119,13 +183,10 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
   Future<void> _initData() async {
     final host = await isHostDevice();
-    print("📡 Device mode: ${host ? "HOST" : "CLIENT"}");
 
     if (host) {
-      print("📦 HOST: Reading Hive logs directly");
       _logBox = Hive.box<PaymentLog>("payment_log");
     } else {
-      print("🌍 CLIENT: Fetching logs from HOST API");
       await _fetchRemoteLogs();
     }
   }
@@ -136,10 +197,108 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     super.dispose();
   }
 
+  // Load Windows printers
+  Future<void> _loadWindowsPrinters() async {
+    if (!_isWindows) return;
+
+    setState(() {
+      _isLoadingPrinters = true;
+    });
+
+    try {
+      final printers = await Printing.listPrinters();
+      final availablePrinters =
+          printers.where((p) => p.isAvailable).map((p) => p.name).toList();
+
+      setState(() {
+        _windowsPrinters = availablePrinters;
+        _isLoadingPrinters = false;
+      });
+
+      if (availablePrinters.isEmpty) {
+        setState(() {
+          tips = 'No printers found. Please install a printer driver.';
+        });
+      } else {
+        setState(() {
+          tips =
+              'Found ${availablePrinters.length} printer(s). Select one to connect.';
+        });
+        await _loadPreferences();
+      }
+    } catch (e) {
+      setState(() {
+        tips = 'Error loading printers: $e';
+        _isLoadingPrinters = false;
+      });
+    }
+  }
+
+  // Connect Windows printer
+// Connect Windows printer
+  Future<void> _connectWindowsPrinter() async {
+    if (_selectedWindowsPrinter == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a printer first')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isTestingConnection = true;
+      tips = 'Testing connection to $_selectedWindowsPrinter...';
+    });
+
+    try {
+      final printers = await Printing.listPrinters();
+      final selectedPrinter = printers.firstWhere(
+        (p) => p.name == _selectedWindowsPrinter,
+        orElse: () => throw Exception('Printer not found'),
+      );
+
+      if (selectedPrinter.isAvailable) {
+        setState(() {
+          _connected = true;
+          tips = '✅ Connected to ${selectedPrinter.name}';
+          _isTestingConnection = false;
+        });
+
+        // ✅ SAVE THE LAST USED PRINTER
+        await _prefs?.setString(
+            'last_windows_printer', _selectedWindowsPrinter!);
+        setState(() {
+          _lastUsedPrinter = _selectedWindowsPrinter;
+        });
+      } else {
+        throw Exception('Printer is not available');
+      }
+    } catch (e) {
+      setState(() {
+        _connected = false;
+        tips = '❌ Failed to connect: $e';
+        _isTestingConnection = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to connect: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       AutomatedSmsHelpers.resumeDraftSequence();
+      // 🆕 Reconnect Windows printer when app resumes
+      if (_isWindows &&
+          _lastUsedPrinter != null &&
+          !_connected &&
+          !_isTestingConnection) {
+        _loadWindowsPrinters(); // Reload printers and reconnect
+      }
     }
   }
 
@@ -164,8 +323,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
       final uri = Uri.parse(
           "http://$hostIp:8080/api/receipt_logs?search=$_searchQuery");
-
-      print("🌍 FETCH => $uri");
 
       final res = await http.get(uri);
 
@@ -199,14 +356,12 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   }
 
   Future<void> _attemptAutoReconnect(String address) async {
-    print("🔄 [AUTO] Starting auto-reconnect to: $address");
     setState(() {
       tips = "Reconnecting to last printer…";
       _autoReconnecting = true;
     });
 
     try {
-      print("🔄 [AUTO] Starting scan...");
       await bluetoothHelper.bluetoothPrint.startScan(
         timeout: const Duration(seconds: 4),
       );
@@ -216,18 +371,12 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           .timeout(const Duration(seconds: 5))
           .firstWhere((list) => list.isNotEmpty, orElse: () => []);
 
-      print("📡 [AUTO] Scan results found ${devices.length} device(s).");
-      for (var d in devices) {
-        print("📡 Device: ${d.name} | ${d.address}");
-      }
-
       final match = devices.firstWhere(
         (d) => d.address == address,
         orElse: () => [] as BluetoothDevice,
       );
 
       if (match == null) {
-        print(" [AUTO] Previous printer NOT FOUND.");
         setState(() {
           tips = "Previous printer not found";
           _autoReconnecting = false;
@@ -235,12 +384,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         return;
       }
 
-      print(
-          "🔗 [AUTO] Attempting connection to ${match.name} (${match.address})");
-
       await bluetoothHelper.bluetoothPrint.connect(match);
-
-      print("✅ [AUTO] Reconnected to ${match.name}");
 
       setState(() {
         _device = match;
@@ -248,7 +392,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         tips = "Reconnected to ${match.name}";
       });
     } catch (e) {
-      print("❌ [AUTO] Reconnect failed: $e");
       setState(() => tips = "Reconnection failed");
     } finally {
       _autoReconnecting = false;
@@ -256,13 +399,10 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   }
 
   List<PaymentLog> get _filteredLogs {
-    print("🧠 Running _filteredLogs getter…");
-
     final hostLogs = _logBox.values.toList();
     final remoteLogs = List<PaymentLog>.from(_remoteLogs);
 
     List<PaymentLog> logs = hostLogs.isNotEmpty ? hostLogs : remoteLogs;
-    print("📦 Source logs count: ${logs.length}");
 
     // SORT (avoid null crash)
     logs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
@@ -279,7 +419,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                   .contains(_searchQuery.toLowerCase()) ||
               log.receiptNumber.toString().contains(_searchQuery))
           .toList();
-      print("🔍 After search filter: ${logs.length}");
     }
 
     // STUDENT FILTER
@@ -289,7 +428,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               .toLowerCase()
               .contains(filterStudent.toLowerCase()))
           .toList();
-      print("🧑‍🎓 Student filter: ${logs.length}");
     }
 
     // CLASS FILTER
@@ -298,7 +436,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           .where((log) =>
               log.className.toLowerCase().contains(filterClass.toLowerCase()))
           .toList();
-      print("🏷 Class filter: ${logs.length}");
     }
 
     // RECEIPT NUMBER
@@ -307,7 +444,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           .where((log) =>
               log.receiptNumber.toString().contains(filterReceiptNumber))
           .toList();
-      print("🧾 Receipt # filter: ${logs.length}");
     }
 
     // DATE RANGE
@@ -317,8 +453,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         if (dt == null) return false; // ignore bad dates
         return dt.isAfter(filterFromDate!);
       }).toList();
-
-      print("📆 From date filter: ${logs.length}");
     }
 
     if (filterToDate != null) {
@@ -327,8 +461,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         if (dt == null) return false;
         return dt.isBefore(filterToDate!);
       }).toList();
-
-      print("📆 To date filter: ${logs.length}");
     }
 
     return logs;
@@ -342,29 +474,320 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-  // DELETE
+// Simple single delete confirmation
   void _confirmDelete(PaymentLog log) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Delete Receipt"),
-        content:
-            const Text("Are you sure you want to delete this receipt log?"),
+        content: Text(
+            "Are you sure you want to delete receipt #${log.receiptNumber} for ${log.studentName}?"),
         actions: [
           TextButton(
-              child: const Text("Cancel"),
-              onPressed: () => Navigator.pop(context)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           TextButton(
-              child: const Text("Delete", style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                log.delete();
-                Navigator.pop(context);
-              }),
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+              await _executeDelete(log);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
         ],
       ),
     );
   }
 
+// Execute single delete
+  Future<void> _executeDelete(PaymentLog log) async {
+    try {
+      await log.delete();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ Receipt #${log.receiptNumber} deleted successfully"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Refresh the list
+      await _refreshData();
+      setState(() {});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Error deleting receipt: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Share selected receipts via various methods
+  Future<void> _shareSelectedReceipts(List<PaymentLog> receipts) async {
+    if (receipts.isEmpty) return;
+
+    try {
+      // Show progress
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text("Preparing receipts for sharing..."),
+            ],
+          ),
+        ),
+      );
+
+      // Build a combined receipt text
+      String combinedText = await _buildCombinedReceiptText(receipts);
+
+      // Close progress dialog
+      Navigator.pop(context);
+
+      // Show sharing options
+      await Share.share(
+        combinedText,
+        subject: 'Receipts #${receipts.map((r) => r.receiptNumber).join(', ')}',
+      );
+
+      // Clear selections after sharing
+      setState(() {
+        _selectedReceiptsForAction.clear();
+        _isMultiSelectMode = false;
+        _selectedIndexes.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ ${receipts.length} receipt(s) shared successfully"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Close progress dialog if open
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Error sharing receipts: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Build combined receipt text for sharing
+  Future<String> _buildCombinedReceiptText(List<PaymentLog> receipts) async {
+    final StringBuffer buffer = StringBuffer();
+
+    // Get school name
+    final schoolName = await _getSchoolName();
+
+    buffer.writeln('=' * 50);
+    buffer.writeln('  $schoolName');
+    buffer.writeln('  RECEIPT HISTORY');
+    buffer.writeln('=' * 50);
+    buffer.writeln('');
+    buffer.writeln('Total Receipts: ${receipts.length}');
+    buffer.writeln('Shared on: ${DateTime.now().toLocal()}');
+    buffer.writeln('');
+    buffer.writeln('-' * 50);
+
+    for (int i = 0; i < receipts.length; i++) {
+      final log = receipts[i];
+      buffer.writeln('');
+      buffer.writeln(
+          '📄 RECEIPT #${log.receiptNumber} (${i + 1}/${receipts.length})');
+      buffer.writeln('-' * 40);
+      buffer.writeln('Student: ${log.studentName}');
+      buffer.writeln('Class: ${log.className}');
+      buffer.writeln('Date: ${log.dateTime}');
+      buffer.writeln('');
+      buffer.writeln('--- Details ---');
+
+      // Add receipt lines
+      for (final line in log.receiptLines) {
+        final content = line['content']?.toString() ?? '';
+        if (content.trim().isNotEmpty) {
+          buffer.writeln(content);
+        }
+      }
+
+      // Add total amount
+      final totalAmount = _extractTotalAmountFromReceipt(log);
+      if (totalAmount.isNotEmpty) {
+        buffer.writeln('');
+        buffer.writeln('Total Amount: $totalAmount');
+      }
+
+      buffer.writeln('-' * 40);
+      buffer.writeln('');
+    }
+
+    buffer.writeln('=' * 50);
+    buffer.writeln('  End of Receipts');
+    buffer.writeln('=' * 50);
+
+    return buffer.toString();
+  }
+
+  /// Share receipts as PDF
+  Future<void> _shareReceiptsAsPDF(List<PaymentLog> receipts) async {
+    if (receipts.isEmpty) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text("Generating PDF..."),
+            ],
+          ),
+        ),
+      );
+
+      // Generate PDF
+      final pdfBytes = await _generateReceiptsPDF(receipts);
+
+      // Save to temporary file
+      final directory = await getTemporaryDirectory();
+      final filePath =
+          '${directory.path}/receipts_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File(filePath);
+      await file.writeAsBytes(pdfBytes);
+
+      // Close progress dialog
+      Navigator.pop(context);
+
+      // Share the PDF
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'Receipts #${receipts.map((r) => r.receiptNumber).join(', ')}',
+        subject: 'Receipts PDF',
+      );
+
+      // Clean up temp file after sharing
+      try {
+        await file.delete();
+      } catch (_) {}
+
+      setState(() {
+        _selectedReceiptsForAction.clear();
+        _isMultiSelectMode = false;
+        _selectedIndexes.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ PDF shared successfully"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Error sharing PDF: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Generate PDF from receipts
+  Future<Uint8List> _generateReceiptsPDF(List<PaymentLog> receipts) async {
+    final pdf = pw.Document();
+    final schoolName = await _getSchoolName();
+
+    for (int i = 0; i < receipts.length; i++) {
+      final log = receipts[i];
+
+      pdf.addPage(
+        pw.Page(
+          build: (context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  schoolName,
+                  style: pw.TextStyle(
+                      fontSize: 20, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.Text(
+                  'RECEIPT #${log.receiptNumber}',
+                  style: pw.TextStyle(
+                      fontSize: 16, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text('Student: ${log.studentName}'),
+                pw.Text('Class: ${log.className}'),
+                pw.Text('Date: ${log.dateTime}'),
+                pw.SizedBox(height: 10),
+                pw.Divider(),
+                pw.SizedBox(height: 10),
+                ...log.receiptLines.map((line) {
+                  final content = line['content']?.toString() ?? '';
+                  if (content.trim().isEmpty) return pw.SizedBox();
+                  return pw.Text(
+                    content,
+                    style: pw.TextStyle(
+                      fontWeight: (line['weight'] ?? 0) == 1
+                          ? pw.FontWeight.bold
+                          : pw.FontWeight.normal,
+                      fontSize:
+                          ((line['fontZoom'] as num?)?.toDouble() ?? 1) * 12,
+                    ),
+                    textAlign: () {
+                      switch (line['align']) {
+                        case 1:
+                          return pw.TextAlign.center;
+                        case 2:
+                          return pw.TextAlign.right;
+                        default:
+                          return pw.TextAlign.left;
+                      }
+                    }(),
+                  );
+                }).toList(),
+                pw.SizedBox(height: 10),
+                pw.Divider(),
+                pw.Text(
+                  'Total Amount: ${_extractTotalAmountFromReceipt(log)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  '${i + 1}/${receipts.length}',
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey,
+                  ),
+                  textAlign: pw.TextAlign.center,
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
+    return pdf.save();
+  }
   // ----------------------------
   // UI BUILD
   // ----------------------------
@@ -465,6 +888,18 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       appBar: AppBar(
         title: const Text("Receipt History"),
         actions: [
+          IconButton(
+            tooltip: 'Reprint Statistics',
+            icon: const Icon(Icons.analytics),
+            onPressed: _showReprintStatistics,
+          ),
+          if (_selectedIndexes.isNotEmpty)
+            IconButton(
+              tooltip: 'Print queue',
+              icon: const Icon(Icons.print),
+              onPressed: () =>
+                  _printSelectedReceipts(_filteredLogsWithReprints),
+            ),
           if (_selectedIndexes.isNotEmpty)
             IconButton(
               tooltip: 'Print queue',
@@ -510,13 +945,23 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           ),
         ),
       ),
-      floatingActionButton: _selectedIndexes.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              icon: const Icon(Icons.print),
-              label: Text("Print ${_selectedIndexes.length}"),
-              onPressed: () => _printSelectedReceipts(_filteredLogs),
-            ),
+      floatingActionButton: _isMultiSelectMode &&
+              _selectedReceiptsForAction.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () =>
+                  _showBulkActionDialog(_selectedReceiptsForAction.toList()),
+              icon: const Icon(Icons.settings),
+              label: Text("Actions (${_selectedReceiptsForAction.length})"),
+              backgroundColor: Colors.blue,
+            )
+          : (_selectedIndexes.isEmpty
+              ? null
+              : FloatingActionButton.extended(
+                  icon: const Icon(Icons.print),
+                  label: Text("Print ${_selectedIndexes.length}"),
+                  onPressed: () =>
+                      _printSelectedReceipts(_filteredLogsWithReprints),
+                )),
     );
   }
 
@@ -536,7 +981,10 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             borderRadius: BorderRadius.circular(14),
           ),
         ),
-        onChanged: (value) => setState(() => _searchQuery = value),
+        onChanged: (value) => setState(() {
+          _searchQuery = value;
+          _currentBatchEnd = _batchSize; // ✅ Reset batch when filter changes
+        }),
       ),
     );
   }
@@ -581,12 +1029,30 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                 const SizedBox(height: 12),
 
                 // --- TEXT INPUTS ---
-                _buildFilterInput("Student Name", (v) => filterStudent = v),
-                _buildFilterInput("Class Name", (v) => filterClass = v),
-                _buildFilterInput(
-                    "Receipt Number", (v) => filterReceiptNumber = v),
-                _buildFilterInput(
-                    "Text inside Receipt Lines", (v) => filterLineContent = v),
+                _buildFilterInput("Student Name", (v) {
+                  setState(() {
+                    filterStudent = v;
+                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                  });
+                }),
+                _buildFilterInput("Class Name", (v) {
+                  setState(() {
+                    filterClass = v;
+                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                  });
+                }),
+                _buildFilterInput("Receipt Number", (v) {
+                  setState(() {
+                    filterReceiptNumber = v;
+                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                  });
+                }),
+                _buildFilterInput("Text inside Receipt Lines", (v) {
+                  setState(() {
+                    filterLineContent = v;
+                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                  });
+                }),
 
                 const SizedBox(height: 10),
 
@@ -609,6 +1075,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                           );
                           if (pick != null) {
                             setState(() => filterFromDate = pick);
+                            _currentBatchEnd = _batchSize; // ✅ Reset batch
                           }
                         },
                       ),
@@ -662,6 +1129,663 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
+// Add this method to find duplicate receipts (reprints)
+  List<List<PaymentLog>> findDuplicateReceipts(List<PaymentLog> logs) {
+    // Group receipts by receipt number
+    final Map<String, List<PaymentLog>> receiptsByNumber = {};
+
+    for (var log in logs) {
+      final receiptNum = log.receiptNumber.toString();
+      if (!receiptsByNumber.containsKey(receiptNum)) {
+        receiptsByNumber[receiptNum] = [];
+      }
+      receiptsByNumber[receiptNum]!.add(log);
+    }
+
+    // Filter to only those with more than one occurrence (reprints)
+    final duplicates =
+        receiptsByNumber.values.where((list) => list.length > 1).toList();
+
+    return duplicates;
+  }
+
+// Add this to your _ReceiptHistoryPageState class
+  bool _showReprintsOnly = false;
+  String _reprintFilterStatus =
+      "All Receipts"; // "All Receipts", "Reprints Only", "Original Only"
+
+// Add this method to get filtered logs with reprint detection
+  List<PaymentLog> get _filteredLogsWithReprints {
+    final allFiltered = _filteredLogs;
+
+    if (_reprintFilterStatus == "All Receipts") {
+      return allFiltered;
+    }
+
+    // Find all receipt numbers that have duplicates
+    final duplicatesMap = <String, List<PaymentLog>>{};
+    for (var log in allFiltered) {
+      final receiptNum = log.receiptNumber.toString();
+      duplicatesMap.putIfAbsent(receiptNum, () => []).add(log);
+    }
+
+    final duplicateReceiptNumbers = duplicatesMap.entries
+        .where((entry) => entry.value.length > 1)
+        .map((entry) => entry.key)
+        .toSet();
+
+    if (_reprintFilterStatus == "Reprints Only") {
+      // Show only receipts that are duplicates (but not the first one)
+      final result = <PaymentLog>[];
+      for (var receiptNum in duplicateReceiptNumbers) {
+        final receipts = duplicatesMap[receiptNum]!;
+        // Sort by date/time to identify original vs reprints
+        receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+        // Add all except the first one (original)
+        result.addAll(receipts.sublist(1));
+      }
+      return result;
+    } else if (_reprintFilterStatus == "Original Only") {
+      // Show only original receipts (first occurrence) that have reprints
+      final result = <PaymentLog>[];
+      for (var receiptNum in duplicateReceiptNumbers) {
+        final receipts = duplicatesMap[receiptNum]!;
+        receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+        // Add only the first one (original)
+        result.add(receipts.first);
+      }
+      return result;
+    }
+
+    return allFiltered;
+  }
+
+  void _showBulkActionDialog(List<PaymentLog> selectedReceipts) {
+    if (selectedReceipts.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("Actions (${selectedReceipts.length} selected)"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.print, color: Colors.blue),
+              title: const Text("Print Receipts"),
+              onTap: () {
+                Navigator.pop(_);
+                _printSelectedReceipts(selectedReceipts);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.purple),
+              title: const Text("Share as Text"),
+              subtitle: const Text("Share via email, messaging apps, etc."),
+              onTap: () {
+                Navigator.pop(_);
+                _shareSelectedReceipts(selectedReceipts);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: const Text("Share as PDF"),
+              subtitle: const Text("Generate and share PDF file"),
+              onTap: () {
+                Navigator.pop(_);
+                _shareReceiptsAsPDF(selectedReceipts);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.copy, color: Colors.green),
+              title: const Text("Mark as Reprint"),
+              onTap: () {
+                Navigator.pop(_);
+                _markAsReprints(selectedReceipts);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text("Delete Selected"),
+              onTap: () {
+                Navigator.pop(_);
+                _confirmBulkDelete(selectedReceipts);
+              },
+            ),
+            if (selectedReceipts.any((log) =>
+                findDuplicateReceipts(_filteredLogs).any((group) => group.any(
+                    (g) =>
+                        g.receiptNumber == log.receiptNumber &&
+                        group.indexOf(g) > 0))))
+              ListTile(
+                leading: const Icon(Icons.clean_hands, color: Colors.orange),
+                title: const Text("Keep Only Original"),
+                subtitle: const Text("Delete all reprints, keep first receipt"),
+                onTap: () {
+                  Navigator.pop(_);
+                  _keepOnlyOriginals(selectedReceipts);
+                },
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_),
+            child: const Text("Cancel"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Edit multiple receipts
+  Future<void> _editMultipleReceipts(List<PaymentLog> receipts) async {
+    if (receipts.isEmpty) return;
+
+    setState(() => _isUpdating = true);
+
+    try {
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text("Updating ${receipts.length} receipts..."),
+            ],
+          ),
+        ),
+      );
+
+      int successCount = 0;
+      int failCount = 0;
+
+      for (var receipt in receipts) {
+        try {
+          // Create a copy with updated timestamp to mark as modified
+          final updatedReceipt = PaymentLog(
+            receiptNumber: receipt.receiptNumber,
+            studentName: receipt.studentName,
+            className: receipt.className,
+            dateTime: DateTime.now().toIso8601String(),
+            receiptLines: List<Map<String, dynamic>>.from(receipt.receiptLines),
+            parentName: receipt.parentName,
+            parentPhone: receipt.parentPhone,
+            isReprint: true, // Mark as reprint when edited
+            originalReceiptNumber: (receipt.originalReceiptNumber?.toString() ??
+                receipt.receiptNumber.toString()),
+          );
+
+          // Delete old and save new
+          await receipt.delete();
+          await _logBox.add(updatedReceipt);
+          successCount++;
+        } catch (e) {
+          print("Error updating receipt ${receipt.receiptNumber}: $e");
+          failCount++;
+        }
+      }
+
+      // Close progress dialog
+      Navigator.pop(context);
+
+      // Show result
+      _showResultDialog(
+        "Edit Complete",
+        "✅ Successfully updated: $successCount\n❌ Failed: $failCount",
+        Icons.edit,
+      );
+
+      // Refresh the list
+      setState(() {
+        _selectedReceiptsForAction.clear();
+        _isMultiSelectMode = false;
+        _selectedIndexes.clear();
+      });
+
+      await _refreshData();
+    } catch (e) {
+      Navigator.pop(context); // Close progress dialog if open
+      _showErrorDialog("Error updating receipts: $e");
+    } finally {
+      setState(() => _isUpdating = false);
+    }
+  }
+
+  /// Mark receipts as reprints
+  Future<void> _markAsReprints(List<PaymentLog> receipts) async {
+    if (receipts.isEmpty) return;
+
+    setState(() => _isUpdating = true);
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text("Marking as reprints..."),
+            ],
+          ),
+        ),
+      );
+
+      int successCount = 0;
+      int failCount = 0;
+
+      for (var receipt in receipts) {
+        try {
+          final updatedReceipt = PaymentLog(
+            receiptNumber: receipt.receiptNumber,
+            studentName: receipt.studentName,
+            className: receipt.className,
+            dateTime: receipt.dateTime,
+            receiptLines: List<Map<String, dynamic>>.from(receipt.receiptLines),
+            parentName: receipt.parentName,
+            parentPhone: receipt.parentPhone,
+            isReprint: true,
+            originalReceiptNumber: (receipt.originalReceiptNumber?.toString() ??
+                receipt.receiptNumber.toString()),
+            reprintCount: (receipt.reprintCount ?? 0) + 1,
+          );
+
+          await receipt.delete();
+          await _logBox.add(updatedReceipt);
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      }
+
+      Navigator.pop(context);
+
+      _showResultDialog(
+        "Mark Complete",
+        "✅ Marked as reprint: $successCount\n❌ Failed: $failCount",
+        Icons.copy,
+      );
+
+      setState(() {
+        _selectedReceiptsForAction.clear();
+        _isMultiSelectMode = false;
+        _selectedIndexes.clear();
+      });
+
+      await _refreshData();
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorDialog("Error marking receipts: $e");
+    } finally {
+      setState(() => _isUpdating = false);
+    }
+  }
+
+// Simplified bulk delete confirmation
+  Future<void> _confirmBulkDelete(List<PaymentLog> receipts) async {
+    if (receipts.isEmpty) return;
+
+    final bool isSingle = receipts.length == 1;
+    final String title = isSingle ? "Delete Receipt" : "Delete Receipts";
+    final String content = isSingle
+        ? "Are you sure you want to delete receipt #${receipts.first.receiptNumber}?"
+        : "Are you sure you want to delete ${receipts.length} receipts?";
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+              await _executeBulkDelete(receipts);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Execute bulk delete
+  Future<void> _executeBulkDelete(List<PaymentLog> receipts) async {
+    setState(() => _isDeleting = true);
+
+    int successCount = 0;
+    int failCount = 0;
+
+    for (var receipt in receipts) {
+      try {
+        await receipt.delete();
+        successCount++;
+      } catch (e) {
+        print("Error deleting receipt ${receipt.receiptNumber}: $e");
+        failCount++;
+      }
+    }
+
+    setState(() {
+      _selectedReceiptsForAction.clear();
+      _isMultiSelectMode = false;
+      _selectedIndexes.clear();
+      _isDeleting = false;
+    });
+
+    await _refreshData();
+
+    // Show result
+    if (failCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ Successfully deleted $successCount receipt(s)"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("⚠️ Deleted: $successCount, Failed: $failCount"),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  /// Keep only original receipts, delete all reprints
+  // Simplified keep only originals
+  Future<void> _keepOnlyOriginals(List<PaymentLog> receipts) async {
+    final allReceipts = _filteredLogs;
+    final duplicates = findDuplicateReceipts(allReceipts);
+
+    final reprintsToDelete = <PaymentLog>[];
+
+    for (var receipt in receipts) {
+      for (var group in duplicates) {
+        if (group.any((g) => g.receiptNumber == receipt.receiptNumber)) {
+          group.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+          reprintsToDelete.addAll(group.sublist(1));
+        }
+      }
+    }
+
+    if (reprintsToDelete.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("No reprint copies found to delete"),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Reprints"),
+        content: Text(
+            "Delete ${reprintsToDelete.length} reprint copy(s)? Originals will be kept."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _executeBulkDelete(reprintsToDelete);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.orange),
+            child: const Text("Delete Reprints"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Helper method to refresh data
+  Future<void> _refreshData() async {
+    final host = await isHostDevice();
+    if (!host) {
+      await _fetchRemoteLogs();
+    }
+    setState(() {});
+  }
+
+  /// Show result dialog
+  void _showResultDialog(String title, String message, IconData icon) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(icon, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show error dialog
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Text("Error"),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show info dialog
+  void _showInfoDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Add this UI widget for reprint filter
+  Widget _buildReprintFilter() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.content_copy, size: 20, color: Colors.orange.shade700),
+              const SizedBox(width: 8),
+              Text(
+                "Reprint Filter",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                label: const Text("All Receipts"),
+                selected: _reprintFilterStatus == "All Receipts",
+                onSelected: (selected) {
+                  setState(() {
+                    _reprintFilterStatus = "All Receipts";
+                    _currentBatchEnd = _batchSize;
+                  });
+                },
+                backgroundColor: Colors.grey.shade200,
+                selectedColor: Colors.blue.shade100,
+              ),
+              FilterChip(
+                label: const Text("⚠️ Reprints Only"),
+                selected: _reprintFilterStatus == "Reprints Only",
+                onSelected: (selected) {
+                  setState(() {
+                    _reprintFilterStatus = "Reprints Only";
+                    _currentBatchEnd = _batchSize;
+                  });
+                },
+                backgroundColor: Colors.grey.shade200,
+                selectedColor: Colors.orange.shade100,
+                avatar: const Icon(Icons.warning_amber, size: 16),
+              ),
+              FilterChip(
+                label: const Text("📄 Originals with Reprints"),
+                selected: _reprintFilterStatus == "Original Only",
+                onSelected: (selected) {
+                  setState(() {
+                    _reprintFilterStatus = "Original Only";
+                    _currentBatchEnd = _batchSize;
+                  });
+                },
+                backgroundColor: Colors.grey.shade200,
+                selectedColor: Colors.green.shade100,
+              ),
+            ],
+          ),
+          if (_reprintFilterStatus != "All Receipts")
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _reprintFilterStatus == "Reprints Only"
+                    ? "Showing only duplicate receipts (reprints)"
+                    : "Showing only original receipts that have been reprinted",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.orange.shade700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+// Add a method to show reprint statistics
+  void _showReprintStatistics() {
+    final allReceipts = _filteredLogs;
+    final duplicates = findDuplicateReceipts(allReceipts);
+
+    int totalReprints = 0;
+    for (var group in duplicates) {
+      totalReprints += group.length - 1; // Subtract original
+    }
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Reprint Statistics"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("📊 Total Receipts: ${allReceipts.length}"),
+            const SizedBox(height: 8),
+            Text("🔄 Receipts with Reprints: ${duplicates.length}"),
+            const SizedBox(height: 8),
+            Text("📄 Total Reprint Copies: $totalReprints"),
+            const SizedBox(height: 16),
+            const Divider(),
+            const Text(
+              "Receipts with multiple prints:",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 200,
+              width: 300,
+              child: ListView.builder(
+                itemCount: duplicates.length,
+                itemBuilder: (context, index) {
+                  final group = duplicates[index];
+                  final receiptNum = group.first.receiptNumber;
+                  final count = group.length;
+                  final dates =
+                      group.map((g) => g.dateTime.substring(0, 10)).toList();
+
+                  return Card(
+                    child: ListTile(
+                      title: Text("Receipt #$receiptNum"),
+                      subtitle: Text(
+                        "Printed $count times on: ${dates.join(', ')}",
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.warning, color: Colors.orange),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_),
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Reusable filter input box with styling
   Widget _buildFilterInput(String label, Function(String) onChanged) {
     return Padding(
@@ -691,26 +1815,16 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         }
 
         final host = snapshot.data!;
-        print("📡 Mode: ${host ? "HOST" : "CLIENT"}");
 
         // 1. GET SOURCE LIST
         List<PaymentLog> logs =
             host ? _logBox.values.toList() : List.from(_remoteLogs);
 
-        print("📦 Loaded raw logs: ${logs.length}");
-
-        // 2. SORT (corrected, since sort() returns void)
+        // 2. SORT newest → oldest
         logs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
-        print("🔢 Logs sorted OK");
 
-        // 3. Apply batching BEFORE filter
-        final total = logs.length;
-        final end = _currentBatchEnd.clamp(0, total);
-        final pagedReceipts = logs.sublist(0, end);
-        print("📑 Batching: showing $end of $total");
-
-        // 4. Apply filtering
-        final filtered = pagedReceipts.where((r) {
+        // 3. APPLY FILTERS
+        final filtered = logs.where((r) {
           final s = _searchQuery.toLowerCase();
 
           bool matchesSearch = r.studentName.toLowerCase().contains(s) ||
@@ -754,116 +1868,445 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               matchesDate;
         }).toList();
 
-        print("🔍 Filtered results: ${filtered.length}");
+        // Apply reprint filter
+        List<PaymentLog> finalFiltered;
+        if (_reprintFilterStatus == "All Receipts") {
+          finalFiltered = filtered;
+        } else {
+          final duplicatesMap = <String, List<PaymentLog>>{};
+          for (var log in filtered) {
+            final receiptNum = log.receiptNumber.toString();
+            duplicatesMap.putIfAbsent(receiptNum, () => []).add(log);
+          }
 
-        if (filtered.isEmpty) {
+          final duplicateReceiptNumbers = duplicatesMap.entries
+              .where((entry) => entry.value.length > 1)
+              .map((entry) => entry.key)
+              .toSet();
+
+          if (_reprintFilterStatus == "Reprints Only") {
+            final result = <PaymentLog>[];
+            for (var receiptNum in duplicateReceiptNumbers) {
+              final receipts = duplicatesMap[receiptNum]!;
+              receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+              result.addAll(receipts.sublist(1));
+            }
+            finalFiltered = result;
+          } else {
+            final result = <PaymentLog>[];
+            for (var receiptNum in duplicateReceiptNumbers) {
+              final receipts = duplicatesMap[receiptNum]!;
+              receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+              result.add(receipts.first);
+            }
+            finalFiltered = result;
+          }
+        }
+
+        if (finalFiltered.isEmpty) {
           return const Center(child: Text("No receipts found"));
         }
 
-        return Column(
-          children: [
-            // SELECT ALL
-            Row(
+        // Use Flexible and LayoutBuilder to handle height properly
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Checkbox(
-                  value: filtered.isNotEmpty &&
-                      _selectedIndexes.length == filtered.length,
-                  onChanged: (checked) {
-                    setState(() {
-                      if (checked == true) {
-                        _selectedIndexes
-                          ..clear()
-                          ..addAll(List.generate(filtered.length, (i) => i));
-                      } else {
-                        _selectedIndexes.clear();
-                      }
-
-                      print("✔ Select All changed → $_selectedIndexes");
-                    });
-                  },
-                ),
-                const Text(
-                  "Select All",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-
-            // PAGINATION
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_currentBatchEnd < total)
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() => _currentBatchEnd += _batchSize);
-                      print("➡ Load next batch: $_currentBatchEnd");
-                    },
-                    child: const Text("Load Next 100"),
+                // Multi-select controls
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _isMultiSelectMode
+                        ? Colors.blue.shade50
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isMultiSelectMode
+                          ? Colors.blue
+                          : Colors.grey.shade300,
+                    ),
                   ),
-                const SizedBox(width: 12),
-                if (_currentBatchEnd < total)
-                  OutlinedButton(
-                    onPressed: () {
-                      setState(() => _currentBatchEnd = total);
-                      print("📥 Load ALL logs");
-                    },
-                    child: const Text("Load All"),
+                  child: Row(
+                    children: [
+                      if (!_isMultiSelectMode)
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _isMultiSelectMode = true;
+                                _selectedReceiptsForAction.clear();
+                              });
+                            },
+                            icon: const Icon(Icons.checklist, size: 18),
+                            label: const Text("Select Multiple for Actions"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      if (_isMultiSelectMode) ...[
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _isMultiSelectMode = false;
+                                      _selectedReceiptsForAction.clear();
+                                    });
+                                  },
+                                  icon: const Icon(Icons.close, size: 18),
+                                  label: const Text("Cancel"),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (_selectedReceiptsForAction.isNotEmpty)
+                                Expanded(
+                                  flex: 2,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _showBulkActionDialog(
+                                        _selectedReceiptsForAction.toList()),
+                                    icon: const Icon(Icons.settings, size: 18),
+                                    label: Text(
+                                        "Actions (${_selectedReceiptsForAction.length})"),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-              ],
-            ),
+                ),
 
-            const SizedBox(height: 8),
+                // Reprint Filter
+                _buildReprintFilter(),
 
-            // MAIN LIST
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: filtered.length,
-              itemBuilder: (context, index) {
-                final log = filtered[index];
-                final selected = _selectedIndexes.contains(index);
-
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: ListTile(
-                    leading: Checkbox(
-                      value: selected,
+                // Select All Row
+                Row(
+                  children: [
+                    Checkbox(
+                      value: finalFiltered.isNotEmpty &&
+                          _selectedIndexes.length == finalFiltered.length,
                       onChanged: (checked) {
                         setState(() {
                           if (checked == true) {
-                            _selectedIndexes.add(index);
+                            _selectedIndexes
+                              ..clear()
+                              ..addAll(List.generate(
+                                  finalFiltered.length, (i) => i));
                           } else {
-                            _selectedIndexes.remove(index);
+                            _selectedIndexes.clear();
                           }
-                          print("🟦 Row $index selected → $checked");
                         });
                       },
                     ),
-                    title: Text(
-                      log.studentName,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    const Text(
+                      "Select All for Printing",
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text("${log.className} • ${log.dateTime}"),
-                    onTap: () {
-                      print(
-                          "📄 Opening viewer for receipt ${log.receiptNumber}");
-                      _showReceiptPreview(log);
-                    },
-                    onLongPress: () {
-                      print("🗑 Long press delete ${log.receiptNumber}");
-                      _confirmDelete(log);
-                    },
-                    trailing: const Icon(Icons.chevron_right),
+                    if (_reprintFilterStatus != "All Receipts")
+                      Container(
+                        margin: const EdgeInsets.only(left: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _reprintFilterStatus == "Reprints Only"
+                              ? "⚠️ Showing ${finalFiltered.length} reprints"
+                              : "📄 Showing ${finalFiltered.length} originals with reprints",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Batch size info
+                Text(
+                  "Showing ${_currentBatchEnd.clamp(0, finalFiltered.length)} of ${finalFiltered.length} receipts",
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+
+                // Pagination buttons
+                if (_currentBatchEnd < finalFiltered.length)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() => _currentBatchEnd += _batchSize);
+                          },
+                          child: const Text("Load Next 100"),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton(
+                          onPressed: () {
+                            setState(
+                                () => _currentBatchEnd = finalFiltered.length);
+                          },
+                          child: const Text("Load All"),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
-            ),
-          ],
+
+                const SizedBox(height: 8),
+
+                // Receipt List - Use Flexible with ListView
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _currentBatchEnd.clamp(0, finalFiltered.length),
+                    itemBuilder: (context, index) {
+                      final log = finalFiltered[index];
+                      final selected = _selectedIndexes.contains(index);
+                      final hasDuplicates = findDuplicateReceipts(finalFiltered)
+                          .any((group) => group.any(
+                              (g) => g.receiptNumber == log.receiptNumber));
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: ListTile(
+                          leading: _isMultiSelectMode
+                              ? Checkbox(
+                                  value:
+                                      _selectedReceiptsForAction.contains(log),
+                                  onChanged: (checked) {
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selectedReceiptsForAction.add(log);
+                                      } else {
+                                        _selectedReceiptsForAction.remove(log);
+                                      }
+                                    });
+                                  },
+                                )
+                              : Checkbox(
+                                  value: selected,
+                                  onChanged: (checked) {
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selectedIndexes.add(index);
+                                      } else {
+                                        _selectedIndexes.remove(index);
+                                      }
+                                    });
+                                  },
+                                ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "${log.studentName} • #${log.receiptNumber}",
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    // Show total paid amount
+                                    _buildTotalPaidAmount(log),
+                                  ],
+                                ),
+                              ),
+                              if (hasDuplicates)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    "REPRINT",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          subtitle: Text("${log.className} • ${log.dateTime}"),
+                          onTap: () {
+                            _showReceiptPreview(log);
+                          },
+                          onLongPress: () {
+                            _confirmDelete(log);
+                          },
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'edit':
+                                  _editMultipleReceipts([log]);
+                                  break;
+                                case 'reprint':
+                                  _markAsReprints([log]);
+                                  break;
+                                case 'delete':
+                                  _confirmBulkDelete([log]);
+                                  break;
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit,
+                                        size: 18, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text('Edit Receipt'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'reprint',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.copy,
+                                        size: 18, color: Colors.green),
+                                    SizedBox(width: 8),
+                                    Text('Mark as Reprint'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete,
+                                        size: 18, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text('Delete Receipt'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  /// Helper method to extract total paid amount from receipt lines
+  Widget _buildTotalPaidAmount(PaymentLog log) {
+    String totalAmount = _extractTotalAmountFromReceipt(log);
+
+    if (totalAmount.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Check if it's a reprint to show different styling
+    final isReprint = (log.reprintCount ?? 0) > 0 || (log.isReprint ?? false);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isReprint ? Colors.orange.shade50 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isReprint ? Colors.orange.shade200 : Colors.green.shade200,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.attach_money,
+            size: 14,
+            color: isReprint ? Colors.orange : Colors.green,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            totalAmount,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: isReprint ? Colors.orange.shade800 : Colors.green.shade800,
+            ),
+          ),
+          if (isReprint) ...[
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.copy,
+              size: 12,
+              color: Colors.orange,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Extract the total paid amount from receipt lines
+  String _extractTotalAmountFromReceipt(PaymentLog log) {
+    try {
+      if (log.receiptLines.isEmpty) return '';
+
+      // Look specifically for "TOTAL PAID:" line
+      for (var line in log.receiptLines) {
+        final content = line['content']?.toString() ?? '';
+
+        // Check if this line contains "TOTAL PAID" or "Total Paid"
+        if (content.toUpperCase().contains('TOTAL PAID')) {
+          // Extract the amount using regex
+          final regExp = RegExp(r'\$?\s*([\d,]+\.?\d*)');
+          final match = regExp.firstMatch(content);
+
+          if (match != null && match.groupCount >= 1) {
+            String amount = match.group(1) ?? '';
+            if (amount.isNotEmpty) {
+              // Format the amount with $ and proper decimal places
+              if (!amount.contains('.')) {
+                amount = '$amount.00';
+              }
+              return '\$$amount';
+            }
+          }
+        }
+      }
+
+      return '';
+    } catch (e) {
+      debugPrint('Error extracting total amount: $e');
+      return '';
+    }
   }
 
   // ----------------------------
@@ -878,10 +2321,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           _connected ? Icons.print_rounded : Icons.print_disabled,
           color: _connected ? Colors.green : Colors.red,
         ),
-
-        // ───────────────────────────────────────────
-        // TITLE (with auto reconnect status)
-        // ───────────────────────────────────────────
         title: Text(
           _connected
               ? "Printer Connected"
@@ -894,108 +2333,254 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           ),
         ),
         subtitle: Text(tips),
-
-        // ───────────────────────────────────────────
-        // EXPANSION CONTENTS
-        // ───────────────────────────────────────────
         children: [
           if (_scanning) const LinearProgressIndicator(),
           const SizedBox(height: 8),
 
-          // ───────────────────────────────────────────
-          // SCAN BUTTON
-          // ───────────────────────────────────────────
-          ElevatedButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: Text(_scanning ? "Scanning…" : "Scan Printers"),
-            onPressed: () {
-              bluetoothHelper.bluetoothPrint.startScan(
-                timeout: const Duration(seconds: 4),
-              );
-              setState(() => tips = "Scanning for printers…");
-            },
-          ),
-
-          const Divider(),
-
-          // ───────────────────────────────────────────
-          // DEVICE LIST (StreamBuilder source)
-          // ───────────────────────────────────────────
-          StreamBuilder<List<BluetoothDevice>>(
-            stream: bluetoothHelper.bluetoothPrint.scanResults,
-            initialData: const [],
-            builder: (context, snapshot) {
-              final devices = snapshot.data ?? [];
-
-              if (devices.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Text("No printers found"),
+          // 🆕 Platform-specific printer UI
+          if (Platform.isAndroid) ...[
+            // Android Bluetooth UI (existing)
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: Text(_scanning ? "Scanning…" : "Scan Printers"),
+              onPressed: () {
+                bluetoothHelper.bluetoothPrint.startScan(
+                  timeout: const Duration(seconds: 4),
                 );
-              }
+                setState(() => tips = "Scanning for printers…");
+              },
+            ),
+            const Divider(),
+            StreamBuilder<List<BluetoothDevice>>(
+              stream: bluetoothHelper.bluetoothPrint.scanResults,
+              initialData: const [],
+              builder: (context, snapshot) {
+                final devices = snapshot.data ?? [];
 
-              return Column(
-                children: devices.map((device) {
-                  final isSelected = _device?.address == device.address;
-
-                  return ListTile(
-                    leading: const Icon(Icons.print),
-                    title: Text(device.name ?? "Unknown"),
-                    subtitle: Text(device.address ?? ""),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle, color: Colors.green)
-                        : null,
-                    onTap: () {
-                      setState(() {
-                        _device = device;
-                        tips = "Device selected: ${device.name}";
-                      });
-                    },
+                if (devices.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text("No printers found"),
                   );
-                }).toList(),
-              );
-            },
-          ),
+                }
+
+                return Column(
+                  children: devices.map((device) {
+                    final isSelected = _device?.address == device.address;
+                    return ListTile(
+                      leading: const Icon(Icons.print),
+                      title: Text(device.name ?? "Unknown"),
+                      subtitle: Text(device.address ?? ""),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : null,
+                      onTap: () {
+                        setState(() {
+                          _device = device;
+                          tips = "Device selected: ${device.name}";
+                        });
+                      },
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ] else if (Platform.isWindows) ...[
+            // 🆕 Windows Printer UI
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _isLoadingPrinters
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            : DropdownButtonFormField<String>(
+                                value: _selectedWindowsPrinter,
+                                hint: const Text('Select Windows Printer'),
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: null,
+                                    child: Text('-- Select a printer --'),
+                                  ),
+                                  ..._windowsPrinters.map((printer) {
+                                    bool isLastUsed =
+                                        printer == _lastUsedPrinter;
+                                    return DropdownMenuItem(
+                                      value: printer,
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              printer,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (isLastUsed && !_connected)
+                                            const Icon(
+                                              Icons.history,
+                                              size: 16,
+                                              color: Colors.blue,
+                                            ),
+                                          if (isLastUsed && _connected)
+                                            const Icon(
+                                              Icons.check_circle,
+                                              size: 16,
+                                              color: Colors.green,
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+                                onChanged: _isTestingConnection
+                                    ? null
+                                    : (value) {
+                                        setState(() {
+                                          _selectedWindowsPrinter = value;
+                                          _connected = false;
+                                        });
+                                      },
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed:
+                            _isLoadingPrinters ? null : _loadWindowsPrinters,
+                        tooltip: 'Refresh printers',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _connected ||
+                                  _isTestingConnection ||
+                                  _selectedWindowsPrinter == null
+                              ? null
+                              : _connectWindowsPrinter,
+                          icon: _isTestingConnection
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.link),
+                          label: Text(_isTestingConnection
+                              ? 'Connecting...'
+                              : 'Connect'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: !_connected ? null : _disconnectPrinter,
+                          icon: const Icon(Icons.link_off),
+                          label: const Text('Disconnect'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_lastUsedPrinter != null &&
+                      !_connected &&
+                      !_isTestingConnection)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextButton.icon(
+                        onPressed: _autoConnectLastPrinter,
+                        icon: const Icon(Icons.history, size: 16),
+                        label: Text('Reconnect to: $_lastUsedPrinter'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (_selectedWindowsPrinter != null && !_connected)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Selected: $_selectedWindowsPrinter',
+                  style: const TextStyle(fontSize: 12, color: Colors.blue),
+                ),
+              ),
+          ],
 
           const SizedBox(height: 10),
 
-          // ───────────────────────────────────────────
-          // CONNECT / DISCONNECT BUTTONS
-          // ───────────────────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // CONNECT
               OutlinedButton(
                 onPressed: _connected
                     ? null
                     : () async {
-                        if (_device == null) {
-                          setState(() => tips = "Please select a device first");
-                          return;
-                        }
-
-                        setState(() {
-                          _connecting = true;
-                          tips = "Connecting…";
-                        });
-
-                        try {
-                          await bluetoothHelper.bluetoothPrint
-                              .connect(_device!);
-
-                          // SAVE PRINTER FOR AUTO-RECONNECT
-                          final box = await Hive.openBox('printer_prefs');
-                          box.put('last_printer', _device!.address);
+                        if (Platform.isAndroid) {
+                          if (_device == null) {
+                            setState(
+                                () => tips = "Please select a device first");
+                            return;
+                          }
 
                           setState(() {
-                            _connected = true;
-                            tips = "Connected to ${_device!.name}";
+                            _connecting = true;
+                            tips = "Connecting…";
                           });
-                        } catch (e) {
-                          setState(() => tips = "Failed to connect: $e");
-                        } finally {
-                          setState(() => _connecting = false);
+
+                          try {
+                            await bluetoothHelper.bluetoothPrint
+                                .connect(_device!);
+                            final box = await Hive.openBox('printer_prefs');
+                            box.put('last_printer', _device!.address);
+                            setState(() {
+                              _connected = true;
+                              tips = "Connected to ${_device!.name}";
+                            });
+                          } catch (e) {
+                            setState(() => tips = "Failed to connect: $e");
+                          } finally {
+                            setState(() => _connecting = false);
+                          }
+                        } else if (Platform.isWindows) {
+                          // Windows connection is handled by _connectWindowsPrinter
+                          // This button is only for Android
                         }
                       },
                 child: _connecting
@@ -1005,10 +2590,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text("Connect"),
               ),
-
               const SizedBox(width: 10),
-
-              // DISCONNECT
               OutlinedButton(
                 onPressed: _connected
                     ? () async {
@@ -1018,7 +2600,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                         });
 
                         try {
-                          await bluetoothHelper.bluetoothPrint.disconnect();
+                          if (Platform.isAndroid) {
+                            await bluetoothHelper.bluetoothPrint.disconnect();
+                          } else if (Platform.isWindows) {
+                            await _disconnectPrinter();
+                          }
                           setState(() {
                             _connected = false;
                             tips = "Disconnected";
@@ -1034,11 +2620,71 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               ),
             ],
           ),
-
           const SizedBox(height: 12),
         ],
       ),
     );
+  }
+
+  Future<void> _connectBluetoothPrinter() async {
+    if (_device == null) {
+      setState(() {
+        tips = 'Please select a Bluetooth device first';
+      });
+      return;
+    }
+
+    setState(() {
+      tips = 'Connecting to ${_device!.name}...';
+    });
+
+    try {
+      await bluetoothHelper.bluetoothPrint.connect(_device!);
+      setState(() {
+        tips = 'Connected to ${_device!.name}';
+        _connected = true;
+      });
+    } catch (e) {
+      setState(() {
+        tips = 'Failed to connect: $e';
+        _connected = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to connect: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Disconnect printer
+  Future<void> _disconnectPrinter() async {
+    if (_isAndroid) {
+      setState(() {
+        tips = 'Disconnecting...';
+      });
+
+      try {
+        await bluetoothHelper.bluetoothPrint.disconnect();
+        setState(() {
+          tips = 'Disconnected';
+          _connected = false;
+          _device = null;
+        });
+      } catch (e) {
+        setState(() {
+          tips = 'Failed to disconnect: $e';
+        });
+      }
+    } else if (_isWindows) {
+      setState(() {
+        tips = 'Disconnected';
+        _connected = false;
+        _selectedWindowsPrinter = null;
+      });
+    }
   }
 
   void _showDialog(String msg) {
@@ -1048,6 +2694,18 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         title: const Text("Notice"),
         content: Text(msg),
         actions: [
+          IconButton(
+            tooltip: 'Reprint Statistics',
+            icon: const Icon(Icons.analytics),
+            onPressed: _showReprintStatistics,
+          ),
+          if (_selectedIndexes.isNotEmpty)
+            IconButton(
+              tooltip: 'Print queue',
+              icon: const Icon(Icons.print),
+              onPressed: () =>
+                  _printSelectedReceipts(_filteredLogsWithReprints),
+            ),
           TextButton(
             child: const Text("OK"),
             onPressed: () => Navigator.pop(context),
@@ -1061,31 +2719,22 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 // PRINT QUEUE (Host + Client)
 // ----------------------------
   Future<void> _printSelectedReceipts(List<PaymentLog> filteredList) async {
-    print("🖨 Starting print queue...");
-    print("🔢 Selected indexes: $_selectedIndexes");
-
     // 1. Detect host/client
     final host = await isHostDevice();
-    print("📡 Device mode: ${host ? "HOST" : "CLIENT"}");
 
     // 2. Load source logs
     List<PaymentLog> sourceLogs =
         host ? _logBox.values.toList() : List.from(_remoteLogs);
 
-    print("📦 Raw logs loaded: ${sourceLogs.length}");
-
     // 3. Sort newest → oldest
     sourceLogs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
-    print("🧾 Logs sorted successfully.");
 
     // 4. Map selected indexes to the *filtered* list
     if (_selectedIndexes.isEmpty) {
-      print("⚠ No receipts selected. Aborting print.");
       return;
     }
 
     if (_selectedIndexes.length > filteredList.length) {
-      print("❌ ERROR: Selected index overflow. Resetting selection.");
       setState(() => _selectedIndexes.clear());
       return;
     }
@@ -1093,43 +2742,48 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     final List<PaymentLog> toPrint =
         _selectedIndexes.map((i) => filteredList[i]).toList();
 
-    print("🗂 Receipts to print: ${toPrint.length}");
-
     if (toPrint.isEmpty) {
-      print("⚠ Empty print list after mapping. Aborting.");
       return;
     }
 
-    // 5. Printer connection check
-    if (!_connected) {
-      print("❌ Printer not connected.");
+    if (Platform.isAndroid && !_connected) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please connect a printer first.")),
+        const SnackBar(
+            content: Text("Please connect a Bluetooth printer first.")),
       );
       return;
     }
 
+    if (Platform.isWindows &&
+        (_selectedWindowsPrinter == null || !_connected)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text("Please select and connect a Windows printer first.")),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Printing ${toPrint.length} receipts…")),
     );
 
     try {
       // 6. PRINT LOGS IN ORDER
-      print("🖨 Starting automated printing...");
-      await AutomatedPrintHelper.printLogsInSequence(
-        toPrint,
-        bluetoothHelper.bluetoothPrint,
-      );
-
-      print("📨 Sending SMS notifications...");
+      if (Platform.isAndroid) {
+        await AutomatedPrintHelper.printLogsInSequence(
+          toPrint,
+          bluetoothHelper.bluetoothPrint,
+          context, // Add context parameter
+        );
+      } else if (Platform.isWindows) {
+        await _printLogsToWindowsPrinter(toPrint);
+      }
       await AutomatedSmsHelpers.sendLogsInSequence(
         toPrint,
         sendParent: true,
         sendAdmins: true,
         showDialog: _showDialog,
       );
-
-      print("✔ Print + SMS completed.");
     } catch (e, st) {
       print("❌ ERROR during printing or SMS: $e");
       print(st);
@@ -1142,11 +2796,65 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     setState(() {
       _selectedIndexes.clear();
     });
-    print("🧹 Cleared selection.");
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Finished printing queue.")),
     );
+  }
+
+  /// Print logs to Windows printer
+  Future<void> _printLogsToWindowsPrinter(List<PaymentLog> logs) async {
+    for (final log in logs) {
+      try {
+        final lines = _jsonToReceiptLines(log.receiptLines);
+
+        // Add duplicate header for REPRINTS
+        lines.insert(
+            0,
+            LineText(
+              type: LineText.TYPE_TEXT,
+              content: "*** DUPLICATE COPY ***",
+              align: LineText.ALIGN_CENTER,
+              linefeed: 1,
+              weight: 1,
+            ));
+
+        await WindowsPrinterHelper.printLineTextToWindowsPrinter(
+          _selectedWindowsPrinter!,
+          lines,
+        );
+        debugPrint("✔ Printed receipt ${log.receiptNumber}");
+
+        await Future.delayed(const Duration(seconds: 1));
+      } catch (e) {
+        debugPrint("❌ Failed to print ${log.receiptNumber}: $e");
+      }
+    }
+  }
+
+  /// Convert JSON receipt lines to LineText objects
+  List<LineText> _jsonToReceiptLines(List<Map<String, dynamic>> json) {
+    int _mapPrinterAlign(dynamic a) {
+      switch (a) {
+        case 1:
+          return LineText.ALIGN_CENTER;
+        case 2:
+          return LineText.ALIGN_RIGHT;
+        default:
+          return LineText.ALIGN_LEFT;
+      }
+    }
+
+    return json.map((line) {
+      return LineText(
+        type: LineText.TYPE_TEXT,
+        content: line['content']?.toString() ?? '',
+        align: _mapPrinterAlign(line['align']),
+        weight: (line['weight'] ?? 0) == 1 ? 1 : 0,
+        fontZoom: line['fontZoom'] ?? 1,
+        linefeed: line['linefeed'] ?? 1,
+      );
+    }).toList();
   }
 }
 
@@ -1190,12 +2898,13 @@ class AutomatedPrintHelper {
   }
 
   static Future<void> printLogsInSequence(
-      List<PaymentLog> logs, BluetoothPrint bluetooth) async {
+      List<PaymentLog> logs, BluetoothPrint bluetooth,
+      [BuildContext? context]) async {
     for (final log in logs) {
       try {
         final lines = _jsonToReceiptLines(log.receiptLines);
 
-        // Add duplicate header for REPRINTS ONLY
+        // Add duplicate header for REPRINTS
         lines.insert(
             0,
             LineText(
@@ -1211,6 +2920,11 @@ class AutomatedPrintHelper {
         await Future.delayed(const Duration(seconds: 1));
       } catch (e) {
         debugPrint("❌ Failed to print ${log.receiptNumber}: $e");
+        if (context != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to print ${log.receiptNumber}: $e")),
+          );
+        }
       }
     }
   }
@@ -1298,8 +3012,6 @@ class AutomatedSmsHelpers {
     }
     // CLIENT → Fetch from host
     else {
-      print(
-          "📱 CLIENT MODE: Using parentName & parentPhone from logs directly");
       allStudents = []; // completely unused now
     }
 
@@ -1314,13 +3026,11 @@ class AutomatedSmsHelpers {
 
         phone = student?.phoneNumber?.trim() ?? "";
         if (student == null) {
-          print("⚠️ No student match for ${log.studentName}, skipping");
           continue;
         }
 
         phone = student.phoneNumber?.trim() ?? "";
         if (phone.isEmpty) {
-          print("⚠️ HOST: Missing phone for student ${student.name}, skipping");
           continue;
         }
         greeting = (student?.paymentStatus?.isNotEmpty ?? false)
@@ -1329,7 +3039,6 @@ class AutomatedSmsHelpers {
       } else {
         phone = (log.parentPhone ?? "").trim();
         if (phone.isEmpty) {
-          print("⚠️ CLIENT: Missing parentPhone in log, skipping");
           continue;
         }
         if (log.parentName != null && log.parentName!.trim().isNotEmpty) {
@@ -1350,7 +3059,6 @@ class AutomatedSmsHelpers {
       )}";
 
       drafts.add({"phone": phone, "message": message});
-      print("✅ Draft added for $phone");
     }
 
     return drafts;

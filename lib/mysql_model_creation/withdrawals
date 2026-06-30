@@ -1,0 +1,25 @@
+-- DROP TABLE IF EXISTS `withdrawal`;
+CREATE TABLE `withdrawal` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `withdrawalCode` varchar(200) DEFAULT NULL,
+  `fid` int(200) DEFAULT NULL,
+  
+  -- Withdrawal Information
+  `date` datetime NOT NULL, -- ✅ Changed from DATE to DATETIME
+  `amount` decimal(10,2) NOT NULL,
+  `withdrawalPurpose` varchar(255) NOT NULL,
+  `termId` varchar(255) DEFAULT NULL,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_withdrawalCode` (`withdrawalCode`),
+  KEY `idx_withdrawalPurpose` (`withdrawalPurpose`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

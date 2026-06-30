@@ -1,0 +1,35 @@
+-- DROP TABLE IF EXISTS `paymentpurpose`;
+CREATE TABLE `paymentpurpose` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `purposeCode` varchar(250) DEFAULT NULL,
+  
+  -- Core Fields
+  `paymentPurpose` varchar(255) NOT NULL,
+  `purposeAmount` decimal(10,2) NOT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `associatedClasses` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Exception Fields
+  `exceptions` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON
+  
+  -- Feature Flags
+  `forNewcomersOnly` tinyint(1) DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(250) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purposeCode` (`purposeCode`),
+  KEY `idx_paymentPurpose` (`paymentPurpose`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

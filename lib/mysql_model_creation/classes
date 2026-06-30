@@ -1,0 +1,63 @@
+-- DROP TABLE IF EXISTS `classes`;
+CREATE TABLE `classes` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `classCode` varchar(200) DEFAULT NULL,
+  
+  -- Class Information Fields (matching client exactly)
+  `className` varchar(255) NOT NULL,
+  `date` date NOT NULL,
+  
+  -- Academic Fields
+  `termId` varchar(255) DEFAULT NULL,
+  `terms` json DEFAULT NULL, -- ✅ Changed from TEXT to JSON for List support
+  
+  -- Sync & Audit Fields
+  `operationType` varchar(200) DEFAULT 'none',
+  `lastModified` datetime(6) DEFAULT current_timestamp(6),
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  -- Foreign Keys & Other
+  `fid` int(200) DEFAULT NULL,
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_classCode` (`classCode`),
+  KEY `idx_className` (`className`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/////////////////////////////////exceptional_students.sql//////////////////////////////////// 
+-- DROP TABLE IF EXISTS `exceptional_students`;
+CREATE TABLE `exceptional_students` (
+  -- Primary & Identifiers
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `exceptionId` varchar(36) NOT NULL,
+  
+  -- Exception Fields
+  `exceptionName` varchar(255) DEFAULT NULL,
+  `exceptionStatus` varchar(20) DEFAULT NULL,
+  `exceptionType` varchar(20) DEFAULT NULL,
+  `exceptionFigure` varchar(20) DEFAULT NULL,
+  
+  -- Priority Flag ✅ NEW FIELD
+  `priorityFlag` tinyint(1) DEFAULT 0,
+  
+  -- Sync & Audit Fields
+  `syncStatus` tinyint(1) DEFAULT 0,
+  `lastModified` datetime DEFAULT NULL,
+  `operationType` varchar(20) DEFAULT NULL,
+  
+  -- JSON Fields
+  `modifiedFields` json DEFAULT NULL,
+  `terms` json DEFAULT NULL,
+  
+  -- Timestamps
+  `createdAt` timestamp NULL DEFAULT current_timestamp(),
+  `updatedAt` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_exceptionId` (`exceptionId`),
+  KEY `idx_syncStatus` (`syncStatus`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

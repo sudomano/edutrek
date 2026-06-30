@@ -1,7 +1,9 @@
+// platform_auth_services.dart
 import 'package:flutter/foundation.dart';
 import 'package:zitf_system/auth/auth_cp/login_web.dart';
 import 'package:zitf_system/auth/auth_cp/login_win_android.dart';
 import 'package:zitf_system/auth/auth_cp/school_interface.dart';
+import 'package:zitf_system/auth/userdb.dart';
 
 abstract class PlatformAuthService {
   /// Factory constructor resolves correct implementation
@@ -21,7 +23,14 @@ abstract class PlatformAuthService {
   Future<bool> isLoggedIn();
 
   Future<void> logout();
+
   Future<bool> syncUsersFromHostIfClient({bool force = false});
 
   Future<List<ISchool>> fetchSchools();
+
+  // ✅ NEW: Get the currently logged-in user
+  Future<User?> getLoggedInUser();
+
+  // ✅ NEW: Get the currently logged-in user synchronously (cached)
+  User? getLoggedInUserSync();
 }

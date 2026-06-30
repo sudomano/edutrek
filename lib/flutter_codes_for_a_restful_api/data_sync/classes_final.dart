@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:hive/hive.dart';
@@ -9,6 +8,7 @@ import 'package:zitf_system/database/accounting_module_models/assets.dart';
 
 import 'package:zitf_system/database/classes.dart';
 import 'package:zitf_system/database/exceptional_students/exceptional_students.dart';
+import 'package:zitf_system/database/payment_receipts_log.dart';
 import 'package:zitf_system/database/projects/packaging_level.dart';
 import 'package:zitf_system/database/projects/payment_method_model.dart';
 import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
@@ -37,7 +37,6 @@ import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.da
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:zitf_system/database/projects/stock_unit_type.dart';
 
 class ClassesFinal extends StatefulWidget {
@@ -86,6 +85,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Box<BatchSellUnit>? _batchSellUnitBox;
   Box<PaymentMethod>? _paymentMethodBox;
   Box<ReceiptSnapshot>? _receiptSnapshotBox;
+  Box<PaymentLog>? _paymentLogBox;
 
   bool _isSyncing = false;
   bool _isSyncings = false;
@@ -141,6 +141,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     _paymentMethodBox = await Hive.openBox<PaymentMethod>('payment_methods');
     _receiptSnapshotBox =
         await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
+    _paymentLogBox = await Hive.openBox<PaymentLog>('payment_log');
   }
 
   Future<void> _loadExistingConfig() async {
@@ -166,6 +167,17 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Future<void> _syncModels() async {
     try {
       // Sync PaymentPurpose records
+
+      List<PaymentLog> createPaymentLogs = _paymentLogBox!.values
+          .where((cls) => cls.syncStatus == false)
+          .toList();
+      for (PaymentLog cls in createPaymentLogs) {
+        if (cls.operationType == 'create') {
+          await _createPaymentLogInMySQL(cls);
+        } else if (cls.operationType == 'update') {
+          await _updatePaymentLogInMySQL(cls);
+        }
+      }
       List<ExceptionalStudents> createExceptions = _exceptionalStudentsBox!
           .values
           .where((cls) => cls.syncStatus == false)
@@ -178,15 +190,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
       }
 
-      List<BatchUnit> createBatchUnits = _batchUnitBox!.values
-          .where((cls) => cls.syncStatus == false)
+      print('=== _syncBatchUnits START ===');
+      print('Checking for unsynced batch units...');
+
+      // Step 1: Push unsynced batch units to server
+      List<BatchUnit> unsyncedUnits = _batchUnitBox!.values
+          .where((unit) => unit.syncStatus == false)
           .toList();
 
-      for (BatchUnit cls in createBatchUnits) {
-        if (cls.operationType == 'create') {
-          await _createBatchUnitInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateBatchUnitInMySQL(cls);
+      print('Found ${unsyncedUnits.length} unsynced batch units');
+
+      for (BatchUnit unit in unsyncedUnits) {
+        print('Processing unit: ${unit.unitBatchCode}');
+        print('OperationType: ${unit.operationType}');
+
+        if (unit.operationType == 'create') {
+          await _createBatchUnitInMySQL(unit);
+        } else if (unit.operationType == 'update') {
+          await _updateBatchUnitInMySQL(unit);
+        } else {
+          print('Unknown operationType: ${unit.operationType}');
         }
       }
 
@@ -298,13 +321,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _updateWithdrawalsInMySQL(cls);
         }
       }
-      List<Student> createStudent =
-          _studentsBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (Student cls in createStudent) {
-        if (cls.operationType == 'create') {
-          await _createStudentsInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateStudentsInMySQL(cls);
+      print('=== _syncStudents START ===');
+      print('Checking for unsynced students...');
+
+      // Step 1: Push unsynced students to server
+      List<Student> unsyncedStudents = _studentsBox!.values
+          .where((student) => student.syncStatus == false)
+          .toList();
+
+      print('Found ${unsyncedStudents.length} unsynced students');
+
+      for (Student student in unsyncedStudents) {
+        print('Processing student: ${student.studentIdNumber}');
+        print('OperationType: ${student.operationType}');
+
+        if (student.operationType == 'create') {
+          print('Creating student...');
+          await _createStudentsInMySQL(student);
+        } else if (student.operationType == 'update') {
+          print('Updating student...');
+          await _updateStudentsInMySQL(student);
+        } else {
+          print('Unknown operationType: ${student.operationType}');
         }
       }
 
@@ -447,6 +485,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 // JSON Serialization method for ExceptionalStudents
+// Helper to convert PaymentLog to JSON
+  Map<String, dynamic> _paymentLogToJson(PaymentLog log) {
+    return {
+      'logId': log.logId,
+      'receiptNumber': log.receiptNumber,
+      'studentName': log.studentName,
+      'className': log.className,
+      'dateTime': log.dateTime,
+      'receiptLines': log.receiptLines,
+      'parentName': log.parentName,
+      'parentPhone': log.parentPhone,
+      'isReprint': log.isReprint ?? false,
+      'originalReceiptNumber': log.originalReceiptNumber,
+      'reprintCount': log.reprintCount ?? 0,
+      'syncStatus': log.syncStatus ?? false,
+      'lastModified': log.lastModified?.toIso8601String(),
+      'operationType': log.operationType ?? 'create',
+      'modifiedFields': log.modifiedFields ?? [],
+    };
+  }
 
   Map<String, dynamic> _productBatchToJsonLocal(ProductBatch b) => {
         'batchCode': b.batchCode,
@@ -467,13 +525,35 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 // 🔷 BATCH UNIT JSON HELPERS
 // ============================================================
 
-  Map<String, dynamic> _batchUnitToJson(BatchUnit u) => {
-        'level': u.level.name,
-        'unitsPerPackage': u.unitsPerPackage,
-        'quantity': u.quantity,
-        'buyingPrice': u.buyingPrice,
-        'unitBatchCode': u.unitBatchCode,
-      };
+// Helper to convert BatchUnit to JSON
+// Helper to convert BatchUnit to JSON
+  Map<String, dynamic> _batchUnitToJson(BatchUnit unit) {
+    print('=== _batchUnitToJson START ===');
+    print('unitBatchCode: ${unit.unitBatchCode}');
+    print('level: ${unit.level.name}');
+    print('unitsPerPackage: ${unit.unitsPerPackage}');
+    print('quantity: ${unit.quantity}');
+    print('buyingPrice: ${unit.buyingPrice}');
+    print('syncStatus: ${unit.syncStatus}');
+    print('operationType: ${unit.operationType}');
+    print('modifiedFields: ${unit.modifiedFields}');
+
+    final json = {
+      'unitBatchCode': unit.unitBatchCode,
+      'level': unit.level.name,
+      'unitsPerPackage': unit.unitsPerPackage,
+      'quantity': unit.quantity,
+      'buyingPrice': unit.buyingPrice,
+      'syncStatus': unit.syncStatus ?? false,
+      'lastModified': unit.lastModified?.toIso8601String(),
+      'operationType': unit.operationType,
+      'modifiedFields': unit.modifiedFields ?? [],
+    };
+
+    print('JSON to send: ${jsonEncode(json)}');
+    print('=== _batchUnitToJson END ===');
+    return json;
+  }
 
   Map<String, dynamic> _projectItemPriceToJsonLocal(ProjectItemPrice p) => {
         'priceCode': p.priceCode,
@@ -537,19 +617,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'settlesObligation': t.settlesObligation,
       };
 
-  Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit u) {
+  Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit unit) {
     return {
-      "sellUnitCode": u.sellUnitCode,
-      "batchCode": u.batchCode,
-      "unitName": u.unitName,
-      "quantityMultiplier": u.quantityMultiplier,
-      "sellingPrice": u.sellingPrice,
-      "active": u.active,
-      "deletedAt": u.deletedAt?.toIso8601String(),
-      "packagingLevel": u.packagingLevel?.name,
-      "baseUnitsPerSellUnit": u.baseUnitsPerSellUnit,
-      "baseUnit": u.baseUnit,
-      "baseUnitType": u.baseUnitType?.name,
+      'sellUnitCode': unit.sellUnitCode,
+      'batchCode': unit.batchCode,
+      'unitName': unit.unitName,
+      'quantityMultiplier': unit.quantityMultiplier,
+      'sellingPrice': unit.sellingPrice,
+      'active': unit.active,
+      'deletedAt': unit.deletedAt?.toIso8601String(),
+      'packagingLevel': unit.packagingLevel?.name,
+      'baseUnitsPerSellUnit': unit.baseUnitsPerSellUnit,
+      'baseUnit': unit.baseUnit,
+      'baseUnitType': unit.baseUnitType?.name,
+      'syncStatus': unit.syncStatus ?? false,
+      'lastModified': unit.lastModified?.toIso8601String(),
+      'operationType': unit.operationType,
+      'modifiedFields': unit.modifiedFields ?? [],
     };
   }
 
@@ -586,217 +670,279 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     };
   }
 
-  Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exc) {
+  Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exception) {
     return {
-      'id': exc.id,
-      'exceptionId': exc.exceptionId,
-      'exceptionName': exc.exceptionName,
-      'exceptionStatus': exc.exceptionStatus,
-      'exceptionType': exc.exceptionType,
-      'exceptionFigure': exc.exceptionFigure,
-      'terms': exc.terms != null
-          ? jsonEncode(exc.terms) // JSON encode the list
-          : null,
+      'id': exception.id,
+      'exceptionId': exception.exceptionId,
+      'exceptionName': exception.exceptionName,
+      'exceptionStatus': exception.exceptionStatus,
+      'exceptionType': exception.exceptionType,
+      'exceptionFigure': exception.exceptionFigure,
+      'priorityFlag': exception.priorityFlag ?? 0,
+      'terms': exception.terms ?? [], // ✅ Pass as List
+      'syncStatus': exception.syncStatus,
+      'lastModified': exception.lastModified?.toIso8601String(),
+      'operationType': exception.operationType,
+      'modifiedFields': exception.modifiedFields ?? [], // ✅ Pass as List
     };
   }
 
-  Map<String, dynamic> _classToJson(Classes cls) {
+// Helper to convert Classes to JSON
+  Map<String, dynamic> _classToJson(Classes classObj) {
     return {
-      'id': cls.id,
-      'classCode': cls.classCode,
-      'className': cls.className,
-      'date': cls.date.toIso8601String(),
-      'termId': cls.termId,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
+      'id': classObj.id,
+      'classCode': classObj.classCode,
+      'className': classObj.className,
+      'date': classObj.date.toIso8601String(), //
+      'termId': classObj.termId,
+      'terms': jsonEncode(classObj.terms ?? []),
+      'operationType': classObj.operationType,
+      'syncStatus': classObj.syncStatus,
+      'lastModified': classObj.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _schoolToJson(School cls) {
+  // Helper to convert School to JSON
+  Map<String, dynamic> _schoolToJson(School school) {
     return {
-      'id': cls.id,
-      'schoolName': cls.schoolName,
-      'schoolCode': cls.schoolCode,
-      'schoolAddress': cls.schoolAddress,
-      'schoolPhoneNumber': cls.schoolPhoneNumber,
-      'schoolEmail': cls.schoolEmail,
-      'termId': cls.termId,
+      'id': school.id,
+      'schoolCode': school.schoolCode,
+      'schoolName': school.schoolName,
+      'schoolAddress': school.schoolAddress,
+      'schoolPhoneNumber': school.schoolPhoneNumber,
+      'schoolEmail': school.schoolEmail,
+      'schoolLogoPath': school.schoolLogoPath,
+      'termId': school.termId,
+      'operationType': school.operationType,
+      'syncStatus': school.syncStatus,
+      'lastModified': school.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _termsToJson(Terms cls) {
+// Helper to convert Terms to JSON
+  Map<String, dynamic> _termsToJson(Terms term) {
     return {
-      'id': cls.id,
-      'termId': cls.termId,
-      'termName': cls.termName,
-      'startDate': cls.startDate.toIso8601String(),
-      'endDate': cls.endDate?.toIso8601String(),
-      'isActive': cls.isActive,
-      'status': cls.status,
+      'id': term.id,
+      'termId': term.termId,
+      'termName': term.termName,
+      'startDate':
+          term.startDate.toIso8601String(), // ✅ Full DateTime with time
+      'endDate': term.endDate?.toIso8601String(), // ✅ Full DateTime with time
+      'isActive': term.isActive,
+      'status': term.status,
+      'operationType': term.operationType,
+      'syncStatus': term.syncStatus,
+      'lastModified': term.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _withdrawalToJson(Withdrawal cls) {
+// Helper to convert Withdrawal to JSON
+  Map<String, dynamic> _withdrawalToJson(Withdrawal withdrawal) {
     return {
-      'id': cls.id,
-      'amount': cls.amount,
-      'withdrawalPurpose': cls.withdrawalPurpose,
-      'withdrawalCode': cls.withdrawalCode,
-      'termId': cls.termId,
-      'date': cls.date.toIso8601String(),
+      'id': withdrawal.id,
+      'withdrawalCode':
+          withdrawal.withdrawalCode?.toString() ?? '', // ✅ Ensure String
+      'withdrawalPurpose': withdrawal.withdrawalPurpose,
+      'amount': withdrawal.amount,
+      'date': withdrawal.date.toIso8601String(),
+      'termId': withdrawal.termId?.toString(), // ✅ Ensure String or null
+      'operationType': withdrawal.operationType,
+      'syncStatus': withdrawal.syncStatus,
+      'lastModified': withdrawal.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _studentInfoToJson(Student cls) {
+// Helper to convert Student to JSON
+
+// Helper to convert Student to JSON with debug
+  Map<String, dynamic> _studentInfoToJson(Student student) {
+    // 🔴 FIX: Don't use jsonEncode for fields that should be JSON arrays
+    // Let the PHP server handle the JSON encoding
     return {
-      'name': cls.name,
-      'surname': cls.surname,
-      'regNumber': cls.regNumber,
-      'class': cls.class_,
-      'gender': cls.gender,
-      'age': cls.age.toIso8601String(),
-      'phoneNumber': cls.phoneNumber,
-      'paymentStatus': cls.paymentStatus,
-      'isPresent': cls.isPresent,
-      'presentDates': jsonEncode(
-          cls.presentDates.map((date) => date.toIso8601String()).toList()),
-      'absentDates': jsonEncode(
-          cls.absentDates.map((date) => date.toIso8601String()).toList()),
-      'termId': cls.termId,
-      'id': cls.id,
-      'physicalAddress': cls.physicalAddress,
-      'formerSchool': cls.formerSchool,
-      'religion': cls.religion,
-      'denomination': cls.denomination,
-      'studentIdNumber': cls.studentIdNumber,
-      'nationalIdNumber': cls.nationalIdNumber,
-      'nationality': cls.nationality,
-      'district': cls.district,
-      'previousSchoolPerformanceResults': cls.previousSchoolPerformanceResults,
-      'enrollmentStatus': cls.enrollmentStatus,
-      'emergencyContactName': cls.emergencyContactName,
-      'emergencyContactNumber': cls.emergencyContactNumber,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-      'exceptions': cls.exceptions != null
-          ? jsonEncode(
-              cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
-          : null,
-      'isNewComer': cls.isNewComer,
-      'isNewComerFrom': cls.isNewComerFrom?.toIso8601String(),
-      'isNewComerUntil': cls.isNewComerUntil?.toIso8601String(),
+      'id': student.id,
+      'studentIdNumber': student.studentIdNumber,
+      'name': student.name,
+      'surname': student.surname,
+      'regNumber': student.regNumber,
+      'class': student.class_,
+      'gender': student.gender,
+      'age': student.age.toIso8601String(),
+      'phoneNumber': student.phoneNumber,
+      'paymentStatus': student.paymentStatus,
+      'isPresent': student.isPresent,
+      'presentDates': student.presentDates
+          .map((d) => d.toIso8601String())
+          .toList(), // ✅ Pass as List
+      'absentDates': student.absentDates
+          .map((d) => d.toIso8601String())
+          .toList(), // ✅ Pass as List
+      'termId': student.termId,
+      'physicalAddress': student.physicalAddress,
+      'formerSchool': student.formerSchool,
+      'religion': student.religion,
+      'denomination': student.denomination,
+      'nationalIdNumber': student.nationalIdNumber,
+      'nationality': student.nationality,
+      'district': student.district,
+      'previousSchoolPerformanceResults':
+          student.previousSchoolPerformanceResults,
+      'enrollmentStatus': student.enrollmentStatus,
+      'emergencyContactName': student.emergencyContactName,
+      'emergencyContactNumber': student.emergencyContactNumber,
+      'healthStatus': student.healthStauts, // ✅ Map to correct field name
+      'healthDetailedInformation': student.healthDetailedInformation,
+      'terms': student.terms ?? [], // ✅ Pass as List, NOT jsonEncode
+      'exceptions': student.exceptions != null
+          ? student.exceptions!
+              .map((e) => _exceptionsToJson(e))
+              .toList() // ✅ Pass as List
+          : [], // ✅ Pass as empty List
+      'isNewComer': student.isNewComer ?? false,
+      'isNewComerFrom': student.isNewComerFrom?.toIso8601String(),
+      'isNewComerUntil': student.isNewComerUntil?.toIso8601String(),
+      'operationType': student.operationType,
+      'syncStatus': student.syncStatus,
+      'lastModified': student.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _userToJson(User cls) {
+// Helper method to convert User to JSON
+  Map<String, dynamic> _userToJson(User user) {
     return {
-      'id': cls.id,
-      'username': cls.username,
-      'password': cls.password,
-      'role': cls.role,
-      'securityQuestions': jsonEncode(cls.securityQuestions),
-      'securityAnswers': jsonEncode(cls.securityAnswers),
-      'phone': cls.phone,
-      'termId': cls.termId,
-      'userCode': cls.userCode,
+      'id': user.id,
+      'userCode': user.userCode,
+      'username': user.username,
+      'password': user.password,
+      'email': user.email,
+      'role': user.role,
+      'phone': user.phone,
+      'isActive': user.isActive,
+      'securityQuestions': jsonEncode(user.securityQuestions),
+      'securityAnswers': jsonEncode(user.securityAnswers),
+      'assignedClasses': jsonEncode(user.assignedClasses ?? []),
+      'termId': user.termId,
+      'operationType': user.operationType,
+      'syncStatus': user.syncStatus,
+      'lastModified': user.lastModified?.toIso8601String(),
+      'createdAt': user.createdAt?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _paymentPurposeToJson(PaymentPurpose cls) {
+  // Helper to convert PaymentPurpose to JSON
+  Map<String, dynamic> _paymentPurposeToJson(PaymentPurpose purpose) {
     return {
-      'id': cls.id,
-      'paymentPurpose': cls.paymentPurpose,
-      'purposeAmount': cls.purposeAmount,
-      'termId': cls.termId,
-      'associatedClasses':
-          jsonEncode(cls.associatedClasses), // Convert list to JSON
-      'purposeCode': cls.purposeCode,
-      'exceptions': cls.exceptions != null
-          ? jsonEncode(
-              cls.exceptions!.map((e) => _exceptionsToJson(e)).toList())
-          : null,
-      'forNewcomersOnly': cls.forNewcomersOnly,
+      'id': purpose.id,
+      'purposeCode': purpose.purposeCode,
+      'paymentPurpose': purpose.paymentPurpose,
+      'purposeAmount': purpose.purposeAmount,
+      'termId': purpose.termId,
+      'associatedClasses': purpose.associatedClasses ?? [], // ✅ Pass as List
+      'exceptions': purpose.exceptions != null
+          ? purpose.exceptions!
+              .map((e) => _exceptionsToJson(e))
+              .toList() // ✅ Pass as List
+          : [], // ✅ Pass as List
+      'forNewcomersOnly': purpose.forNewcomersOnly ?? false,
+      'operationType': purpose.operationType,
+      'syncStatus': purpose.syncStatus,
+      'lastModified': purpose.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _studentPaymentToJson(StudentPayment cls) {
+// Helper to convert StudentPayment to JSON
+  Map<String, dynamic> _studentPaymentToJson(StudentPayment payment) {
     return {
-      'id': cls.id,
-      'studentName': cls.studentName,
-      'studentSurname': cls.studentSurname,
-      'studentClass': cls.studentClass,
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'amountToPay': cls.amountToPay,
-      'paymentDate': cls.paymentDate.toIso8601String(),
-      'termId': cls.termId,
-      'receiptNumber': cls.receiptNumber,
-      'username': cls.username,
-      'role': cls.role,
+      'id': payment.id,
+      'receiptNumber': payment.receiptNumber,
+      'studentName': payment.studentName,
+      'studentSurname': payment.studentSurname,
+      'studentClass': payment.studentClass,
+      'studentRegNumber': payment.studentRegNumber,
+      'phoneNumber': payment.phoneNumber,
+      'paymentPurpose': payment.paymentPurpose,
+      'amountToPay': payment.amountToPay,
+      'paymentDate': payment.paymentDate.toIso8601String(),
+      'termId': payment.termId,
+      'username': payment.username,
+      'role': payment.role,
+      'paymentMethodType': payment.paymentMethodType,
+      'paymentMethodAmount': payment.paymentMethodAmount,
+      'paymentReference': payment.paymentReference,
+      'mobileMoneyPhone': payment.mobileMoneyPhone,
+      'mobileMoneyProvider': payment.mobileMoneyProvider,
+      'bankAccountNumber': payment.bankAccountNumber,
+      'bankAccountName': payment.bankAccountName,
+      'changeGiven': payment.changeGiven,
+      'operationType': payment.operationType,
+      'syncStatus': payment.syncStatus,
+      'lastModified': payment.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _teacherToJson(Teachers cls) {
+// ================== TEACHER SYNC METHODS ==================
+
+// Helper to convert Teachers to JSON
+  Map<String, dynamic> _teacherToJson(Teachers teacher) {
     return {
-      'id': cls.id,
-      'name': cls.name,
-      'surname': cls.surname,
-      'IdNumber': cls.IdNumber,
-      'assignedClass': cls.assignedClass,
-      'assignedClasses': cls.assignedClasses != null
-          ? jsonEncode(cls.assignedClasses) // JSON encode the list
-          : null,
-      'gender': cls.gender,
-      'dateOfBirth': cls.dateOfBirth.toIso8601String(),
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'isPaid': cls.isPaid,
-      'paymentAmount': cls.paymentAmount,
-      'paymentDate': cls.paymentDate?.toIso8601String(),
-      'email': cls.email,
-      'address': cls.address,
-      'hireDate': cls.hireDate.toIso8601String(),
-      'qualifications': cls.qualifications,
-      'employmentStatus': cls.employmentStatus,
-      'termId': cls.termId,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
+      'id': teacher.id,
+      'IdNumber': teacher.IdNumber,
+      'name': teacher.name,
+      'surname': teacher.surname,
+      'gender': teacher.gender,
+      'dateOfBirth': teacher.dateOfBirth.toIso8601String().split('T')[0],
+      'phoneNumber': teacher.phoneNumber,
+      'email': teacher.email,
+      'address': teacher.address,
+      'hireDate': teacher.hireDate.toIso8601String().split('T')[0],
+      'qualifications': teacher.qualifications,
+      'employmentStatus': teacher.employmentStatus,
+      'assignedClass': teacher.assignedClass,
+      'assignedClasses': teacher.assignedClasses ?? [],
+      'paymentPurpose': teacher.paymentPurpose,
+      'isPaid': teacher.isPaid,
+      'paymentAmount': teacher.paymentAmount,
+      'paymentDate': teacher.paymentDate?.toIso8601String(),
+      'termId': teacher.termId,
+      'terms': teacher.terms ?? [],
+      'operationType': teacher.operationType,
+      'syncStatus': teacher.syncStatus,
+      'lastModified': teacher.lastModified?.toIso8601String(),
     };
   }
 
+  // Helper to convert TeacherPaymentsPurposes to JSON
   Map<String, dynamic> _teacherPaymentsPurposeToJson(
-      TeacherPaymentsPurposes cls) {
+      TeacherPaymentsPurposes purpose) {
     return {
-      'id': cls.id,
-      'paymentPurpose': cls.paymentPurpose,
-      'purposeCode': cls.purposeCode,
-      'purposeAmount': cls.purposeAmount,
-      'termId': cls.termId,
-      'syncStatus': cls.syncStatus,
-      'lastModified': cls.lastModified?.toIso8601String(),
-      'operationType': cls.operationType,
-      'associatedStaff': cls.associatedStaff != null
-          ? jsonEncode(
-              cls.associatedStaff) // Explicit JSON encode for associatedStaff
-          : null,
+      'id': purpose.id,
+      'purposeCode': purpose.purposeCode,
+      'paymentPurpose': purpose.paymentPurpose,
+      'purposeAmount': purpose.purposeAmount,
+      'termId': purpose.termId,
+      'associatedStaff': purpose.associatedStaff ?? [], // ✅ Pass as List
+      'operationType': purpose.operationType,
+      'syncStatus': purpose.syncStatus,
+      'lastModified': purpose.lastModified?.toIso8601String(),
     };
   }
 
-  Map<String, dynamic> _teacherPaymentclassToJson(TeacherPayment cls) {
+  // Helper to convert TeacherPayment to JSON
+  Map<String, dynamic> _teacherPaymentclassToJson(TeacherPayment payment) {
     return {
-      'id': cls.id,
-      'studentName': cls.studentName,
-      'studentSurname': cls.studentSurname,
-      'studentClass': cls.studentClass,
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'amountToPay': cls.amountToPay,
-      'paymentDate': cls.paymentDate.toIso8601String(),
-      'termId': cls.termId,
-      'receiptNumber': cls.receiptNumber,
+      'id': payment.id,
+      'receiptNumber': payment.receiptNumber,
+      'studentName': payment.studentName,
+      'studentSurname': payment.studentSurname,
+      'studentClass': payment.studentClass,
+      'phoneNumber': payment.phoneNumber,
+      'paymentPurpose': payment.paymentPurpose,
+      'amountToPay': payment.amountToPay,
+      'paymentDate': payment.paymentDate.toIso8601String(),
+      'termId': payment.termId,
+      'associatedStaff': payment.associatedStaff ?? [], // ✅ Pass as List
+      'operationType': payment.operationType,
+      'syncStatus': payment.syncStatus,
+      'lastModified': payment.lastModified?.toIso8601String(),
     };
   }
 
@@ -807,25 +953,32 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'operationType': domain.operationType,
         'lastModified': domain.lastModified?.toIso8601String(),
       };
-  Map<String, dynamic> _accountsToJson(Account acc) => {
-        'id': acc.id,
-        'accountType': acc.accountType,
-        'accountSubType': acc.accountSubType,
-        'accountName': acc.accountName,
-        'accountCode': acc.accountCode,
-        'operationType': acc.operationType,
-        'syncStatus': acc.syncStatus,
-        'lastModified': acc.lastModified?.toIso8601String(),
-        'isALiquidAccount': acc.isALiquidAccount,
-        'modifiedFields': acc.modifiedFields,
-      };
+// Helper to convert Account to JSON
+  Map<String, dynamic> _accountsToJson(Account account) {
+    return {
+      'id': account.id,
+      'accountCode': account.accountCode,
+      'accountType': account.accountType,
+      'accountSubType': account.accountSubType,
+      'accountName': account.accountName,
+      'isALiquidAccount': account.isALiquidAccount ?? false,
+      'operationType': account.operationType,
+      'syncStatus': account.syncStatus,
+      'lastModified': account.lastModified?.toIso8601String(),
+      'modifiedFields': account.modifiedFields ?? [],
+    };
+  }
+
+  // ================== ASSET SYNC METHODS ==================
+
+// Helper to convert Asset to JSON
   Map<String, dynamic> _assetsToJson(Asset asset) {
     return {
       'id': asset.id,
+      'assetCode': asset.assetCode,
       'assetName': asset.assetName,
       'assetType': asset.assetType,
       'assetSubType': asset.assetSubType,
-      'assetCode': asset.assetCode,
       'assetSerialNo': asset.assetSerialNo,
       'acquisitionDate': asset.acquisitionDate?.toIso8601String(),
       'acquisitionCost': asset.acquisitionCost,
@@ -837,7 +990,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'lastDepreciationDate': asset.lastDepreciationDate?.toIso8601String(),
       'accumulatedDepreciation': asset.accumulatedDepreciation,
       'bookValue': asset.bookValue,
-      'isImpaired': asset.isImpaired,
+      'isImpaired': asset.isImpaired ?? false,
       'impairmentLoss': asset.impairmentLoss,
       'revaluationDate': asset.revaluationDate?.toIso8601String(),
       'revaluationAmount': asset.revaluationAmount,
@@ -850,57 +1003,60 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'disposalProceeds': asset.disposalProceeds,
       'disposalReason': asset.disposalReason,
       'gainOrLossOnDisposal': asset.gainOrLossOnDisposal,
-      'isLeased': asset.isLeased,
+      'isLeased': asset.isLeased ?? false,
       'leaseType': asset.leaseType,
       'leaseStartDate': asset.leaseStartDate?.toIso8601String(),
       'leaseEndDate': asset.leaseEndDate?.toIso8601String(),
       'leasePaymentAmount': asset.leasePaymentAmount,
       'lastAuditDate': asset.lastAuditDate?.toIso8601String(),
-      'syncStatus': asset.syncStatus,
+      'syncStatus': asset.syncStatus ?? false,
       'notes': asset.notes,
       'createdAt': asset.createdAt?.toIso8601String(),
       'lastModified': asset.lastModified?.toIso8601String(),
       'operationType': asset.operationType,
       'usefulLife': asset.usefulLife,
-      'hasDebitBalance': asset.hasDebitBalance,
-      'hasCreditBalance': asset.hasCreditBalance,
+      'hasDebitBalance': asset.hasDebitBalance ?? false,
+      'hasCreditBalance': asset.hasCreditBalance ?? false,
       'option': asset.option,
-      'modifiedFields': asset.modifiedFields,
+      'modifiedFields': asset.modifiedFields ?? [],
     };
   }
 
-  Map<String, dynamic> _projectsToJson(Project p) => {
-        'projectCode': p.projectCode,
-        'name': p.name,
-        'description': p.description,
-        'status': p.status,
-        'createdAt': p.createdAt.toIso8601String(),
-        'updatedAt': p.updatedAt.toIso8601String(),
-        'syncStatus': p.syncStatus,
-        'lastModified': p.lastModified?.toIso8601String(),
-        'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
+  // Helper to convert Project to JSON
+  Map<String, dynamic> _projectsToJson(Project project) {
+    return {
+      'projectCode': project.projectCode,
+      'name': project.name,
+      'description': project.description,
+      'status': project.status,
+      'createdAt': project.createdAt.toIso8601String(),
+      'updatedAt': project.updatedAt.toIso8601String(),
+      'syncStatus': project.syncStatus ?? false,
+      'lastModified': project.lastModified?.toIso8601String(),
+      'operationType': project.operationType,
+      'modifiedFields': project.modifiedFields ?? [],
+      // ✅ NEW FIELDS
+      'projectType': project.projectType,
+      'participationType': project.participationType,
+      'studentPayable': project.studentPayable ?? false,
+    };
+  }
 
-        // ✅ NEW FIELDS
-        'projectType': p.projectType,
-        'participationType': p.participationType,
-        'studentPayable': p.studentPayable,
-      };
-  Map<String, dynamic> _projectItemsToJson(ProjectItem i) => {
-        'projectItemCode': i.projectItemCode,
-        'projectCode': i.projectCode,
-        'name': i.name,
+  Map<String, dynamic> _projectItemsToJson(ProjectItem item) {
+    return {
+      'projectItemCode': item.projectItemCode,
+      'projectCode': item.projectCode,
+      'name': item.name,
+      'itemType': item.itemType ?? 'goods',
+      'active': item.active ?? true,
+      'trackStock': item.trackStock ?? false,
+      'syncStatus': item.syncStatus ?? false,
+      'lastModified': item.lastModified?.toIso8601String(),
+      'operationType': item.operationType,
+      'modifiedFields': item.modifiedFields ?? [],
+    };
+  }
 
-        // ✅ NEW FIELDS
-        'itemType': i.itemType,
-        'active': i.active,
-        'trackStock': i.trackStock,
-
-        'syncStatus': i.syncStatus,
-        'lastModified': i.lastModified?.toIso8601String(),
-        'operationType': i.operationType,
-        'modifiedFields': i.modifiedFields,
-      };
   Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
         'projectDailyActiviyCode': a.projectDailyActiviyCode,
         'projectCode': a.projectCode,
@@ -915,8 +1071,17 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       };
 
 //==================== BatchUnit sync ======================
-  Future<void> _createBatchUnitInMySQL(BatchUnit unit) async {
-    final Map<String, dynamic> jsonData = _batchUnitToJson(unit);
+
+// CREATE PaymentLog on server
+  Future<void> _createPaymentLogInMySQL(PaymentLog newLog) async {
+    final Map<String, dynamic> jsonData = _paymentLogToJson(newLog);
+
+    // ✅ Ensure logId exists
+    if (newLog.logId == null || newLog.logId!.isEmpty) {
+      newLog.logId =
+          'LOG_${newLog.receiptNumber}_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
     setState(() {
       _isSyncings = true;
     });
@@ -924,29 +1089,32 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php?logId=${newLog.logId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(jsonData),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
-            unit.operationType != null &&
-            unit.operationType != 'none') {
-          SyncQueueManager().enqueue(unit);
-        }
-        unit.syncStatus = true;
-        unit.operationType = 'none';
-        unit.modifiedFields = [];
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('PaymentLog ${newLog.logId} created/updated successfully.');
 
-        await unit.save();
+        // ✅ Update sync status
+        newLog.syncStatus = true;
+        newLog.operationType = 'none';
+        newLog.modifiedFields = [];
+        await newLog.save();
       } else {
-        throw Exception('Failed to create BatchUnit');
+        throw Exception(
+            'Failed to sync payment log. Status: ${response.statusCode}');
       }
-    } catch (e) {
-      print('BatchUnit create error: $e');
+    } catch (e, stackTrace) {
+      print('--- Exception Details ---');
+      print('Error creating payment log: $e');
+      print('Stack Trace: $stackTrace');
+      print('Log ID: ${newLog.logId}');
+      print('Receipt Number: ${newLog.receiptNumber}');
+      print('--- End of Exception Details ---');
     } finally {
       setState(() {
         _isSyncings = false;
@@ -954,12 +1122,147 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateBatchUnitInMySQL(BatchUnit unit) async {
+// UPDATE PaymentLog on server
+  Future<void> _updatePaymentLogInMySQL(PaymentLog updatedLog) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in unit.modifiedFields ?? []) {
+
+    // ✅ Track modified fields
+    for (String field in updatedLog.modifiedFields ?? []) {
       switch (field) {
-        case 'name':
-          modifiedFieldsJson['name'] = unit.level.name;
+        case 'parentName':
+          modifiedFieldsJson['parentName'] = updatedLog.parentName;
+          break;
+        case 'parentPhone':
+          modifiedFieldsJson['parentPhone'] = updatedLog.parentPhone;
+          break;
+        case 'isReprint':
+          modifiedFieldsJson['isReprint'] = updatedLog.isReprint ?? false;
+          break;
+        case 'originalReceiptNumber':
+          modifiedFieldsJson['originalReceiptNumber'] =
+              updatedLog.originalReceiptNumber;
+          break;
+        case 'reprintCount':
+          modifiedFieldsJson['reprintCount'] = updatedLog.reprintCount ?? 0;
+          break;
+      }
+    }
+
+    // Always include logId for identification
+    modifiedFieldsJson['logId'] = updatedLog.logId;
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      final response = await http.put(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php?logId=${updatedLog.logId}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode(modifiedFieldsJson),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('PaymentLog ${updatedLog.logId} updated successfully.');
+
+        // ✅ Update sync status
+        updatedLog.syncStatus = true;
+        updatedLog.operationType = 'none';
+        updatedLog.modifiedFields = [];
+        await updatedLog.save();
+      } else {
+        throw Exception('Failed to update payment log.');
+      }
+    } catch (e, stackTrace) {
+      print('--- Exception Details ---');
+      print('Error updating payment log: $e');
+      print('Stack Trace: $stackTrace');
+      print('Log ID: ${updatedLog.logId}');
+      print('--- End of Exception Details ---');
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+    }
+  }
+
+// CREATE BatchUnit on server
+
+// CREATE BatchUnit on server
+  Future<void> _createBatchUnitInMySQL(BatchUnit unit) async {
+    print('=== _createBatchUnitInMySQL START ===');
+    print('unitBatchCode: ${unit.unitBatchCode}');
+    print('domain: $_domainName');
+
+    final Map<String, dynamic> jsonData = _batchUnitToJson(unit);
+    final String jsonString = jsonEncode(jsonData);
+    print('JSON String: $jsonString');
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}';
+      print('POST URL: $url');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonString,
+      );
+
+      print('Response Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+            '✅ BatchUnit ${unit.unitBatchCode} created/updated successfully.');
+
+        unit.syncStatus = true;
+        unit.operationType = 'none';
+        unit.modifiedFields = [];
+        await unit.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('BatchUnit synced successfully')));
+      } else {
+        print('❌ Failed to create BatchUnit. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to create BatchUnit. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ BatchUnit create error: $e');
+      print('Stack Trace: $stackTrace');
+      await unit.save();
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+      print('=== _createBatchUnitInMySQL END ===');
+    }
+  }
+
+// UPDATE BatchUnit on server
+  Future<void> _updateBatchUnitInMySQL(BatchUnit unit) async {
+    print('=== _updateBatchUnitInMySQL START ===');
+    print('unitBatchCode: ${unit.unitBatchCode}');
+    print('modifiedFields: ${unit.modifiedFields}');
+
+    final Map<String, dynamic> modifiedFieldsJson = {};
+
+    for (String field in unit.modifiedFields ?? []) {
+      print('Processing field: $field');
+      switch (field) {
+        case 'level':
+          modifiedFieldsJson['level'] = unit.level.name;
           break;
         case 'unitsPerPackage':
           modifiedFieldsJson['unitsPerPackage'] = unit.unitsPerPackage;
@@ -970,29 +1273,39 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         case 'buyingPrice':
           modifiedFieldsJson['buyingPrice'] = unit.buyingPrice;
           break;
-        case 'unitBatchCode':
-          modifiedFieldsJson['unitBatchCode'] = unit.unitBatchCode;
-          break;
+        default:
+          print('Unknown field: $field');
       }
     }
+
+    // Always include unitBatchCode for identification
     modifiedFieldsJson['unitBatchCode'] = unit.unitBatchCode;
+
+    print('Modified fields JSON: ${jsonEncode(modifiedFieldsJson)}');
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}';
+      print('PUT URL: $url');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php?unitBatchCode=${unit.unitBatchCode}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
+      print('Response Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('Students ${unit.unitBatchCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
+        print('✅ BatchUnit ${unit.unitBatchCode} updated successfully.');
+
         if ((unit.modifiedFields?.isNotEmpty ?? false) &&
             unit.operationType != null &&
             unit.operationType != 'none') {
@@ -1003,14 +1316,18 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         unit.modifiedFields = [];
         await unit.save();
       } else {
-        throw Exception('Failed to update students.');
+        print('❌ Failed to update BatchUnit. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception('Failed to update BatchUnit.');
       }
-    } catch (e) {
-      print('Error updating students: $e');
+    } catch (e, stackTrace) {
+      print('❌ BatchUnit update error: $e');
+      print('Stack Trace: $stackTrace');
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updateBatchUnitInMySQL END ===');
     }
   }
 
@@ -1252,6 +1569,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+//==================== _createProjectSaleTransactionInMySQL sync ======================
 
   Future<void> _createProjectSaleTransactionInMySQL(
       ProjectSaleTransaction tx) async {
@@ -1377,13 +1695,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           break;
 
         case 'deletedAt':
-          modifiedFieldsJson['deletedAt'] =
-              tx.deletedAt?.map((e) => e.toIso8601String()).toList();
+          modifiedFieldsJson['deletedAt'] = tx.deletedAt?.isNotEmpty == true
+              ? tx.deletedAt!.last.toIso8601String()
+              : null;
           break;
 
         case 'restoredAt':
-          modifiedFieldsJson['restoredAt'] =
-              tx.restoredAt?.map((e) => e.toIso8601String()).toList();
+          modifiedFieldsJson['restoredAt'] = tx.restoredAt?.isNotEmpty == true
+              ? tx.restoredAt!.last.toIso8601String()
+              : null;
           break;
 
         case 'deletedByUsers':
@@ -1506,6 +1826,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+//==================== _createBatchSellUnitInMySQL sync ======================
 
   Future<void> _createBatchSellUnitInMySQL(BatchSellUnit unit) async {
     final Map<String, dynamic> jsonData = _batchSellUnitToJson(unit);
@@ -1567,7 +1888,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           break;
 
         case 'active':
-          modifiedFieldsJson['active'] = unit.active;
+          modifiedFieldsJson['active'] = unit.active ? 1 : 0;
           break;
 
         case 'deletedAt':
@@ -1630,6 +1951,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+//==================== _createPaymentMethodInMySQL sync ======================
 
   Future<void> _createPaymentMethodInMySQL(PaymentMethod pm) async {
     final Map<String, dynamic> jsonData = _paymentMethodToJson(pm);
@@ -1639,7 +1961,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}'),
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
         body: jsonEncode(jsonData),
       );
@@ -1726,7 +2048,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}',
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_payment_method_api.php?paymentMethodCode=${pm.paymentMethodCode}',
         ),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
@@ -1755,6 +2077,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+//==================== _createReceiptSnapshotInMySQL sync ======================
 
   Future<void> _createReceiptSnapshotInMySQL(ReceiptSnapshot r) async {
     final Map<String, dynamic> jsonData = _receiptSnapshotToJson(r);
@@ -1764,7 +2087,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/receipt_snapshot_api.php?receiptCode=${r.receiptCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_receipt_snapshot_api.php?receiptCode=${r.receiptCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1854,7 +2177,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/receipt_snapshot_api.php?receiptCode=${receipt.receiptCode}',
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_receipt_snapshot_api.php?receiptCode=${receipt.receiptCode}',
         ),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
@@ -1885,15 +2208,18 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
   //=================== Exceptions  sync =========================
 
-  Future<void> _createExceptionInMySQL(ExceptionalStudents newClass) async {
-    final Map<String, dynamic> jsonData = _exceptionsToJson(newClass);
+  // CREATE Exception on server
+  Future<void> _createExceptionInMySQL(ExceptionalStudents newException) async {
+    final Map<String, dynamic> jsonData = _exceptionsToJson(newException);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${newClass.exceptionId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${newException.exceptionId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1901,36 +2227,32 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('exceptionId ${newClass.exceptionId} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-// Log status and body for better debugging
         print(
-            'Exception: Failed to create exceptionId. Status: ${response.statusCode}');
+            'Exception ${newException.exceptionId} created/updated successfully.');
+
+        // Update syncStatus in Hive
+        newException.syncStatus = true;
+        newException.operationType = 'none';
+        newException.modifiedFields = [];
+        await newException.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Exception ${newException.exceptionName} synced successfully')));
+      } else {
+        print('Failed to sync exception. Status: ${response.statusCode}');
         print('Response body: ${response.body}');
         throw Exception(
-            'Failed to create exceptionId. Status: ${response.statusCode}');
+            'Failed to sync exception. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating exceptionId: $e');
+      print('Error creating exception: $e');
       print('Stack Trace: $stackTrace');
-      print('exceptionId Details:');
-      print('exceptionId: ${newClass.exceptionId}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Exception ID: ${newException.exceptionId}');
+      print('Exception Name: ${newException.exceptionName}');
       print('--- End of Exception Details ---');
+      await newException.save(); // Keep syncStatus false to retry
     } finally {
       setState(() {
         _isSyncings = false;
@@ -1938,44 +2260,48 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateExceptionInMySQL(ExceptionalStudents newClass) async {
+// UPDATE Exception on server
+  Future<void> _updateExceptionInMySQL(
+      ExceptionalStudents updatedException) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedException.modifiedFields ?? []) {
       switch (field) {
-        case 'exceptionId':
-          modifiedFieldsJson['exceptionId'] = newClass.exceptionId;
-          break;
         case 'exceptionName':
-          modifiedFieldsJson['exceptionName'] = newClass.exceptionName;
+          modifiedFieldsJson['exceptionName'] = updatedException.exceptionName;
           break;
         case 'exceptionStatus':
-          modifiedFieldsJson['exceptionStatus'] = newClass.exceptionStatus;
+          modifiedFieldsJson['exceptionStatus'] =
+              updatedException.exceptionStatus;
           break;
         case 'exceptionType':
-          modifiedFieldsJson['exceptionType'] = newClass.exceptionType;
+          modifiedFieldsJson['exceptionType'] = updatedException.exceptionType;
           break;
-
         case 'exceptionFigure':
-          modifiedFieldsJson['exceptionFigure'] = newClass.exceptionFigure;
+          modifiedFieldsJson['exceptionFigure'] =
+              updatedException.exceptionFigure;
           break;
-
+        case 'priorityFlag':
+          modifiedFieldsJson['priorityFlag'] = updatedException.priorityFlag;
+          break;
         case 'terms':
-          modifiedFieldsJson['terms'] = newClass.terms != null
-              ? jsonEncode(newClass.terms) // Encode List<String> to JSON
-              : null;
+          modifiedFieldsJson['terms'] =
+              jsonEncode(updatedException.terms ?? []);
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['receiptNumber'] = newClass.exceptionId;
+    // Always include exceptionId for identification
+    modifiedFieldsJson['exceptionId'] = updatedException.exceptionId;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${newClass.exceptionId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${updatedException.exceptionId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1983,31 +2309,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('exceptionId ${newClass.exceptionId} updated successfully.');
-        // Update syncStatus and operationType in Hive
+        print(
+            'Exception ${updatedException.exceptionId} updated successfully.');
 
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        updatedException.syncStatus = true;
+        updatedException.operationType = 'none';
+        updatedException.modifiedFields = [];
+        await updatedException.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Exception ${updatedException.exceptionName} updated successfully')));
       } else {
-        throw Exception('Failed to update receiptNumber.');
+        throw Exception(
+            'Failed to update exception. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating receiptNumber: $e');
+      print('Error updating exception: $e');
       print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.exceptionId}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Exception ID: ${updatedException.exceptionId}');
       print('--- End of Exception Details ---');
+      await updatedException.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2017,15 +2340,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   //=================== teachers payment  sync =========================
 
-  Future<void> _createTeacherPaymentInMySQL(TeacherPayment newClass) async {
-    final Map<String, dynamic> jsonData = _teacherPaymentclassToJson(newClass);
+  // CREATE TeacherPayment on server
+  Future<void> _createTeacherPaymentInMySQL(TeacherPayment newPayment) async {
+    final Map<String, dynamic> jsonData =
+        _teacherPaymentclassToJson(newPayment);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newPayment.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2033,31 +2360,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print(
+            'TeacherPayment ${newPayment.receiptNumber} created/updated successfully.');
 
-        await newClass.save();
+        newPayment.syncStatus = true;
+        newPayment.operationType = 'none';
+        newPayment.modifiedFields = [];
+        await newPayment.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Teacher Payment for ${newPayment.studentName} synced successfully')));
       } else {
-        throw Exception('Failed to create receiptNumber.');
+        throw Exception(
+            'Failed to sync teacher payment. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating receiptNumber: $e');
+      print('Error creating teacher payment: $e');
       print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Receipt Number: ${newPayment.receiptNumber}');
       print('--- End of Exception Details ---');
+      await newPayment.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2065,52 +2389,59 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateTeacherPaymentInMySQL(TeacherPayment newClass) async {
+// UPDATE TeacherPayment on server
+  Future<void> _updateTeacherPaymentInMySQL(
+      TeacherPayment updatedPayment) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedPayment.modifiedFields ?? []) {
       switch (field) {
         case 'studentName':
-          modifiedFieldsJson['studentName'] = newClass.studentName;
+          modifiedFieldsJson['studentName'] = updatedPayment.studentName;
           break;
         case 'studentSurname':
-          modifiedFieldsJson['studentSurname'] = newClass.studentSurname;
+          modifiedFieldsJson['studentSurname'] = updatedPayment.studentSurname;
           break;
         case 'studentClass':
-          modifiedFieldsJson['studentClass'] = newClass.studentClass;
+          modifiedFieldsJson['studentClass'] = updatedPayment.studentClass;
           break;
         case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
+          modifiedFieldsJson['phoneNumber'] = updatedPayment.phoneNumber;
           break;
-
         case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
+          modifiedFieldsJson['paymentPurpose'] = updatedPayment.paymentPurpose;
           break;
-
         case 'amountToPay':
-          modifiedFieldsJson['amountToPay'] = newClass.amountToPay;
+          modifiedFieldsJson['amountToPay'] = updatedPayment.amountToPay;
           break;
         case 'paymentDate':
           modifiedFieldsJson['paymentDate'] =
-              newClass.paymentDate.toIso8601String();
+              updatedPayment.paymentDate.toIso8601String();
           break;
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedPayment.termId;
           break;
         case 'receiptNumber':
-          modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
+          modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
+          break;
+        case 'associatedStaff':
+          modifiedFieldsJson['associatedStaff'] =
+              updatedPayment.associatedStaff ?? [];
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
+    // Always include receiptNumber for identification
+    modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${updatedPayment.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2118,30 +2449,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
+        print(
+            'TeacherPayment ${updatedPayment.receiptNumber} updated successfully.');
 
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        if ((updatedPayment.modifiedFields?.isNotEmpty ?? false) &&
+            updatedPayment.operationType != null &&
+            updatedPayment.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedPayment);
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        updatedPayment.syncStatus = true;
+        updatedPayment.operationType = 'none';
+        updatedPayment.modifiedFields = [];
+        await updatedPayment.save();
       } else {
-        throw Exception('Failed to update receiptNumber.');
+        throw Exception('Failed to update teacher payment.');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating receiptNumber: $e');
+      print('Error updating teacher payment: $e');
       print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Receipt Number: ${updatedPayment.receiptNumber}');
       print('--- End of Exception Details ---');
     } finally {
       setState(() {
@@ -2152,17 +2479,20 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //=================== techers payment purpose sync =========================
 
+// CREATE TeacherPaymentPurpose on server
   Future<void> _createTeacherPaymentPurposeInMySQL(
-      TeacherPaymentsPurposes newClass) async {
+      TeacherPaymentsPurposes newPurpose) async {
     final Map<String, dynamic> jsonData =
-        _teacherPaymentsPurposeToJson(newClass);
+        _teacherPaymentsPurposeToJson(newPurpose);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newPurpose.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2170,31 +2500,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print(
+            'TeacherPaymentPurpose ${newPurpose.purposeCode} created/updated successfully.');
 
-        await newClass.save();
+        newPurpose.syncStatus = true;
+        newPurpose.operationType = 'none';
+        newPurpose.modifiedFields = [];
+        await newPurpose.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Teacher Payment Purpose ${newPurpose.paymentPurpose} synced successfully')));
       } else {
-        throw Exception('Failed to create IdNumber.');
+        throw Exception(
+            'Failed to sync teacher payment purpose. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating purposeCode: $e');
+      print('Error creating teacher payment purpose: $e');
       print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Purpose Code: ${newPurpose.purposeCode}');
       print('--- End of Exception Details ---');
+      await newPurpose.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2202,43 +2529,40 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// UPDATE TeacherPaymentPurpose on server
   Future<void> _updateTeacherPaymentPurposeInMySQL(
-      TeacherPaymentsPurposes newClass) async {
+      TeacherPaymentsPurposes updatedPurpose) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedPurpose.modifiedFields ?? []) {
       switch (field) {
         case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-        case 'purposeCode':
-          modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
+          modifiedFieldsJson['paymentPurpose'] = updatedPurpose.paymentPurpose;
           break;
         case 'purposeAmount':
-          modifiedFieldsJson['purposeAmount'] = newClass.purposeAmount;
+          modifiedFieldsJson['purposeAmount'] = updatedPurpose.purposeAmount;
           break;
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedPurpose.termId;
           break;
-
         case 'associatedStaff':
-          modifiedFieldsJson['associatedStaff'] = newClass.associatedStaff !=
-                  null
-              ? jsonEncode(newClass
-                  .associatedStaff) // Explicit JSON encode for associatedStaff
-              : null;
+          modifiedFieldsJson['associatedStaff'] =
+              updatedPurpose.associatedStaff ?? [];
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
+    // Always include purposeCode for identification
+    modifiedFieldsJson['purposeCode'] = updatedPurpose.purposeCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${updatedPurpose.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2246,29 +2570,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        print(
+            'TeacherPaymentPurpose ${updatedPurpose.purposeCode} updated successfully.');
+
+        if ((updatedPurpose.modifiedFields?.isNotEmpty ?? false) &&
+            updatedPurpose.operationType != null &&
+            updatedPurpose.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedPurpose);
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        updatedPurpose.syncStatus = true;
+        updatedPurpose.operationType = 'none';
+        updatedPurpose.modifiedFields = [];
+        await updatedPurpose.save();
       } else {
-        throw Exception('Failed to update purposeCode.');
+        throw Exception('Failed to update teacher payment purpose.');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating purposeCode: $e');
+      print('Error updating teacher payment purpose: $e');
       print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Purpose Code: ${updatedPurpose.purposeCode}');
       print('--- End of Exception Details ---');
     } finally {
       setState(() {
@@ -2450,16 +2771,18 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //=================== student payment sync =========================
+// CREATE StudentPayment on server
+  Future<void> _createStudentPaymentInMySQL(StudentPayment newPayment) async {
+    final Map<String, dynamic> jsonData = _studentPaymentToJson(newPayment);
 
-  Future<void> _createStudentPaymentInMySQL(StudentPayment newClass) async {
-    final Map<String, dynamic> jsonData = _studentPaymentToJson(newClass);
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newPayment.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2467,32 +2790,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
+        print(
+            'StudentPayment ${newPayment.receiptNumber} created/updated successfully.');
 
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        newPayment.syncStatus = true;
+        newPayment.operationType = 'none';
+        newPayment.modifiedFields = [];
+        await newPayment.save();
 
-        await newClass.save();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Payment for ${newPayment.studentName} synced successfully')));
       } else {
-        throw Exception('Failed to create receiptNumber.');
+        throw Exception(
+            'Failed to sync payment. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating receiptNumber: $e');
+      print('Error creating payment: $e');
       print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Receipt Number: ${newPayment.receiptNumber}');
       print('--- End of Exception Details ---');
+      await newPayment.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2500,58 +2819,96 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateStudentPaymentInMySQL(StudentPayment newClass) async {
+// UPDATE StudentPayment on server
+  Future<void> _updateStudentPaymentInMySQL(
+      StudentPayment updatedPayment) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedPayment.modifiedFields ?? []) {
       switch (field) {
         case 'studentName':
-          modifiedFieldsJson['studentName'] = newClass.studentName;
+          modifiedFieldsJson['studentName'] = updatedPayment.studentName;
           break;
         case 'studentSurname':
-          modifiedFieldsJson['studentSurname'] = newClass.studentSurname;
+          modifiedFieldsJson['studentSurname'] = updatedPayment.studentSurname;
           break;
         case 'studentClass':
-          modifiedFieldsJson['studentClass'] = newClass.studentClass;
+          modifiedFieldsJson['studentClass'] = updatedPayment.studentClass;
+          break;
+        case 'studentRegNumber':
+          modifiedFieldsJson['studentRegNumber'] =
+              updatedPayment.studentRegNumber;
           break;
         case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
+          modifiedFieldsJson['phoneNumber'] = updatedPayment.phoneNumber;
           break;
-
         case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
+          modifiedFieldsJson['paymentPurpose'] = updatedPayment.paymentPurpose;
           break;
-
         case 'amountToPay':
-          modifiedFieldsJson['amountToPay'] = newClass.amountToPay;
+          modifiedFieldsJson['amountToPay'] = updatedPayment.amountToPay;
           break;
         case 'paymentDate':
           modifiedFieldsJson['paymentDate'] =
-              newClass.paymentDate.toIso8601String();
+              updatedPayment.paymentDate.toIso8601String();
           break;
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedPayment.termId;
           break;
         case 'receiptNumber':
-          modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
+          modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
           break;
         case 'username':
-          modifiedFieldsJson['username'] = newClass.username;
+          modifiedFieldsJson['username'] = updatedPayment.username;
           break;
         case 'role':
-          modifiedFieldsJson['role'] = newClass.role;
+          modifiedFieldsJson['role'] = updatedPayment.role;
+          break;
+        case 'paymentMethodType':
+          modifiedFieldsJson['paymentMethodType'] =
+              updatedPayment.paymentMethodType;
+          break;
+        case 'paymentMethodAmount':
+          modifiedFieldsJson['paymentMethodAmount'] =
+              updatedPayment.paymentMethodAmount;
+          break;
+        case 'paymentReference':
+          modifiedFieldsJson['paymentReference'] =
+              updatedPayment.paymentReference;
+          break;
+        case 'mobileMoneyPhone':
+          modifiedFieldsJson['mobileMoneyPhone'] =
+              updatedPayment.mobileMoneyPhone;
+          break;
+        case 'mobileMoneyProvider':
+          modifiedFieldsJson['mobileMoneyProvider'] =
+              updatedPayment.mobileMoneyProvider;
+          break;
+        case 'bankAccountNumber':
+          modifiedFieldsJson['bankAccountNumber'] =
+              updatedPayment.bankAccountNumber;
+          break;
+        case 'bankAccountName':
+          modifiedFieldsJson['bankAccountName'] =
+              updatedPayment.bankAccountName;
+          break;
+        case 'changeGiven':
+          modifiedFieldsJson['changeGiven'] = updatedPayment.changeGiven;
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
+    // Always include receiptNumber for identification
+    modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${updatedPayment.receiptNumber}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2559,30 +2916,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
+        print(
+            'StudentPayment ${updatedPayment.receiptNumber} updated successfully.');
 
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        if ((updatedPayment.modifiedFields?.isNotEmpty ?? false) &&
+            updatedPayment.operationType != null &&
+            updatedPayment.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedPayment);
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        updatedPayment.syncStatus = true;
+        updatedPayment.operationType = 'none';
+        updatedPayment.modifiedFields = [];
+        await updatedPayment.save();
       } else {
-        throw Exception('Failed to update receiptNumber.');
+        throw Exception('Failed to update payment.');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating receiptNumber: $e');
+      print('Error updating payment: $e');
       print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Receipt Number: ${updatedPayment.receiptNumber}');
       print('--- End of Exception Details ---');
     } finally {
       setState(() {
@@ -2590,17 +2943,21 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+
   //=================== purpose sync =========================
 
-  Future<void> _createPaymentPurposeInMySQL(PaymentPurpose newClass) async {
-    final Map<String, dynamic> jsonData = _paymentPurposeToJson(newClass);
+// CREATE PaymentPurpose on server
+  Future<void> _createPaymentPurposeInMySQL(PaymentPurpose newPurpose) async {
+    final Map<String, dynamic> jsonData = _paymentPurposeToJson(newPurpose);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newPurpose.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2608,31 +2965,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print(
+            'PaymentPurpose ${newPurpose.purposeCode} created/updated successfully.');
 
-        await newClass.save();
+        newPurpose.syncStatus = true;
+        newPurpose.operationType = 'none';
+        newPurpose.modifiedFields = [];
+        await newPurpose.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Payment Purpose ${newPurpose.paymentPurpose} synced successfully')));
       } else {
-        throw Exception('Failed to create purposeCode.');
+        throw Exception(
+            'Failed to sync payment purpose. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating purposeCode: $e');
+      print('Error creating payment purpose: $e');
       print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Purpose Code: ${newPurpose.purposeCode}');
       print('--- End of Exception Details ---');
+      await newPurpose.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2640,49 +2994,51 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updatePaymentPurposeInMySQL(PaymentPurpose newClass) async {
+// UPDATE PaymentPurpose on server
+  Future<void> _updatePaymentPurposeInMySQL(
+      PaymentPurpose updatedPurpose) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedPurpose.modifiedFields ?? []) {
       switch (field) {
         case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
+          modifiedFieldsJson['paymentPurpose'] = updatedPurpose.paymentPurpose;
           break;
         case 'purposeAmount':
-          modifiedFieldsJson['purposeAmount'] = newClass.purposeAmount;
+          modifiedFieldsJson['purposeAmount'] = updatedPurpose.purposeAmount;
           break;
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedPurpose.termId;
           break;
         case 'associatedClasses':
           modifiedFieldsJson['associatedClasses'] =
-              jsonEncode(newClass.associatedClasses);
-          break;
-
-        case 'purposeCode':
-          modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
+              updatedPurpose.associatedClasses ?? [];
           break;
         case 'exceptions':
-          modifiedFieldsJson['exceptions'] = newClass.exceptions != null
-              ? jsonEncode(newClass.exceptions!
+          modifiedFieldsJson['exceptions'] = updatedPurpose.exceptions != null
+              ? updatedPurpose.exceptions!
                   .map((e) => _exceptionsToJson(e))
-                  .toList())
-              : null;
+                  .toList()
+              : [];
           break;
         case 'forNewcomersOnly':
-          modifiedFieldsJson['forNewcomersOnly'] = newClass.forNewcomersOnly;
+          modifiedFieldsJson['forNewcomersOnly'] =
+              updatedPurpose.forNewcomersOnly ?? false;
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
+    // Always include purposeCode for identification
+    modifiedFieldsJson['purposeCode'] = updatedPurpose.purposeCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${updatedPurpose.purposeCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2690,29 +3046,26 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        print(
+            'PaymentPurpose ${updatedPurpose.purposeCode} updated successfully.');
+
+        if ((updatedPurpose.modifiedFields?.isNotEmpty ?? false) &&
+            updatedPurpose.operationType != null &&
+            updatedPurpose.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedPurpose);
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        updatedPurpose.syncStatus = true;
+        updatedPurpose.operationType = 'none';
+        updatedPurpose.modifiedFields = [];
+        await updatedPurpose.save();
       } else {
-        throw Exception('Failed to update purposeCode.');
+        throw Exception('Failed to update payment purpose.');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating purposeCode: $e');
+      print('Error updating payment purpose: $e');
       print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('Purpose Code: ${updatedPurpose.purposeCode}');
       print('--- End of Exception Details ---');
     } finally {
       setState(() {
@@ -2722,17 +3075,17 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //=================== users sync =========================
-
-  Future<void> _createUserInMySQL(User newClass) async {
-    final Map<String, dynamic> jsonData = _userToJson(newClass);
+  Future<void> _createUserInMySQL(User newUser) async {
+    final Map<String, dynamic> jsonData = _userToJson(newUser);
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newUser.userCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2740,31 +3093,31 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Users ${newClass.userCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print('User ${newUser.userCode} created/updated successfully.');
 
-        await newClass.save();
+        // Update syncStatus in Hive
+        newUser.syncStatus = true;
+        newUser.operationType = 'none';
+        newUser.modifiedFields = [];
+        await newUser.save();
+
+        // Show success
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('User ${newUser.username} synced successfully')));
       } else {
-        throw Exception('Failed to create Users.');
+        throw Exception('Failed to sync user. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error creating Users: $e');
+      print('Error creating user: $e');
       print('Stack Trace: $stackTrace');
       print('User Details:');
-      print('UserCode: ${newClass.userCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('UserCode: ${newUser.userCode}');
+      print('Username: ${newUser.username}');
       print('--- End of Exception Details ---');
+
+      // Keep syncStatus as false to retry later
+      await newUser.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2772,51 +3125,59 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateUserInMySQL(User newClass) async {
-    // final Map<String, dynamic> jsonData = _userToJson(newClass);
-
+  Future<void> _updateUserInMySQL(User updatedUser) async {
+    // Only send modified fields
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedUser.modifiedFields ?? []) {
       switch (field) {
         case 'username':
-          modifiedFieldsJson['username'] = newClass.username;
+          modifiedFieldsJson['username'] = updatedUser.username;
           break;
         case 'password':
-          modifiedFieldsJson['password'] = newClass.password;
+          modifiedFieldsJson['password'] = updatedUser.password;
+          break;
+        case 'email':
+          modifiedFieldsJson['email'] = updatedUser.email;
           break;
         case 'role':
-          modifiedFieldsJson['role'] = newClass.role;
+          modifiedFieldsJson['role'] = updatedUser.role;
+          break;
+        case 'phone':
+          modifiedFieldsJson['phone'] = updatedUser.phone;
+          break;
+        case 'isActive':
+          modifiedFieldsJson['isActive'] = updatedUser.isActive;
           break;
         case 'securityQuestions':
           modifiedFieldsJson['securityQuestions'] =
-              jsonEncode(newClass.securityQuestions);
+              jsonEncode(updatedUser.securityQuestions);
           break;
         case 'securityAnswers':
           modifiedFieldsJson['securityAnswers'] =
-              jsonEncode(newClass.securityAnswers);
+              jsonEncode(updatedUser.securityAnswers);
           break;
-        case 'phone':
-          modifiedFieldsJson['phone'] = newClass.phone;
+        case 'assignedClasses':
+          modifiedFieldsJson['assignedClasses'] =
+              jsonEncode(updatedUser.assignedClasses ?? []);
           break;
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'userCode':
-          modifiedFieldsJson['userCode'] = newClass.userCode;
+          modifiedFieldsJson['termId'] = updatedUser.termId;
           break;
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['userCode'] = newClass.userCode;
+    // Always include userCode for identification
+    modifiedFieldsJson['userCode'] = updatedUser.userCode;
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${updatedUser.userCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2824,30 +3185,30 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Users ${newClass.userCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+        print('User ${updatedUser.userCode} updated successfully.');
+
+        // Reset sync status
+        updatedUser.syncStatus = true;
+        updatedUser.operationType = 'none';
+        updatedUser.modifiedFields = [];
+        await updatedUser.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('User ${updatedUser.username} updated successfully')));
       } else {
-        throw Exception('Failed to update users.');
+        throw Exception(
+            'Failed to update user. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      // Print a detailed debug log
       print('--- Exception Details ---');
-      print('Error updating Users: $e');
+      print('Error updating user: $e');
       print('Stack Trace: $stackTrace');
-      print('User Details:');
-      print('UserCode: ${newClass.userCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
+      print('User Code: ${updatedUser.userCode}');
       print('--- End of Exception Details ---');
+
+      // Keep syncStatus as false to retry later
+      await updatedUser.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2856,213 +3217,277 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //=================== students sync =========================
+// CREATE Student on server with debug
+  Future<void> _createStudentsInMySQL(Student newStudent) async {
+    print('=== _createStudentsInMySQL START ===');
+    print('Student to create: ${newStudent.studentIdNumber}');
+    print('OperationType: ${newStudent.operationType}');
+    print('SyncStatus: ${newStudent.syncStatus}');
 
-  Future<void> _createStudentsInMySQL(Student newClass) async {
-    final Map<String, dynamic> jsonData = _studentInfoToJson(newClass);
+    final Map<String, dynamic> jsonData = _studentInfoToJson(newStudent);
+
+    // Print the JSON string being sent
+    final String jsonString = jsonEncode(jsonData);
+    print('JSON String to send: $jsonString');
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newStudent.studentIdNumber}';
+      print('POST URL: $url');
+
       final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
-        body: jsonEncode(jsonData),
+        body: jsonString,
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Students ${newClass.studentIdNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+      print('Response Status Code: ${response.statusCode}');
+      print('Response Body: ${response.body}');
 
-        await newClass.save();
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print(
+            '✅ Student ${newStudent.studentIdNumber} created/updated successfully.');
+
+        newStudent.syncStatus = true;
+        newStudent.operationType = 'none';
+        newStudent.modifiedFields = [];
+        await newStudent.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Student ${newStudent.name} ${newStudent.surname} synced successfully')));
       } else {
-        throw Exception('Failed to create students.');
+        print('❌ Failed to sync student. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to sync student. Status: ${response.statusCode}');
       }
-    } catch (e) {
-      print('Error creating students: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error creating student: $e');
+      print('Stack Trace: $stackTrace');
+      await newStudent.save();
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _createStudentsInMySQL END ===');
     }
   }
 
-  Future<void> _updateStudentsInMySQL(Student newClass) async {
+// UPDATE Student on server with debug
+  Future<void> _updateStudentsInMySQL(Student updatedStudent) async {
+    print('=== _updateStudentsInMySQL START ===');
+    print('Student to update: ${updatedStudent.studentIdNumber}');
+    print('Modified Fields: ${updatedStudent.modifiedFields}');
+
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedStudent.modifiedFields ?? []) {
+      print('Processing field: $field');
       switch (field) {
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedStudent.termId;
           break;
         case 'name':
-          modifiedFieldsJson['name'] = newClass.name;
+          modifiedFieldsJson['name'] = updatedStudent.name;
           break;
         case 'surname':
-          modifiedFieldsJson['surname'] = newClass.surname;
+          modifiedFieldsJson['surname'] = updatedStudent.surname;
           break;
         case 'regNumber':
-          modifiedFieldsJson['regNumber'] = newClass.regNumber;
+          modifiedFieldsJson['regNumber'] = updatedStudent.regNumber;
           break;
         case 'class_':
-          modifiedFieldsJson['class'] = newClass.class_;
+          modifiedFieldsJson['class'] = updatedStudent.class_;
           break;
         case 'gender':
-          modifiedFieldsJson['gender'] = newClass.gender;
+          modifiedFieldsJson['gender'] = updatedStudent.gender;
           break;
         case 'age':
-          modifiedFieldsJson['age'] = newClass.age.toIso8601String();
+          modifiedFieldsJson['age'] = updatedStudent.age.toIso8601String();
           break;
         case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
+          modifiedFieldsJson['phoneNumber'] = updatedStudent.phoneNumber;
           break;
         case 'paymentStatus':
-          modifiedFieldsJson['paymentStatus'] = newClass.paymentStatus;
+          modifiedFieldsJson['paymentStatus'] = updatedStudent.paymentStatus;
           break;
         case 'isPresent':
-          modifiedFieldsJson['isPresent'] = newClass.isPresent;
+          modifiedFieldsJson['isPresent'] = updatedStudent.isPresent;
           break;
         case 'presentDates':
-          modifiedFieldsJson['presentDates'] = jsonEncode(newClass.presentDates
+          // ✅ Pass as List
+          modifiedFieldsJson['presentDates'] = updatedStudent.presentDates
               .map((date) => date.toIso8601String())
-              .toList());
+              .toList();
           break;
         case 'absentDates':
-          modifiedFieldsJson['absentDates'] = jsonEncode(newClass.absentDates
+          // ✅ Pass as List
+          modifiedFieldsJson['absentDates'] = updatedStudent.absentDates
               .map((date) => date.toIso8601String())
-              .toList());
-          break;
-        case 'id':
-          modifiedFieldsJson['id'] = newClass.id;
+              .toList();
           break;
         case 'physicalAddress':
-          modifiedFieldsJson['physicalAddress'] = newClass.physicalAddress;
+          modifiedFieldsJson['physicalAddress'] =
+              updatedStudent.physicalAddress;
           break;
         case 'formerSchool':
-          modifiedFieldsJson['formerSchool'] = newClass.formerSchool;
+          modifiedFieldsJson['formerSchool'] = updatedStudent.formerSchool;
           break;
         case 'religion':
-          modifiedFieldsJson['religion'] = newClass.religion;
+          modifiedFieldsJson['religion'] = updatedStudent.religion;
           break;
         case 'denomination':
-          modifiedFieldsJson['denomination'] = newClass.denomination;
-          break;
-        case 'studentIdNumber':
-          modifiedFieldsJson['studentIdNumber'] = newClass.studentIdNumber;
+          modifiedFieldsJson['denomination'] = updatedStudent.denomination;
           break;
         case 'nationalIdNumber':
-          modifiedFieldsJson['nationalIdNumber'] = newClass.nationalIdNumber;
+          modifiedFieldsJson['nationalIdNumber'] =
+              updatedStudent.nationalIdNumber;
           break;
         case 'nationality':
-          modifiedFieldsJson['nationality'] = newClass.nationality;
+          modifiedFieldsJson['nationality'] = updatedStudent.nationality;
           break;
         case 'district':
-          modifiedFieldsJson['district'] = newClass.district;
+          modifiedFieldsJson['district'] = updatedStudent.district;
           break;
         case 'previousSchoolPerformanceResults':
           modifiedFieldsJson['previousSchoolPerformanceResults'] =
-              newClass.previousSchoolPerformanceResults;
+              updatedStudent.previousSchoolPerformanceResults;
           break;
         case 'enrollmentStatus':
-          modifiedFieldsJson['enrollmentStatus'] = newClass.enrollmentStatus;
+          modifiedFieldsJson['enrollmentStatus'] =
+              updatedStudent.enrollmentStatus;
           break;
         case 'emergencyContactName':
           modifiedFieldsJson['emergencyContactName'] =
-              newClass.emergencyContactName;
+              updatedStudent.emergencyContactName;
           break;
         case 'emergencyContactNumber':
           modifiedFieldsJson['emergencyContactNumber'] =
-              newClass.emergencyContactNumber;
+              updatedStudent.emergencyContactNumber;
+          break;
+        case 'healthStauts':
+          modifiedFieldsJson['healthStatus'] = updatedStudent.healthStauts;
+          break;
+        case 'healthDetailedInformation':
+          modifiedFieldsJson['healthDetailedInformation'] =
+              updatedStudent.healthDetailedInformation;
           break;
         case 'exceptions':
-          // ✅ Convert List<ExceptionalStudents> to JSON
-          modifiedFieldsJson['exceptions'] = newClass.exceptions != null
-              ? jsonEncode(newClass.exceptions!
+          // ✅ Pass as List
+          modifiedFieldsJson['exceptions'] = updatedStudent.exceptions != null
+              ? updatedStudent.exceptions!
                   .map((e) => _exceptionsToJson(e))
-                  .toList())
-              : null;
+                  .toList()
+              : [];
           break;
         case 'isNewComer':
-          modifiedFieldsJson['isNewComer'] = newClass.isNewComer;
+          modifiedFieldsJson['isNewComer'] = updatedStudent.isNewComer ?? false;
           break;
-
         case 'isNewComerFrom':
           modifiedFieldsJson['isNewComerFrom'] =
-              newClass.isNewComerFrom?.toIso8601String();
+              updatedStudent.isNewComerFrom?.toIso8601String();
           break;
-
         case 'isNewComerUntil':
           modifiedFieldsJson['isNewComerUntil'] =
-              newClass.isNewComerUntil?.toIso8601String();
+              updatedStudent.isNewComerUntil?.toIso8601String();
           break;
         case 'terms':
-          modifiedFieldsJson['terms'] = newClass.terms != null
-              ? jsonEncode(newClass.terms) // Encode List<String> to JSON
-              : null;
+          // ✅ Pass as List
+          modifiedFieldsJson['terms'] = updatedStudent.terms ?? [];
           break;
-        // Add other fields as needed in this format
       }
     }
 
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['studentIdNumber'] = newClass.studentIdNumber;
+    // Always include studentIdNumber
+    modifiedFieldsJson['studentIdNumber'] = updatedStudent.studentIdNumber;
+
+    print('Modified fields JSON to send:');
+    print(modifiedFieldsJson);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${updatedStudent.studentIdNumber}';
+      print('PUT URL: $url');
+
+      final String jsonString = jsonEncode(modifiedFieldsJson);
+      print('PUT Body: $jsonString');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
-        body: jsonEncode(modifiedFieldsJson),
+        body: jsonString,
       );
 
+      print('Response Status Code: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Students ${newClass.studentIdNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        final responseData = jsonDecode(response.body);
+
+        // 🔴 FIX: If no changes, try POST instead
+        if (responseData['message'] == 'No changes made to student') {
+          print(
+              '⚠️ No changes detected. Student may not exist. Trying POST...');
+          // Try POST which handles both create and update
+          await _createStudentsInMySQL(updatedStudent);
+          return;
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
+
+        print(
+            '✅ Student ${updatedStudent.studentIdNumber} updated successfully.');
+
+        if ((updatedStudent.modifiedFields?.isNotEmpty ?? false) &&
+            updatedStudent.operationType != null &&
+            updatedStudent.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedStudent);
+        }
+        updatedStudent.syncStatus = true;
+        updatedStudent.operationType = 'none';
+        updatedStudent.modifiedFields = [];
+        await updatedStudent.save();
       } else {
-        throw Exception('Failed to update students.');
+        print('❌ Failed to update student. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to update students. Status: ${response.statusCode}');
       }
-    } catch (e) {
-      print('Error updating students: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error updating student: $e');
+      print('Stack Trace: $stackTrace');
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updateStudentsInMySQL END ===');
     }
   }
 
 //==================== withdrawal sync ======================
+// CREATE Withdrawal on server
+  Future<void> _createWithdrawalsInMySQL(Withdrawal newWithdrawal) async {
+    final Map<String, dynamic> jsonData = _withdrawalToJson(newWithdrawal);
 
-  Future<void> _createWithdrawalsInMySQL(Withdrawal newClass) async {
-    final Map<String, dynamic> jsonData = _withdrawalToJson(newClass);
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newWithdrawal.withdrawalCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3070,23 +3495,24 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Withdrawals ${newClass.withdrawalCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print(
+            'Withdrawal ${newWithdrawal.withdrawalCode} created/updated successfully.');
 
-        await newClass.save();
+        newWithdrawal.syncStatus = true;
+        newWithdrawal.operationType = 'none';
+        newWithdrawal.modifiedFields = [];
+        await newWithdrawal.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Withdrawal ${newWithdrawal.withdrawalPurpose} synced successfully')));
       } else {
-        throw Exception('Failed to create withdrawals_information.');
+        throw Exception(
+            'Failed to sync withdrawal. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating Withdrawal: $e');
+      print('Error creating withdrawal: $e');
+      await newWithdrawal.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3094,38 +3520,40 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateWithdrawalsInMySQL(Withdrawal newClass) async {
+// UPDATE Withdrawal on server
+  Future<void> _updateWithdrawalsInMySQL(Withdrawal updatedWithdrawal) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedWithdrawal.modifiedFields ?? []) {
       switch (field) {
-        case 'amount':
-          modifiedFieldsJson['amount'] = newClass.amount;
-          break;
         case 'withdrawalPurpose':
-          modifiedFieldsJson['withdrawalPurpose'] = newClass.withdrawalPurpose;
+          modifiedFieldsJson['withdrawalPurpose'] =
+              updatedWithdrawal.withdrawalPurpose;
           break;
-        case 'withdrawalCode':
-          modifiedFieldsJson['withdrawalCode'] = newClass.withdrawalCode;
+        case 'amount':
+          modifiedFieldsJson['amount'] = updatedWithdrawal.amount;
           break;
         case 'date':
-          modifiedFieldsJson['date'] = newClass.date.toIso8601String();
+          // ✅ Send full DateTime with time
+          modifiedFieldsJson['date'] = updatedWithdrawal.date.toIso8601String();
           break;
-
         case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
+          modifiedFieldsJson['termId'] = updatedWithdrawal.termId;
           break;
-        // Add cases for other fields as needed
       }
     }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['withdrawalCode'] = newClass.withdrawalCode;
+
+    // Always include withdrawalCode for identification
+    modifiedFieldsJson['withdrawalCode'] = updatedWithdrawal.withdrawalCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${updatedWithdrawal.withdrawalCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3133,22 +3561,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Withdrawals ${newClass.withdrawalCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
+        print(
+            'Withdrawal ${updatedWithdrawal.withdrawalCode} updated successfully.');
+
+        if ((updatedWithdrawal.modifiedFields?.isNotEmpty ?? false) &&
+            updatedWithdrawal.operationType != null &&
+            updatedWithdrawal.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedWithdrawal);
         }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        await newClass.save();
-        newClass.modifiedFields = [];
+        updatedWithdrawal.syncStatus = true;
+        updatedWithdrawal.operationType = 'none';
+        updatedWithdrawal.modifiedFields = [];
+        await updatedWithdrawal.save();
       } else {
-        throw Exception('Failed to update withdrawals_information.');
+        throw Exception('Failed to update withdrawal.');
       }
     } catch (e) {
-      print('Error updating Withdrawal: $e');
+      print('Error updating withdrawal: $e');
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3157,15 +3586,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //====================== terms sync ==========================
-  Future<void> _createTermsInMySQL(Terms newClass) async {
-    final Map<String, dynamic> jsonData = _termsToJson(newClass);
+
+// CREATE Term on server
+  Future<void> _createTermsInMySQL(Terms newTerm) async {
+    final Map<String, dynamic> jsonData = _termsToJson(newTerm);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newTerm.termId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3173,23 +3606,21 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Terms ${newClass.termId} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print('Term ${newTerm.termId} created/updated successfully.');
 
-        await newClass.save();
+        newTerm.syncStatus = true;
+        newTerm.operationType = 'none';
+        newTerm.modifiedFields = [];
+        await newTerm.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Term ${newTerm.termName} synced successfully')));
       } else {
-        throw Exception('Failed to create terms_information.');
+        throw Exception('Failed to sync term. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating Terms: $e');
+      print('Error creating term: $e');
+      await newTerm.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3197,42 +3628,45 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateTermsInMySQL(Terms newClass) async {
+// UPDATE Term on server
+  Future<void> _updateTermsInMySQL(Terms updatedTerm) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
+
+    for (String field in updatedTerm.modifiedFields ?? []) {
       switch (field) {
         case 'termName':
-          modifiedFieldsJson['termName'] = newClass.termName;
+          modifiedFieldsJson['termName'] = updatedTerm.termName;
           break;
         case 'startDate':
+          // ✅ Send full DateTime with time
           modifiedFieldsJson['startDate'] =
-              newClass.startDate.toIso8601String();
+              updatedTerm.startDate.toIso8601String();
           break;
         case 'endDate':
-          modifiedFieldsJson['endDate'] = newClass.endDate?.toIso8601String();
+          // ✅ Send full DateTime with time
+          modifiedFieldsJson['endDate'] =
+              updatedTerm.endDate?.toIso8601String();
           break;
         case 'isActive':
-          modifiedFieldsJson['isActive'] = newClass.isActive;
+          modifiedFieldsJson['isActive'] = updatedTerm.isActive;
           break;
         case 'status':
-          modifiedFieldsJson['status'] = newClass.status;
+          modifiedFieldsJson['status'] = updatedTerm.status;
           break;
-
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        // Add cases for other fields as needed
       }
     }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['termId'] = newClass.termId;
+
+    // Always include termId for identification
+    modifiedFieldsJson['termId'] = updatedTerm.termId;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${updatedTerm.termId}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3240,23 +3674,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Terms ${newClass.termId} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print('Term ${updatedTerm.termId} updated successfully.');
 
-        await newClass.save();
+        if ((updatedTerm.modifiedFields?.isNotEmpty ?? false) &&
+            updatedTerm.operationType != null &&
+            updatedTerm.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedTerm);
+        }
+        updatedTerm.syncStatus = true;
+        updatedTerm.operationType = 'none';
+        updatedTerm.modifiedFields = [];
+        await updatedTerm.save();
       } else {
-        throw Exception('Failed to update terms_information.');
+        throw Exception('Failed to update term.');
       }
     } catch (e) {
-      print('Error updating Terms: $e');
+      print('Error updating term: $e');
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3265,11 +3698,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //============== classes sync ==============================
+  // CREATE Class on server
   Future<void> _createClassInMySQL(Classes newClass) async {
     final Map<String, dynamic> jsonData = _classToJson(newClass);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
@@ -3281,21 +3717,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
+        print('Class ${newClass.classCode} created/updated successfully.');
+
+        // Update syncStatus in Hive
         newClass.syncStatus = true;
         newClass.operationType = 'none';
         newClass.modifiedFields = [];
         await newClass.save();
       } else {
-        throw Exception('Failed to create classes_information.');
+        throw Exception('Failed to sync class. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating classes_information: $e');
+      print('Error creating class: $e');
+      await newClass.save(); // Keep syncStatus false to retry
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3303,9 +3737,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// UPDATE Class on server
   Future<void> _updateClassesInMySQL(Classes updatedClass) async {
-    // Extract the modified fields and their values
+    // Only send modified fields
     final Map<String, dynamic> modifiedFieldsJson = {};
+
     for (String field in updatedClass.modifiedFields ?? []) {
       switch (field) {
         case 'className':
@@ -3318,19 +3754,18 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           modifiedFieldsJson['termId'] = updatedClass.termId;
           break;
         case 'terms':
-          modifiedFieldsJson['terms'] = updatedClass.terms != null
-              ? jsonEncode(updatedClass.terms) // Encode List<String> to JSON
-              : null;
+          modifiedFieldsJson['terms'] = jsonEncode(updatedClass.terms ?? []);
           break;
-        // Add cases for other fields as needed
       }
     }
 
-    // Add the unique identifier to the payload
+    // Always include classCode for identification
     modifiedFieldsJson['classCode'] = updatedClass.classCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
@@ -3342,23 +3777,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Classes ${updatedClass.classCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((updatedClass.modifiedFields?.isNotEmpty ?? false) &&
-            updatedClass.operationType != null &&
-            updatedClass.operationType != 'none') {
-          SyncQueueManager().enqueue(updatedClass);
-        }
+        print('Class ${updatedClass.classCode} updated successfully.');
+
         updatedClass.syncStatus = true;
         updatedClass.operationType = 'none';
         updatedClass.modifiedFields = [];
-
         await updatedClass.save();
       } else {
-        throw Exception('Failed to update Class.');
+        throw Exception(
+            'Failed to update class. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error updating Class: $e');
+      print('Error updating class: $e');
+      await updatedClass.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3367,16 +3798,18 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================= schools sync ===========================
+// CREATE School on server
+  Future<void> _createSchoolInMySQL(School newSchool) async {
+    final Map<String, dynamic> jsonData = _schoolToJson(newSchool);
 
-  Future<void> _createSchoolInMySQL(School newClass) async {
-    final Map<String, dynamic> jsonData = _schoolToJson(newClass);
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${newClass.schoolCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${newSchool.schoolCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3384,24 +3817,24 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print(
-            'school_information ${newClass.schoolCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((newClass.modifiedFields?.isNotEmpty ?? false) &&
-            newClass.operationType != null &&
-            newClass.operationType != 'none') {
-          SyncQueueManager().enqueue(newClass);
-        }
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
+        print('School ${newSchool.schoolCode} created/updated successfully.');
 
-        await newClass.save();
+        // Update syncStatus in Hive
+        newSchool.syncStatus = true;
+        newSchool.operationType = 'none';
+        newSchool.modifiedFields = [];
+        await newSchool.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('School ${newSchool.schoolName} synced successfully')));
       } else {
-        throw Exception('Failed to create school_information.');
+        throw Exception(
+            'Failed to sync school. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating school_information: $e');
+      print('Error creating school: $e');
+      await newSchool.save(); // Keep syncStatus false to retry
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3409,39 +3842,46 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateSchoolInMySQL(School updatedClass) async {
+// UPDATE School on server
+  Future<void> _updateSchoolInMySQL(School updatedSchool) async {
+    // Only send modified fields
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in updatedClass.modifiedFields ?? []) {
+
+    for (String field in updatedSchool.modifiedFields ?? []) {
       switch (field) {
         case 'schoolName':
-          modifiedFieldsJson['schoolName'] = updatedClass.schoolName;
+          modifiedFieldsJson['schoolName'] = updatedSchool.schoolName;
           break;
         case 'schoolAddress':
-          modifiedFieldsJson['schoolAddress'] = updatedClass.schoolAddress;
+          modifiedFieldsJson['schoolAddress'] = updatedSchool.schoolAddress;
           break;
         case 'schoolPhoneNumber':
           modifiedFieldsJson['schoolPhoneNumber'] =
-              updatedClass.schoolPhoneNumber;
+              updatedSchool.schoolPhoneNumber;
           break;
         case 'schoolEmail':
-          modifiedFieldsJson['schoolEmail'] = updatedClass.schoolEmail;
+          modifiedFieldsJson['schoolEmail'] = updatedSchool.schoolEmail;
           break;
-
+        case 'schoolLogoPath':
+          modifiedFieldsJson['schoolLogoPath'] = updatedSchool.schoolLogoPath;
+          break;
         case 'termId':
-          modifiedFieldsJson['termId'] = updatedClass.termId;
+          modifiedFieldsJson['termId'] = updatedSchool.termId;
           break;
-        // Add cases for other fields as needed
       }
     }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['schoolCode'] = updatedClass.schoolCode;
+
+    // Always include schoolCode for identification
+    modifiedFieldsJson['schoolCode'] = updatedSchool.schoolCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${updatedClass.schoolCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${updatedSchool.schoolCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -3449,23 +3889,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Schools ${updatedClass.schoolCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        if ((updatedClass.modifiedFields?.isNotEmpty ?? false) &&
-            updatedClass.operationType != null &&
-            updatedClass.operationType != 'none') {
-          SyncQueueManager().enqueue(updatedClass);
-        }
-        updatedClass.syncStatus = true;
-        updatedClass.operationType = 'none';
-        updatedClass.modifiedFields = [];
+        print('School ${updatedSchool.schoolCode} updated successfully.');
 
-        await updatedClass.save();
+        updatedSchool.syncStatus = true;
+        updatedSchool.operationType = 'none';
+        updatedSchool.modifiedFields = [];
+        await updatedSchool.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'School ${updatedSchool.schoolName} updated successfully')));
       } else {
-        throw Exception('Failed to update school.');
+        throw Exception(
+            'Failed to update school. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error updating school: $e');
+      await updatedSchool.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3560,36 +4000,43 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
   //============================== accounts type ==========================
 
-  Future<void> _createAccountInMySQL(Account acc) async {
-    final Map<String, dynamic> jsonData = _accountsToJson(acc);
+// CREATE Account on server
+  Future<void> _createAccountInMySQL(Account newAccount) async {
+    final Map<String, dynamic> jsonData = _accountsToJson(newAccount);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${newAccount.accountCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(jsonData),
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((acc.modifiedFields?.isNotEmpty ?? false) &&
-            acc.operationType != null &&
-            acc.operationType != 'none') {
-          SyncQueueManager().enqueue(acc);
-        }
-        acc.syncStatus = true;
-        acc.operationType = 'none';
-        acc.modifiedFields = [];
-        await acc.save();
+        print(
+            'Account ${newAccount.accountCode} created/updated successfully.');
+
+        newAccount.syncStatus = true;
+        newAccount.operationType = 'none';
+        newAccount.modifiedFields = [];
+        await newAccount.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Account ${newAccount.accountName} synced successfully')));
       } else {
-        throw Exception('Failed to create account.');
+        throw Exception(
+            'Failed to sync account. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error creating account: $e');
+      await newAccount.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3597,56 +4044,57 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateAccountInMySQL(Account acc) async {
+// UPDATE Account on server
+  Future<void> _updateAccountInMySQL(Account updatedAccount) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in acc.modifiedFields ?? []) {
+
+    for (String field in updatedAccount.modifiedFields ?? []) {
       switch (field) {
         case 'accountType':
-          modifiedFieldsJson['accountType'] = acc.accountType;
+          modifiedFieldsJson['accountType'] = updatedAccount.accountType;
           break;
         case 'accountSubType':
-          modifiedFieldsJson['accountSubType'] = acc.accountSubType;
+          modifiedFieldsJson['accountSubType'] = updatedAccount.accountSubType;
           break;
         case 'accountName':
-          modifiedFieldsJson['accountName'] = acc.accountName;
-          break;
-
-        case 'lastModified':
-          modifiedFieldsJson['lastModified'] =
-              acc.lastModified?.toIso8601String();
+          modifiedFieldsJson['accountName'] = updatedAccount.accountName;
           break;
         case 'isALiquidAccount':
-          modifiedFieldsJson['isALiquidAccount'] = acc.isALiquidAccount;
+          modifiedFieldsJson['isALiquidAccount'] =
+              updatedAccount.isALiquidAccount ?? false;
           break;
       }
     }
 
-    // Always include the unique identifier
-    modifiedFieldsJson['accountCode'] = acc.accountCode;
+    // Always include accountCode for identification
+    modifiedFieldsJson['accountCode'] = updatedAccount.accountCode;
 
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${updatedAccount.accountCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((acc.modifiedFields?.isNotEmpty ?? false) &&
-            acc.operationType != null &&
-            acc.operationType != 'none') {
-          SyncQueueManager().enqueue(acc);
+        print('Account ${updatedAccount.accountCode} updated successfully.');
+
+        if ((updatedAccount.modifiedFields?.isNotEmpty ?? false) &&
+            updatedAccount.operationType != null &&
+            updatedAccount.operationType != 'none') {
+          SyncQueueManager().enqueue(updatedAccount);
         }
-        acc.syncStatus = true;
-        acc.operationType = 'none';
-        acc.modifiedFields = [];
-        await acc.save();
+        updatedAccount.syncStatus = true;
+        updatedAccount.operationType = 'none';
+        updatedAccount.modifiedFields = [];
+        await updatedAccount.save();
       } else {
         throw Exception('Failed to update account.');
       }
@@ -3658,6 +4106,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+
 //============================== assets ==========================
 
   Future<void> _createAssetInMySQL(Asset asset) async {
@@ -3874,36 +4323,41 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //============================== projects ==========================
 
-  Future<void> _createProjectInMySQL(Project p) async {
-    final Map<String, dynamic> jsonData = _projectsToJson(p);
+// CREATE Project on server
+  Future<void> _createProjectInMySQL(Project project) async {
+    final Map<String, dynamic> jsonData = _projectsToJson(project);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${project.projectCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(jsonData),
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((p.modifiedFields?.isNotEmpty ?? false) &&
-            p.operationType != null &&
-            p.operationType != 'none') {
-          SyncQueueManager().enqueue(p);
-        }
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
+        print('Project ${project.projectCode} created/updated successfully.');
+
+        project.syncStatus = true;
+        project.operationType = 'none';
+        project.modifiedFields = [];
+        await project.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Project ${project.name} synced successfully')));
       } else {
-        throw Exception('Failed to create project.');
+        throw Exception(
+            'Failed to sync project. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error creating project: $e');
+      await project.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -3911,49 +4365,40 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateProjectInMySQL(Project p) async {
+// UPDATE Project on server
+  Future<void> _updateProjectInMySQL(Project project) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
 
-    for (String field in p.modifiedFields ?? []) {
+    for (String field in project.modifiedFields ?? []) {
       switch (field) {
         case 'name':
-          modifiedFieldsJson['name'] = p.name;
+          modifiedFieldsJson['name'] = project.name;
           break;
-
         case 'description':
-          modifiedFieldsJson['description'] = p.description;
+          modifiedFieldsJson['description'] = project.description;
           break;
-
         case 'status':
-          modifiedFieldsJson['status'] = p.status;
+          modifiedFieldsJson['status'] = project.status;
           break;
-
         case 'updatedAt':
-          modifiedFieldsJson['updatedAt'] = p.updatedAt.toIso8601String();
+          modifiedFieldsJson['updatedAt'] = project.updatedAt.toIso8601String();
           break;
-
-        case 'lastModified':
-          modifiedFieldsJson['lastModified'] =
-              p.lastModified?.toIso8601String();
-          break;
-
         // ✅ NEW FIELDS
         case 'projectType':
-          modifiedFieldsJson['projectType'] = p.projectType;
+          modifiedFieldsJson['projectType'] = project.projectType;
           break;
-
         case 'participationType':
-          modifiedFieldsJson['participationType'] = p.participationType;
+          modifiedFieldsJson['participationType'] = project.participationType;
           break;
-
         case 'studentPayable':
-          modifiedFieldsJson['studentPayable'] = p.studentPayable;
+          modifiedFieldsJson['studentPayable'] =
+              project.studentPayable ?? false;
           break;
       }
     }
 
-    // ✅ Always include identifier
-    modifiedFieldsJson['projectCode'] = p.projectCode;
+    // Always include projectCode for identification
+    modifiedFieldsJson['projectCode'] = project.projectCode;
 
     setState(() {
       _isSyncings = true;
@@ -3962,25 +4407,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${project.projectCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((p.modifiedFields?.isNotEmpty ?? false) &&
-            p.operationType != null &&
-            p.operationType != 'none') {
-          SyncQueueManager().enqueue(p);
-        }
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('Project ${project.projectCode} updated successfully.');
 
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
+        if ((project.modifiedFields?.isNotEmpty ?? false) &&
+            project.operationType != null &&
+            project.operationType != 'none') {
+          SyncQueueManager().enqueue(project);
+        }
+        project.syncStatus = true;
+        project.operationType = 'none';
+        project.modifiedFields = [];
+        await project.save();
       } else {
         throw Exception('Failed to update project.');
       }
@@ -4094,37 +4539,42 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //============================== projectItems ==========================
 
-  Future<void> _createProjectItemInMySQL(ProjectItem i) async {
-    final Map<String, dynamic> jsonData = _projectItemsToJson(i);
+// CREATE ProjectItem on server
+  Future<void> _createProjectItemInMySQL(ProjectItem item) async {
+    final Map<String, dynamic> jsonData = _projectItemsToJson(item);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${item.projectItemCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(jsonData),
       );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        if ((i.modifiedFields?.isNotEmpty ?? false) &&
-            i.operationType != null &&
-            i.operationType != 'none') {
-          SyncQueueManager().enqueue(i);
-        }
-        i.syncStatus = true;
-        i.operationType = 'none';
-        i.modifiedFields = [];
-        await i.save();
+        print(
+            'ProjectItem ${item.projectItemCode} created/updated successfully.');
+
+        item.syncStatus = true;
+        item.operationType = 'none';
+        item.modifiedFields = [];
+        await item.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('ProjectItem ${item.name} synced successfully')));
       } else {
-        throw Exception('Failed to create project item.');
+        throw Exception(
+            'Failed to sync project item. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error creating project item: $e');
+      await item.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -4132,41 +4582,32 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-  Future<void> _updateProjectItemInMySQL(ProjectItem i) async {
+// UPDATE ProjectItem on server
+  Future<void> _updateProjectItemInMySQL(ProjectItem item) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
 
-    for (String field in i.modifiedFields ?? []) {
+    for (String field in item.modifiedFields ?? []) {
       switch (field) {
         case 'projectCode':
-          modifiedFieldsJson['projectCode'] = i.projectCode;
+          modifiedFieldsJson['projectCode'] = item.projectCode;
           break;
-
         case 'name':
-          modifiedFieldsJson['name'] = i.name;
+          modifiedFieldsJson['name'] = item.name;
           break;
-
-        // ✅ NEW FIELDS
         case 'itemType':
-          modifiedFieldsJson['itemType'] = i.itemType;
+          modifiedFieldsJson['itemType'] = item.itemType;
           break;
-
         case 'active':
-          modifiedFieldsJson['active'] = i.active;
+          modifiedFieldsJson['active'] = item.active ?? true;
           break;
-
         case 'trackStock':
-          modifiedFieldsJson['trackStock'] = i.trackStock;
-          break;
-
-        case 'lastModified':
-          modifiedFieldsJson['lastModified'] =
-              i.lastModified?.toIso8601String();
+          modifiedFieldsJson['trackStock'] = item.trackStock ?? false;
           break;
       }
     }
 
-    // ✅ Always include identifier
-    modifiedFieldsJson['projectItemCode'] = i.projectItemCode;
+    // Always include projectItemCode for identification
+    modifiedFieldsJson['projectItemCode'] = item.projectItemCode;
 
     setState(() {
       _isSyncings = true;
@@ -4175,25 +4616,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${item.projectItemCode}'),
         headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((i.modifiedFields?.isNotEmpty ?? false) &&
-            i.operationType != null &&
-            i.operationType != 'none') {
-          SyncQueueManager().enqueue(i);
-        }
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('ProjectItem ${item.projectItemCode} updated successfully.');
 
-        i.syncStatus = true;
-        i.operationType = 'none';
-        i.modifiedFields = [];
-        await i.save();
+        if ((item.modifiedFields?.isNotEmpty ?? false) &&
+            item.operationType != null &&
+            item.operationType != 'none') {
+          SyncQueueManager().enqueue(item);
+        }
+        item.syncStatus = true;
+        item.operationType = 'none';
+        item.modifiedFields = [];
+        await item.save();
       } else {
         throw Exception('Failed to update project item.');
       }
@@ -4479,6 +4920,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
       'administration': [
         'Teacher Payments',
@@ -4506,6 +4948,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
       'secretary': [
         'Students',
@@ -4524,7 +4967,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Student Exceptions',
         'Users',
         'DomainRecord',
-        'Student Exceptions',
         'Project Batches',
         'Batch Units',
         'Project Item Pricing',
@@ -4532,6 +4974,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
       'teacher': [
         'Students',
@@ -4550,6 +4993,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
       'accountant': [
         'Teacher Payments',
@@ -4577,6 +5021,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
       'sub-admin': [
         'Teacher Payments',
@@ -4604,6 +5049,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'Batch Unit Sales',
         'Project Payment Method',
         'Project Receipt Snapshot',
+        'Payment Logs',
       ],
     };
 
@@ -4673,7 +5119,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
     final fetchFunctions = {
       'Teacher Payments': _fetchAndSyncTeacherPayments,
-      'Withdrawals': _fetchAndSyncwithdrawals,
+      'Withdrawals': _fetchAndSyncWithdrawals,
       'Users': _fetchAndSyncUsers,
       'Terms': _fetchAndSyncTerms,
       'Teachers': _fetchAndSyncTeachers,
@@ -4697,6 +5143,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'Batch Unit Sales': _fetchAndSyncBatchUnitSales,
       'Project Payment Method': _fetchAndSyncProjectPaymentMethod,
       'Project Receipt Snapshot': _fetchAndSyncProjectReceiptSnapshot,
+      'Payment Logs': _fetchAndSyncPaymentLogs,
     };
 
     try {
@@ -4732,54 +5179,224 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   // Helper function to decode string to List<String>
   List<String> _decodeToList(dynamic value) {
+    print('=== _decodeToList START ===');
+    print('Value type: ${value.runtimeType}');
+    print('Value: $value');
+
+    if (value == null) {
+      print('Value is null, returning empty list');
+      return [];
+    }
+
+    // ✅ If it's already a List
+    if (value is List) {
+      print('Value is a List with ${value.length} items');
+      return value.map((e) => e.toString()).toList();
+    }
+
+    // ✅ If it's a String
     if (value is String) {
-      // If it's a string, try to decode it as JSON
-      try {
-        return List<String>.from(jsonDecode(value));
-      } catch (e) {
-        print('Error decoding string to List: $e');
+      print('Value is a String');
+      if (value.isEmpty) {
+        print('String is empty, returning empty list');
         return [];
       }
-    } else if (value is List) {
-      // If it's already a list, return it directly
-      return List<String>.from(value);
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          print('Successfully decoded JSON string to List');
+          return decoded.map((e) => e.toString()).toList();
+        } else if (decoded is Map) {
+          print('Decoded to Map, returning empty list');
+          return [];
+        } else {
+          print('Decoded to ${decoded.runtimeType}, treating as single item');
+          return [value];
+        }
+      } catch (e) {
+        print('Failed to decode JSON: $e');
+        return [];
+      }
     }
+
+    // ✅ If it's an int or double, convert to String
+    if (value is int || value is double) {
+      print('Value is number, converting to String');
+      return [value.toString()];
+    }
+
+    // ✅ If it's a Map
+    if (value is Map) {
+      print('Value is a Map, returning empty list');
+      return [];
+    }
+
+    // ✅ Unknown type
+    print('Unknown type: ${value.runtimeType}, returning empty list');
     return [];
   }
 
-  List<ExceptionalStudents> _decodeExceptions(dynamic data) {
-    if (data == null) return [];
-    if (data is String) {
-      final decodedList = jsonDecode(data) as List;
-      return decodedList.map((e) => _exceptionFromJson(e)).toList();
-    } else if (data is List) {
-      return data.map((e) => _exceptionFromJson(e)).toList();
+// ✅ FIXED: Handle both String and List types
+  //================================decode _decodeExceptions =======================================================================//
+
+  List<ExceptionalStudents> _decodeExceptions(dynamic value) {
+    print('=== _decodeExceptions START ===');
+    print('Value type: ${value.runtimeType}');
+
+    if (value == null) {
+      print('Value is null, returning empty list');
+      return [];
     }
-    return [];
+
+    List<dynamic> exceptionList = [];
+
+    // ✅ If it's already a List
+    if (value is List) {
+      print('Value is a List with ${value.length} items');
+      exceptionList = value;
+    }
+    // ✅ If it's a String (JSON string)
+    else if (value is String) {
+      print('Value is a String, attempting to decode...');
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          print('Successfully decoded JSON string to List');
+          exceptionList = decoded;
+        } else if (decoded is Map) {
+          print('Decoded JSON string to Map, wrapping in List');
+          exceptionList = [decoded];
+        } else {
+          print('Decoded value is neither List nor Map');
+          return [];
+        }
+      } catch (e) {
+        print('Failed to decode JSON string: $e');
+        return [];
+      }
+    }
+    // ✅ If it's a Map (single exception object)
+    else if (value is Map) {
+      print('Value is a Map, wrapping in List');
+      exceptionList = [value];
+    }
+    // ✅ Unknown type
+    else {
+      print('Unknown type: ${value.runtimeType}, returning empty list');
+      return [];
+    }
+
+    // ✅ Convert each item to ExceptionalStudents
+    List<ExceptionalStudents> result = [];
+    for (var exceptionData in exceptionList) {
+      try {
+        print('Processing exception data: $exceptionData');
+        print('Exception data type: ${exceptionData.runtimeType}');
+
+        // ✅ CRITICAL FIX: Ensure exceptionData is a Map
+        if (exceptionData is Map) {
+          // ✅ Pass as Map<String, dynamic>
+          final exception =
+              _exceptionFromJson(exceptionData.cast<String, dynamic>());
+          result.add(exception);
+        } else {
+          print('❌ Exception data is not a Map: ${exceptionData.runtimeType}');
+          print('❌ Value: $exceptionData');
+        }
+      } catch (e, stack) {
+        print('❌ Error converting exception: $e');
+        print('Stack: $stack');
+        print('Data: $exceptionData');
+      }
+    }
+
+    print('Returning ${result.length} exceptions');
+    print('=== _decodeExceptions END ===');
+    return result;
   }
 
 //================================decode _exceptionFromJson =======================================================================//
 
   ExceptionalStudents _exceptionFromJson(Map<String, dynamic> json) {
-    return ExceptionalStudents(
-      id: json['id'] ?? 0,
-      exceptionId: json['exceptionId'],
-      exceptionName: json['exceptionName'],
-      exceptionStatus: json['exceptionStatus'],
-      exceptionType: json['exceptionType'],
-      exceptionFigure: json['exceptionFigure'],
-      syncStatus: json['syncStatus'] ?? false,
-      lastModified: json['lastModified'] != null
-          ? DateTime.parse(json['lastModified'])
-          : null,
-      operationType: json['operationType'] ?? 'none',
-      modifiedFields: (json['modifiedFields'] != null)
-          ? List<String>.from(jsonDecode(json['modifiedFields']))
-          : [],
-      terms: _decodeToList(json['terms']),
-    );
-  }
+    print('=== _exceptionFromJson START ===');
+    print('JSON keys: ${json.keys}');
 
+    // ✅ Helper to safely convert to List<String>
+    List<String> _toList(dynamic value) {
+      if (value == null) return [];
+      if (value is List) {
+        print('_toList: value is List, converting to List<String>');
+        return value.map((e) => e.toString()).toList();
+      }
+      if (value is String) {
+        print('_toList: value is String, attempting to decode...');
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is List) {
+            return decoded.map((e) => e.toString()).toList();
+          }
+        } catch (e) {
+          print('_toList: Failed to decode: $e');
+        }
+      }
+      return [];
+    }
+
+    // ✅ Helper to safely convert to bool
+    bool _toBool(dynamic value) {
+      if (value == null) return false;
+      if (value is bool) return value;
+      if (value is int) return value == 1;
+      if (value is String) {
+        return value == '1' || value.toLowerCase() == 'true';
+      }
+      return false;
+    }
+
+    // ✅ Helper to safely convert to int
+    int _toInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is bool) return value ? 1 : 0;
+      if (value is String) return int.tryParse(value) ?? 0;
+      if (value is double) return value.toInt();
+      return 0;
+    }
+
+    // ✅ Helper to safely convert to DateTime
+    DateTime? _toDateTime(dynamic value) {
+      if (value == null) return null;
+      if (value is DateTime) return value;
+      if (value is String) {
+        try {
+          return DateTime.parse(value);
+        } catch (e) {
+          return null;
+        }
+      }
+      return null;
+    }
+
+    // ✅ Parse all fields safely
+    final exception = ExceptionalStudents(
+      id: _toInt(json['id']),
+      exceptionId: json['exceptionId']?.toString() ?? '',
+      exceptionName: json['exceptionName']?.toString(),
+      exceptionStatus: json['exceptionStatus']?.toString(),
+      exceptionType: json['exceptionType']?.toString(),
+      exceptionFigure: json['exceptionFigure']?.toString(),
+      priorityFlag: _toInt(json['priorityFlag']),
+      terms: _toList(json['terms']),
+      syncStatus: _toBool(json['syncStatus']),
+      lastModified: _toDateTime(json['lastModified']),
+      operationType: 'none',
+      modifiedFields: _toList(json['modifiedFields']),
+    );
+
+    print('✅ Created exception: ${exception.exceptionId}');
+    print('=== _exceptionFromJson END ===');
+    return exception;
+  }
 //================================decode _batchUnitFromJson =======================================================================//
 
   BatchUnit _batchUnitFromJson(Map<String, dynamic> json) {
@@ -4814,89 +5431,1560 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     return [];
   }
 
-//================================pull _fetchAndSyncStudentExceptions =======================================================================//
-
-  Future<void> _fetchAndSyncStudentExceptions() async {
+  // PULL PaymentLogs from server
+  Future<void> _fetchAndSyncPaymentLogs() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
-        final List<dynamic> classes = decoded is List
+
+        List<dynamic> logs;
+        if (decoded is List) {
+          logs = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
+
+        if (logs.isEmpty) {
+          print('No payment logs found on server');
+          return;
+        }
+
+        for (var logData in logs) {
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (logData['syncStatus'] != null) {
+              if (logData['syncStatus'] is int) {
+                syncStatus = logData['syncStatus'] == 1;
+              } else if (logData['syncStatus'] is bool) {
+                syncStatus = logData['syncStatus'];
+              }
+            }
+
+            // ✅ Convert isReprint from int to bool
+            bool isReprint = false;
+            if (logData['isReprint'] != null) {
+              if (logData['isReprint'] is int) {
+                isReprint = logData['isReprint'] == 1;
+              } else if (logData['isReprint'] is bool) {
+                isReprint = logData['isReprint'];
+              }
+            }
+
+            // ✅ Parse receiptLines
+            List<Map<String, dynamic>> receiptLines = [];
+            if (logData['receiptLines'] != null) {
+              if (logData['receiptLines'] is List) {
+                receiptLines = (logData['receiptLines'] as List)
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList();
+              } else if (logData['receiptLines'] is String) {
+                try {
+                  final decoded = jsonDecode(logData['receiptLines']);
+                  if (decoded is List) {
+                    receiptLines = decoded
+                        .map((item) => Map<String, dynamic>.from(item))
+                        .toList();
+                  }
+                } catch (e) {
+                  print('Error decoding receiptLines: $e');
+                }
+              }
+            }
+
+            // ✅ Parse modifiedFields
+            List<String> modifiedFields = [];
+            if (logData['modifiedFields'] != null) {
+              if (logData['modifiedFields'] is List) {
+                modifiedFields = (logData['modifiedFields'] as List)
+                    .map((e) => e.toString())
+                    .toList();
+              } else if (logData['modifiedFields'] is String) {
+                try {
+                  final decoded = jsonDecode(logData['modifiedFields']);
+                  if (decoded is List) {
+                    modifiedFields = decoded.map((e) => e.toString()).toList();
+                  }
+                } catch (e) {
+                  modifiedFields = [];
+                }
+              }
+            }
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (logData['lastModified'] != null) {
+              try {
+                if (logData['lastModified'] is String) {
+                  lastModified = DateTime.parse(logData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            PaymentLog fetchedLog = PaymentLog(
+              receiptNumber: logData['receiptNumber'] ?? 0,
+              studentName: logData['studentName'] ?? '',
+              className: logData['className'] ?? '',
+              dateTime: logData['dateTime'] ?? DateTime.now().toIso8601String(),
+              receiptLines: receiptLines,
+              parentName: logData['parentName'],
+              parentPhone: logData['parentPhone'],
+              isReprint: isReprint,
+              originalReceiptNumber: logData['originalReceiptNumber'],
+              reprintCount: logData['reprintCount'] ?? 0,
+              logId: logData['logId'] ?? 'LOG_${logData['receiptNumber']}',
+              syncStatus: syncStatus,
+              lastModified: lastModified,
+              operationType: 'none',
+              modifiedFields: modifiedFields,
+            );
+
+            // Check if log exists in Hive
+            var existingLogList = _paymentLogBox!.values
+                .where((log) => log.logId == fetchedLog.logId)
+                .toList();
+
+            if (existingLogList.isNotEmpty) {
+              // Update existing log
+              var existingLog = existingLogList.first;
+              existingLog
+                ..receiptNumber = fetchedLog.receiptNumber
+                ..studentName = fetchedLog.studentName
+                ..className = fetchedLog.className
+                ..dateTime = fetchedLog.dateTime
+                ..receiptLines = fetchedLog.receiptLines
+                ..parentName = fetchedLog.parentName
+                ..parentPhone = fetchedLog.parentPhone
+                ..isReprint = fetchedLog.isReprint
+                ..originalReceiptNumber = fetchedLog.originalReceiptNumber
+                ..reprintCount = fetchedLog.reprintCount
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+
+              await existingLog.save();
+              print('PaymentLog ${fetchedLog.logId} updated in Hive.');
+            } else {
+              // Create new log
+              await _paymentLogBox!.add(fetchedLog);
+              print('PaymentLog ${fetchedLog.logId} added to Hive.');
+            }
+          } catch (error, stack) {
+            print('❌ Error processing payment log:');
+            print('Data: ${logData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
+          }
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${logs.length} payment logs from server')));
+      } else {
+        throw Exception(
+            'Failed to fetch payment logs. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching or syncing payment logs: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing payment logs: $e')));
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncStudentExceptions =======================================================================//
+
+// PULL Exceptions from server
+  Future<void> _fetchAndSyncStudentExceptions() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        // Handle both list and map responses
+        List<dynamic> exceptions;
+        if (decoded is List) {
+          exceptions = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          exceptions = decoded.entries
+              .where((e) => e.value is Map)
+              .map((e) => e.value)
+              .toList();
+        }
+
+        if (exceptions.isEmpty) {
+          print('No exceptions found on server');
+          return;
+        }
+
+        for (var exceptionData in exceptions) {
+          // ✅ Convert syncStatus from int to bool
+          bool syncStatus = true;
+          if (exceptionData['syncStatus'] != null) {
+            if (exceptionData['syncStatus'] is int) {
+              syncStatus = exceptionData['syncStatus'] == 1;
+            } else if (exceptionData['syncStatus'] is bool) {
+              syncStatus = exceptionData['syncStatus'];
+            }
+          }
+
+          // ✅ Parse priorityFlag
+          int priorityFlag = 0;
+          if (exceptionData['priorityFlag'] != null) {
+            if (exceptionData['priorityFlag'] is int) {
+              priorityFlag = exceptionData['priorityFlag'];
+            } else if (exceptionData['priorityFlag'] is bool) {
+              priorityFlag = exceptionData['priorityFlag'] ? 1 : 0;
+            } else if (exceptionData['priorityFlag'] is String) {
+              priorityFlag = int.tryParse(exceptionData['priorityFlag']) ?? 0;
+            }
+          }
+          // ✅ Parse terms - using existing _decodeToList method
+          List<String> terms = _decodeToList(exceptionData['terms']);
+
+          // ✅ Parse modifiedFields - using existing _decodeToList method
+          List<String> modifiedFields =
+              _decodeToList(exceptionData['modifiedFields']);
+
+          // ✅ Handle id
+          int? id;
+          if (exceptionData['id'] != null) {
+            id = exceptionData['id'] is int
+                ? exceptionData['id']
+                : int.tryParse(exceptionData['id'].toString());
+          }
+
+          // ✅ Parse lastModified
+          DateTime? lastModified;
+          try {
+            if (exceptionData['lastModified'] != null) {
+              lastModified = DateTime.parse(exceptionData['lastModified']);
+            }
+          } catch (e) {
+            lastModified = DateTime.now();
+          }
+
+          ExceptionalStudents fetchedException = ExceptionalStudents(
+            id: id,
+            exceptionId: exceptionData['exceptionId'] ?? '',
+            exceptionName: exceptionData['exceptionName'],
+            exceptionStatus: exceptionData['exceptionStatus'],
+            exceptionType: exceptionData['exceptionType'],
+            exceptionFigure: exceptionData['exceptionFigure'],
+            priorityFlag: priorityFlag,
+            terms: terms,
+            syncStatus: syncStatus,
+            operationType: 'none',
+            lastModified: lastModified,
+            modifiedFields: modifiedFields,
+          );
+
+          // Check if exception exists in Hive
+          var existingExceptionList = _exceptionalStudentsBox!.values
+              .where((exception) =>
+                  exception.exceptionId == fetchedException.exceptionId)
+              .toList();
+
+          if (existingExceptionList.isNotEmpty) {
+            // Update existing exception
+            var existingException = existingExceptionList.first;
+            existingException
+              ..id = fetchedException.id
+              ..exceptionId = fetchedException.exceptionId
+              ..exceptionName = fetchedException.exceptionName
+              ..exceptionStatus = fetchedException.exceptionStatus
+              ..exceptionType = fetchedException.exceptionType
+              ..exceptionFigure = fetchedException.exceptionFigure
+              ..priorityFlag = fetchedException.priorityFlag
+              ..terms = fetchedException.terms
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now();
+
+            await existingException.save();
+            print('Exception ${fetchedException.exceptionId} updated in Hive.');
+          } else {
+            // Create new exception
+            await _exceptionalStudentsBox!.add(fetchedException);
+            print('Exception ${fetchedException.exceptionId} added to Hive.');
+          }
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Synced ${exceptions.length} exceptions from server')));
+      } else {
+        throw Exception(
+            'Failed to fetch exceptions. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching or syncing exceptions: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing exceptions: $e')));
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+  //================================pull _fetchAndSyncProjectReceiptSnapshot =======================================================================//
+
+  Future<void> _fetchAndSyncProjectReceiptSnapshot() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_receipt_snapshot_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> receipts = decoded is List
             ? decoded
             : decoded.entries
                 .where((e) => e.value is Map)
                 .map((e) => e.value)
                 .toList();
 
-        print('Decoded response: $decoded');
+        print('Decoded ReceiptSnapshot response: $decoded');
 
-        for (var classData in classes) {
-          ExceptionalStudents fetchedClass = ExceptionalStudents(
-            exceptionId: classData['exceptionId'],
-            exceptionName: classData['exceptionName'],
-            exceptionStatus: classData['exceptionStatus'],
-            exceptionType: classData['exceptionType'],
-            exceptionFigure: classData['exceptionFigure'],
-            terms: _decodeClassToList(classData['terms']),
+        for (var item in receipts) {
+          // 🔹 Ensure valid map
+          if (item is! Map) continue;
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // 🔹 Primary key
+          final String? receiptCode = json['receiptCode'];
+
+          if (receiptCode == null) {
+            print('Skipped ReceiptSnapshot with no receiptCode');
+            continue;
+          }
+
+          // =========================================================
+          // 🔹 PARSE DATE (EXPLICIT)
+          // =========================================================
+          DateTime? receiptDate = DateTime.tryParse(json['receiptDate'] ?? '');
+
+          // =========================================================
+          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
+          // =========================================================
+          final ReceiptSnapshot fetchedReceipt = ReceiptSnapshot(
+            receiptCode: receiptCode,
+            receiptDate: receiptDate ?? DateTime.now(),
+            cashier: json['cashier'],
+
+            totalExpected: (json['totalExpected'] ?? 0).toDouble(),
+
+            totalPaid: (json['totalPaid'] ?? 0).toDouble(),
+
+            amountReceived: (json['amountReceived'] ?? 0).toDouble(),
+
+            change: (json['change'] ?? 0).toDouble(),
+
+            currency: json['currency'],
+
+            // 🔹 Stored as JSON string (no decoding here by design)
+            receiptLinesJson: json['receiptLinesJson'],
+
+            isReprint: json['isReprint'] ?? false,
+
+            studentName: json['studentName'],
+            studentClass: json['studentClass'],
+
+            // 🔹 Sync fields (server → local)
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.now(),
+            modifiedFields: [],
           );
 
-          // Check if the record exists in Hive using schoolCode
-          var existingClassList = _exceptionalStudentsBox!.values
-              .where(
-                (classes) => classes.exceptionId == fetchedClass.exceptionId,
-              )
+          // =========================================================
+          // 🔍 CHECK EXISTING
+          // =========================================================
+          final existingList = _receiptSnapshotBox!.values
+              .where((r) => r.receiptCode == fetchedReceipt.receiptCode)
               .toList();
 
-          ExceptionalStudents? existingClasses =
-              existingClassList.isNotEmpty ? existingClassList.first : null;
+          ReceiptSnapshot? existing =
+              existingList.isNotEmpty ? existingList.first : null;
 
-          if (fetchedClass.exceptionId != null) {
-            if (existingClasses != null) {
-              // Update existing record
-              existingClasses
-                ..id = fetchedClass.id
-                ..exceptionId = fetchedClass.exceptionId
-                ..exceptionName = fetchedClass.exceptionName
-                ..exceptionStatus = fetchedClass.exceptionStatus
-                ..exceptionType = fetchedClass.exceptionType
-                ..exceptionFigure = fetchedClass.exceptionFigure
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedClass.terms;
+          // =========================================================
+          // 🔄 UPDATE OR CREATE (EXPLICIT)
+          // =========================================================
+          if (existing != null) {
+            existing
+              ..receiptDate = fetchedReceipt.receiptDate
+              ..cashier = fetchedReceipt.cashier
+              ..totalExpected = fetchedReceipt.totalExpected
+              ..totalPaid = fetchedReceipt.totalPaid
+              ..amountReceived = fetchedReceipt.amountReceived
+              ..change = fetchedReceipt.change
+              ..currency = fetchedReceipt.currency
+              ..receiptLinesJson = fetchedReceipt.receiptLinesJson
+              ..isReprint = fetchedReceipt.isReprint
+              ..studentName = fetchedReceipt.studentName
+              ..studentClass = fetchedReceipt.studentClass
 
-              await existingClasses.save();
-              print(
-                  'exceptionId ${fetchedClass.exceptionId} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _exceptionalStudentsBox!.add(fetchedClass);
-              print(
-                  'exceptionId ${fetchedClass.exceptionId} added successfully to Hive.');
-            }
+              // 🔹 Sync
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
+
+            await existing.save();
+
+            print(
+                'ReceiptSnapshot ${fetchedReceipt.receiptCode} updated successfully.');
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another exception record was Found with no exceptionId Code and was Skipped.'),
-            ));
+            await _receiptSnapshotBox!.add(fetchedReceipt);
+
+            print(
+                'ReceiptSnapshot ${fetchedReceipt.receiptCode} added successfully.');
           }
         }
       } else {
         throw Exception(
-            'Failed to fetch exceptions from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch ReceiptSnapshots. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching or syncing exceptions: $e');
+      print('Error fetching/syncing ReceiptSnapshots: $e');
     } finally {
       setState(() {
         _isSyncing = false;
       });
+    }
+  }
+
+  //================================pull _fetchAndSyncProjectPaymentMethod =======================================================================//
+
+  Future<void> _fetchAndSyncProjectPaymentMethod() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_payment_method_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> paymentMethods = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded PaymentMethod response: $decoded');
+
+        for (var item in paymentMethods) {
+          // 🔹 Ensure valid map
+          if (item is! Map) continue;
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // 🔹 Primary key
+          final String? paymentMethodCode = json['payment_method_code'];
+
+          if (paymentMethodCode == null) {
+            print('Skipped PaymentMethod with no code');
+            continue;
+          }
+
+          // =========================================================
+          // 🔹 PARSE DATE (EXPLICIT)
+          // =========================================================
+          DateTime? paymentDate = DateTime.tryParse(json['payment_date'] ?? '');
+
+          // =========================================================
+          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
+          // =========================================================
+          final PaymentMethod fetchedMethod = PaymentMethod(
+            paymentMethodCode: paymentMethodCode,
+            methodType: json['method_type'],
+            amount: (json['amount'] ?? 0).toDouble(),
+            currency: json['currency'],
+            provider: json['provider'],
+            reference: json['reference'],
+            phoneNumber: json['phone_number'],
+            accountNumber: json['account_number'],
+            accountName: json['account_name'],
+            paymentDate: paymentDate,
+            isReversed: json['is_reversed'] ?? false,
+
+            // 🔹 Sync fields (server → local)
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.now(),
+            modifiedFields: [],
+          );
+
+          // =========================================================
+          // 🔍 CHECK EXISTING
+          // =========================================================
+          final existingList = _paymentMethodBox!.values
+              .where((pm) =>
+                  pm.paymentMethodCode == fetchedMethod.paymentMethodCode)
+              .toList();
+
+          PaymentMethod? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          // =========================================================
+          // 🔄 UPDATE OR CREATE (EXPLICIT)
+          // =========================================================
+          if (existing != null) {
+            existing
+              ..methodType = fetchedMethod.methodType
+              ..amount = fetchedMethod.amount
+              ..currency = fetchedMethod.currency
+              ..provider = fetchedMethod.provider
+              ..reference = fetchedMethod.reference
+              ..phoneNumber = fetchedMethod.phoneNumber
+              ..accountNumber = fetchedMethod.accountNumber
+              ..accountName = fetchedMethod.accountName
+              ..paymentDate = fetchedMethod.paymentDate
+              ..isReversed = fetchedMethod.isReversed
+
+              // 🔹 Sync
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
+
+            await existing.save();
+
+            print(
+                'PaymentMethod ${fetchedMethod.paymentMethodCode} updated successfully.');
+          } else {
+            await _paymentMethodBox!.add(fetchedMethod);
+
+            print(
+                'PaymentMethod ${fetchedMethod.paymentMethodCode} added successfully.');
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch PaymentMethods. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching/syncing PaymentMethods: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+  //================================pull _fetchAndSyncBatchUnitSales =======================================================================//
+  PackagingLevel? _parsePackagingLevelNullable(dynamic value) {
+    if (value == null) return null;
+
+    try {
+      return PackagingLevel.values.firstWhere(
+        (e) => e.name.toLowerCase() == value.toString().toLowerCase(),
+      );
+    } catch (_) {
+      return null; // keep nullable as per model
+    }
+  }
+
+  Future<void> _fetchAndSyncBatchUnitSales() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> unitsList = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded BatchSellUnit response: $decoded');
+
+        for (var item in unitsList) {
+          // 🔹 Ensure valid map
+          if (item is! Map) continue;
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // 🔹 Primary key
+          final String? sellUnitCode = json['sellUnitCode'];
+
+          if (sellUnitCode == null) {
+            print('Skipped BatchSellUnit with no sellUnitCode');
+            continue;
+          }
+
+          // =========================================================
+          // 🔹 PARSE DATE (EXPLICIT)
+          // =========================================================
+          DateTime? deletedAt = DateTime.tryParse(json['deletedAt'] ?? '');
+
+          // =========================================================
+          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
+          // =========================================================
+          final BatchSellUnit fetchedUnit = BatchSellUnit(
+            sellUnitCode: sellUnitCode,
+            batchCode: json['batchCode'],
+            unitName: json['unitName'],
+
+            quantityMultiplier: (json['quantityMultiplier'] ?? 0).toInt(),
+
+            sellingPrice: (json['sellingPrice'] ?? 0).toDouble(),
+
+            active: json['active'] ?? true,
+
+            deletedAt: deletedAt,
+
+            // 🔗 SNAPSHOT FIELDS
+            packagingLevel:
+                _parsePackagingLevelNullable(json['packagingLevel']),
+
+            baseUnitsPerSellUnit:
+                (json['baseUnitsPerSellUnit'] ?? 0).toDouble(),
+
+            baseUnit: json['baseUnit'],
+
+            baseUnitType: _parseStockUnitType(json['baseUnitType']),
+
+            // 🔹 Sync fields (server → local)
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.now(),
+            modifiedFields: [],
+          );
+
+          // =========================================================
+          // 🔍 CHECK EXISTING
+          // =========================================================
+          final existingList = _batchSellUnitBox!.values
+              .where((u) => u.sellUnitCode == fetchedUnit.sellUnitCode)
+              .toList();
+
+          BatchSellUnit? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          // =========================================================
+          // 🔄 UPDATE OR CREATE (EXPLICIT)
+          // =========================================================
+          if (existing != null) {
+            existing
+              ..batchCode = fetchedUnit.batchCode
+              ..unitName = fetchedUnit.unitName
+              ..quantityMultiplier = fetchedUnit.quantityMultiplier
+              ..sellingPrice = fetchedUnit.sellingPrice
+              ..active = fetchedUnit.active
+              ..deletedAt = fetchedUnit.deletedAt
+
+              // 🔗 SNAPSHOT
+              ..packagingLevel = fetchedUnit.packagingLevel
+              ..baseUnitsPerSellUnit = fetchedUnit.baseUnitsPerSellUnit
+              ..baseUnit = fetchedUnit.baseUnit
+              ..baseUnitType = fetchedUnit.baseUnitType
+
+              // 🔹 Sync
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
+
+            await existing.save();
+
+            print(
+                'BatchSellUnit ${fetchedUnit.sellUnitCode} updated successfully.');
+          } else {
+            await _batchSellUnitBox!.add(fetchedUnit);
+
+            print(
+                'BatchSellUnit ${fetchedUnit.sellUnitCode} added successfully.');
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch BatchSellUnits. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching/syncing BatchSellUnits: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+  //================================pull _fetchAndSyncProjectSaleTransactions =======================================================================//
+
+  Future<void> _fetchAndSyncProjectSaleTransactions() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> transactions = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded ProjectSaleTransaction response: $decoded');
+
+        for (var item in transactions) {
+          // 🔹 Ensure valid map
+          if (item is! Map) continue;
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // 🔹 Primary key
+          final String? transactionCode = json['transactionCode'];
+
+          if (transactionCode == null) {
+            print('Skipped transaction with no transactionCode');
+            continue;
+          }
+
+          // =========================================================
+          // 🔹 PARSE DATES (EXPLICIT)
+          // =========================================================
+          DateTime? transactionDate =
+              DateTime.tryParse(json['transactionDate'] ?? '');
+
+          DateTime? paymentDatetransacted =
+              DateTime.tryParse(json['paymentDatetransacted'] ?? '');
+
+          List<DateTime>? deletedAt = (json['deletedAt'] is List)
+              ? (json['deletedAt'] as List)
+                  .map((e) => DateTime.tryParse(e.toString()))
+                  .whereType<DateTime>()
+                  .toList()
+              : null;
+
+          List<DateTime>? restoredAt = (json['restoredAt'] is List)
+              ? (json['restoredAt'] as List)
+                  .map((e) => DateTime.tryParse(e.toString()))
+                  .whereType<DateTime>()
+                  .toList()
+              : null;
+
+          // =========================================================
+          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
+          // =========================================================
+          final ProjectSaleTransaction fetchedTransaction =
+              ProjectSaleTransaction(
+            transactionCode: transactionCode,
+            studentId: json['studentId'],
+            projectCode: json['projectCode'],
+            projectItemCode: json['projectItemCode'],
+            batchCode: json['batchCode'],
+            sellUnitCode: json['sellUnitCode'],
+            sellUnitNameSnapshot: json['sellUnitNameSnapshot'],
+
+            quantitySold: (json['quantitySold'] ?? 0).toDouble(),
+            unitSellingPrice: (json['unitSellingPrice'] ?? 0).toDouble(),
+            totalAmount: (json['totalAmount'] ?? 0).toDouble(),
+
+            baseUnitsPerSellUnit:
+                (json['baseUnitsPerSellUnit'] ?? 0).toDouble(),
+            totalBaseUnitsSold: (json['totalBaseUnitsSold'] ?? 0).toDouble(),
+
+            baseUnit: json['baseUnit'],
+            baseUnitType: _parseStockUnitType(json['baseUnitType']) ??
+                StockUnitType.piece,
+
+            transactionDate: transactionDate ?? DateTime.now(),
+
+            paymentMethod: json['paymentMethod'],
+            reference: json['reference'],
+            amountPaid: (json['amountPaid'] ?? 0).toDouble(),
+            arrears: (json['arrears'] ?? 0).toDouble(),
+
+            // 🔴 Soft delete
+            isDeleted: json['isDeleted'] ?? false,
+            deletedAt: deletedAt,
+            restoredAt: restoredAt,
+            deletedByUsers: _decodeClassToList(json['deletedByUsers']),
+            restoredByUsers: _decodeClassToList(json['restoredByUsers']),
+
+            // 💳 Payment breakdown
+            paymentMethodCode: json['paymentMethodCode'],
+            methodType: json['methodType'],
+            amountPaidInPaymentMethod:
+                (json['amountPaidInPaymentMethod'] ?? 0).toDouble(),
+            currency: json['currency'],
+            provider: json['provider'],
+            referenceNumber: json['referenceNumber'],
+            phoneNumber: json['phoneNumber'],
+            accountNumber: json['accountNumber'],
+            accountName: json['accountName'],
+            paymentDatetransacted: paymentDatetransacted,
+
+            // 🔁 Audit
+            isReversed: json['isReversed'] ?? false,
+            lineTransactionCodes:
+                _decodeClassToList(json['lineTransactionCodes']),
+            financialType: json['financialType'],
+            parentTransactionCode: json['parentTransactionCode'],
+            affectsStock: json['affectsStock'] ?? false,
+            createsObligation: json['createsObligation'] ?? false,
+            settlesObligation: json['settlesObligation'] ?? false,
+
+            // 🔹 Sync fields
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.now(),
+            modifiedFields: [],
+          );
+
+          // =========================================================
+          // 🔍 CHECK EXISTING
+          // =========================================================
+          final existingList = _projectSaleTransactionBox!.values
+              .where((t) =>
+                  t.transactionCode == fetchedTransaction.transactionCode)
+              .toList();
+
+          ProjectSaleTransaction? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          // =========================================================
+          // 🔄 UPDATE OR CREATE
+          // =========================================================
+          if (existing != null) {
+            existing
+              ..studentId = fetchedTransaction.studentId
+              ..projectCode = fetchedTransaction.projectCode
+              ..projectItemCode = fetchedTransaction.projectItemCode
+              ..batchCode = fetchedTransaction.batchCode
+              ..sellUnitCode = fetchedTransaction.sellUnitCode
+              ..sellUnitNameSnapshot = fetchedTransaction.sellUnitNameSnapshot
+              ..quantitySold = fetchedTransaction.quantitySold
+              ..unitSellingPrice = fetchedTransaction.unitSellingPrice
+              ..totalAmount = fetchedTransaction.totalAmount
+              ..baseUnitsPerSellUnit = fetchedTransaction.baseUnitsPerSellUnit
+              ..totalBaseUnitsSold = fetchedTransaction.totalBaseUnitsSold
+              ..baseUnit = fetchedTransaction.baseUnit
+              ..baseUnitType = fetchedTransaction.baseUnitType
+              ..transactionDate = fetchedTransaction.transactionDate
+              ..paymentMethod = fetchedTransaction.paymentMethod
+              ..reference = fetchedTransaction.reference
+              ..amountPaid = fetchedTransaction.amountPaid
+              ..arrears = fetchedTransaction.arrears
+
+              // 🔴 Soft delete
+              ..isDeleted = fetchedTransaction.isDeleted
+              ..deletedAt = fetchedTransaction.deletedAt
+              ..restoredAt = fetchedTransaction.restoredAt
+              ..deletedByUsers = fetchedTransaction.deletedByUsers
+              ..restoredByUsers = fetchedTransaction.restoredByUsers
+
+              // 💳 Payment
+              ..paymentMethodCode = fetchedTransaction.paymentMethodCode
+              ..methodType = fetchedTransaction.methodType
+              ..amountPaidInPaymentMethod =
+                  fetchedTransaction.amountPaidInPaymentMethod
+              ..currency = fetchedTransaction.currency
+              ..provider = fetchedTransaction.provider
+              ..referenceNumber = fetchedTransaction.referenceNumber
+              ..phoneNumber = fetchedTransaction.phoneNumber
+              ..accountNumber = fetchedTransaction.accountNumber
+              ..accountName = fetchedTransaction.accountName
+              ..paymentDatetransacted = fetchedTransaction.paymentDatetransacted
+
+              // 🔁 Audit
+              ..isReversed = fetchedTransaction.isReversed
+              ..lineTransactionCodes = fetchedTransaction.lineTransactionCodes
+              ..financialType = fetchedTransaction.financialType
+              ..parentTransactionCode = fetchedTransaction.parentTransactionCode
+              ..affectsStock = fetchedTransaction.affectsStock
+              ..createsObligation = fetchedTransaction.createsObligation
+              ..settlesObligation = fetchedTransaction.settlesObligation
+
+              // 🔹 Sync
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
+
+            await existing.save();
+
+            print('Transaction ${fetchedTransaction.transactionCode} updated.');
+          } else {
+            await _projectSaleTransactionBox!.add(fetchedTransaction);
+
+            print('Transaction ${fetchedTransaction.transactionCode} added.');
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch transactions. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching/syncing transactions: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncProjectItemPricing =======================================================================//
+
+  Future<void> _fetchAndSyncProjectItemPricing() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_price_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        final List<dynamic> pricingList = decoded is List
+            ? decoded
+            : decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+
+        print('Decoded ProjectItemPricing response: $decoded');
+
+        for (var item in pricingList) {
+          // 🔹 Ensure valid map
+          if (item is! Map) continue;
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // 🔹 Extract primary key
+          final String? priceCode = json['priceCode'];
+
+          if (priceCode == null) {
+            print('Skipped ProjectItemPrice with no priceCode');
+            continue;
+          }
+
+          // =========================================================
+          // 🔹 PARSE DATES EXPLICITLY
+          // =========================================================
+          DateTime? effectiveFrom =
+              DateTime.tryParse(json['effectiveFrom'] ?? '');
+
+          DateTime? effectiveTo = DateTime.tryParse(json['effectiveTo'] ?? '');
+
+          // =========================================================
+          // 🔹 BUILD OBJECT (EXPLICIT)
+          // =========================================================
+          final ProjectItemPrice fetchedPrice = ProjectItemPrice(
+            priceCode: priceCode,
+            projectItemCode: json['projectItemCode'],
+            amount: (json['amount'] ?? 0).toDouble(),
+            pricingType: json['pricingType'],
+            appliesTo: json['appliesTo'],
+            effectiveFrom: effectiveFrom ?? DateTime.now(),
+            effectiveTo: effectiveTo,
+
+            // 🔹 Sync fields (server → local)
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.now(),
+            modifiedFields: [],
+          );
+
+          // =========================================================
+          // 🔍 CHECK EXISTING IN HIVE
+          // =========================================================
+          final existingList = _projectItemPriceBox!.values
+              .where((p) => p.priceCode == fetchedPrice.priceCode)
+              .toList();
+
+          ProjectItemPrice? existing =
+              existingList.isNotEmpty ? existingList.first : null;
+
+          // =========================================================
+          // 🔄 UPDATE OR CREATE
+          // =========================================================
+          if (existing != null) {
+            // 🔄 UPDATE (explicit field-by-field)
+            existing
+              ..projectItemCode = fetchedPrice.projectItemCode
+              ..amount = fetchedPrice.amount
+              ..pricingType = fetchedPrice.pricingType
+              ..appliesTo = fetchedPrice.appliesTo
+              ..effectiveFrom = fetchedPrice.effectiveFrom
+              ..effectiveTo = fetchedPrice.effectiveTo
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
+
+            await existing.save();
+
+            print(
+                'ProjectItemPrice ${fetchedPrice.priceCode} updated successfully.');
+          } else {
+            // ➕ CREATE
+            await _projectItemPriceBox!.add(fetchedPrice);
+
+            print(
+                'ProjectItemPrice ${fetchedPrice.priceCode} added successfully.');
+          }
+        }
+      } else {
+        throw Exception(
+            'Failed to fetch ProjectItemPricing. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching/syncing ProjectItemPricing: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+//================================pull _fetchAndSyncBatchUnits =======================================================================//
+  PackagingLevel _parsePackagingLevel(String? value) {
+    if (value == null) {
+      return PackagingLevel.single;
+    }
+
+    try {
+      final result = PackagingLevel.values.firstWhere(
+        (e) => e.name.toLowerCase() == value.toLowerCase(),
+        orElse: () {
+          return PackagingLevel.single;
+        },
+      );
+      return result;
+    } catch (e) {
+      return PackagingLevel.single;
+    }
+  }
+
+// PULL BatchUnits from server
+// ✅ Helper: Find ProductBatch with multiple strategies
+  Future<ProductBatch?> _findProductBatch(
+      String batchCode, Box<ProductBatch> box) async {
+    final allBatches = box.values.toList();
+
+    if (allBatches.isEmpty) {
+      return null;
+    }
+
+    // Print all available batch codes for debugging
+    for (var b in allBatches) {}
+
+    // ✅ Strategy 1: Exact match
+    for (var b in allBatches) {
+      if (b.batchCode == batchCode) {
+        return b;
+      }
+    }
+
+    // ✅ Strategy 2: Trim match
+    for (var b in allBatches) {
+      if (b.batchCode!.trim() == batchCode.trim()) {
+        return b;
+      }
+    }
+
+    // ✅ Strategy 3: Case-insensitive match
+    for (var b in allBatches) {
+      if (b.batchCode!.toLowerCase() == batchCode.toLowerCase()) {
+        return b;
+      }
+    }
+
+    // ✅ Strategy 4: Remove special characters and compare
+    String clean(String s) =>
+        s.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+    for (var b in allBatches) {
+      if (clean(b.batchCode!) == clean(batchCode)) {
+        return b;
+      }
+    }
+
+    // ✅ Strategy 5: Contains match (if one is substring of the other)
+    for (var b in allBatches) {
+      if (b.batchCode!.contains(batchCode) ||
+          batchCode.contains(b.batchCode!)) {
+        return b;
+      }
+    }
+
+    return null;
+  }
+
+// PULL BatchUnits from server
+  Future<void> _fetchAndSyncBatchUnits() async {
+    final String apiUrl =
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_unit_api.php';
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        // ✅ Handle different response formats
+        List<dynamic> data;
+        if (decoded is List) {
+          data = decoded;
+        } else if (decoded is Map) {
+          if (decoded.containsKey('batchCode') ||
+              decoded.containsKey('units')) {
+            data = [decoded];
+          } else if (decoded.containsKey('message')) {
+            return;
+          } else {
+            data = decoded.entries
+                .where((e) => e.value is Map)
+                .map((e) => e.value)
+                .toList();
+          }
+        } else {
+          return;
+        }
+
+        if (data.isEmpty) {
+          return;
+        }
+
+        final productBatchBox = Hive.box<ProductBatch>('product_batches');
+        final batchUnitBox = Hive.box<BatchUnit>('batch_units');
+
+        for (var item in data) {
+          if (item is! Map) {
+            continue;
+          }
+
+          final Map<String, dynamic> json = Map<String, dynamic>.from(item);
+
+          // =========================================================
+          // 🔹 CRITICAL FIX: Extract BATCH CODE (not unitBatchCode)
+          // =========================================================
+
+          // ✅ The server sends a "batchCode" field, but it's actually the unitBatchCode!
+          // We need to find the real batchCode from the response.
+          String? realBatchCode;
+
+          // ✅ Option 1: Try to get a real batch code from the first unit
+          if (json.containsKey('units') && json['units'] is List) {
+            final unitsList = json['units'] as List;
+            if (unitsList.isNotEmpty && unitsList[0] is Map) {
+              final firstUnit = unitsList[0] as Map;
+              // ✅ The unit might have a parent batch reference
+              if (firstUnit.containsKey('batchCode')) {
+                realBatchCode = firstUnit['batchCode'].toString();
+              }
+              // ✅ Or the unit might have a unitBatchCode that we can use to find the parent
+              else if (firstUnit.containsKey('unitBatchCode')) {
+                final unitBatchCode = firstUnit['unitBatchCode'].toString();
+                // Search for ProductBatch that contains this unitBatchCode
+                for (var batch in productBatchBox.values) {
+                  if (batch.units != null) {
+                    for (var u in batch.units!) {
+                      if (u.unitBatchCode == unitBatchCode) {
+                        realBatchCode = batch.batchCode;
+                        break;
+                      }
+                    }
+                  }
+                  if (realBatchCode != null) break;
+                }
+              }
+            }
+          }
+
+          // ✅ Option 2: Check if there's a parent reference in the server data
+          if (realBatchCode == null && json.containsKey('parentBatchCode')) {
+            realBatchCode = json['parentBatchCode'].toString();
+          }
+
+          // ✅ Option 3: If we still don't have a real batchCode, use the server's batchCode
+          // but we need to match it properly
+          if (realBatchCode == null && json.containsKey('batchCode')) {
+            final serverBatchCode = json['batchCode'].toString();
+
+            // ✅ Check if this is actually a unitBatchCode by looking at the pattern
+            // UUID pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+            final uuidPattern = RegExp(
+                r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+            final isUuid = uuidPattern.hasMatch(serverBatchCode);
+
+            if (isUuid) {
+              // This is likely a unitBatchCode, search for the parent ProductBatch
+              for (var batch in productBatchBox.values) {
+                if (batch.units != null) {
+                  for (var u in batch.units!) {
+                    if (u.unitBatchCode == serverBatchCode) {
+                      realBatchCode = batch.batchCode;
+                      break;
+                    }
+                  }
+                }
+                if (realBatchCode != null) break;
+              }
+            } else {
+              // Not a UUID, use it as the batchCode
+              realBatchCode = serverBatchCode;
+            }
+          }
+
+          // ✅ If we still don't have a batchCode, we need to create or find one
+          if (realBatchCode == null) {
+            realBatchCode = json['batchCode']?.toString() ?? 'UNKNOWN';
+          }
+
+          // =========================================================
+          // 🔹 Find or Create ProductBatch using REAL batchCode
+          // =========================================================
+
+          // ✅ Find ProductBatch using improved method
+          ProductBatch? existing =
+              await _findProductBatch(realBatchCode, productBatchBox);
+
+          // ✅ If ProductBatch doesn't exist, CREATE IT
+          if (existing == null) {
+            final newBatch = ProductBatch(
+              batchCode: realBatchCode,
+              productCode: json['productCode']?.toString() ?? 'UNKNOWN',
+              reference: json['reference']?.toString() ?? 'Synced from server',
+              baseUnitType:
+                  _parseStockUnitType(json['baseUnitType']?.toString()),
+              baseUnit: json['baseUnit']?.toString() ?? 'pcs',
+              baseUnitSize: (json['baseUnitSize'] ?? 1).toDouble(),
+              purchaseDate: DateTime.tryParse(json['purchaseDate'] ?? '') ??
+                  DateTime.now(),
+              createdAt: DateTime.now(),
+              lastModified: DateTime.now(),
+              syncStatus: true,
+              operationType: 'none',
+              modifiedFields: [],
+              units: [],
+              totalBaseUnits: 0,
+              remainingBaseUnits: 0,
+              totalBuyingCost: 0,
+            );
+
+            await productBatchBox.add(newBatch);
+
+            existing = await _findProductBatch(realBatchCode, productBatchBox);
+
+            if (existing == null) {
+              continue;
+            }
+          } else {}
+
+          // =========================================================
+          // 🔹 BUILD BatchUnits
+          // =========================================================
+
+          List<BatchUnit> builtUnits = [];
+
+          // ================================
+          // ✅ CASE 1: Nested units array
+          // ================================
+          if (json.containsKey('units') && json['units'] is List) {
+            final List unitsList = json['units'];
+
+            for (var u in unitsList) {
+              if (u is! Map) {
+                continue;
+              }
+
+              final unitJson = Map<String, dynamic>.from(u);
+
+              // ✅ Convert syncStatus from int to bool
+              bool syncStatus = true;
+              if (unitJson['syncStatus'] != null) {
+                if (unitJson['syncStatus'] is int) {
+                  syncStatus = unitJson['syncStatus'] == 1;
+                } else if (unitJson['syncStatus'] is bool) {
+                  syncStatus = unitJson['syncStatus'];
+                } else if (unitJson['syncStatus'] is String) {
+                  syncStatus = unitJson['syncStatus'] == '1' ||
+                      unitJson['syncStatus'].toLowerCase() == 'true';
+                }
+              }
+
+              // ✅ Parse modifiedFields
+              List<String> modifiedFields =
+                  _decodeToList(unitJson['modifiedFields']);
+
+              // ✅ Parse lastModified
+              DateTime? lastModified;
+              if (unitJson['lastModified'] != null) {
+                try {
+                  if (unitJson['lastModified'] is String) {
+                    lastModified = DateTime.parse(unitJson['lastModified']);
+                  }
+                } catch (e) {
+                  lastModified = DateTime.now();
+                }
+              }
+
+              // ✅ Parse unitBatchCode
+              String? unitBatchCode;
+              if (unitJson['unitBatchCode'] != null) {
+                unitBatchCode = unitJson['unitBatchCode'].toString();
+              }
+
+              final BatchUnit unit = BatchUnit(
+                level: _parsePackagingLevel(unitJson['level']?.toString()),
+                unitsPerPackage: (unitJson['unitsPerPackage'] ?? 0).toDouble(),
+                quantity: (unitJson['quantity'] ?? 0).toInt(),
+                buyingPrice: (unitJson['buyingPrice'] ?? 0).toDouble(),
+                unitBatchCode: unitBatchCode,
+                syncStatus: syncStatus,
+                lastModified: lastModified,
+                operationType: unitJson['operationType']?.toString() ?? 'none',
+                modifiedFields: modifiedFields,
+              );
+
+              builtUnits.add(unit);
+
+              // ✅ Save each BatchUnit to batch_units box
+              try {
+                var existingUnit = batchUnitBox.values
+                    .where((bu) => bu.unitBatchCode == unit.unitBatchCode)
+                    .firstOrNull;
+
+                if (existingUnit != null) {
+                  existingUnit
+                    ..level = unit.level
+                    ..unitsPerPackage = unit.unitsPerPackage
+                    ..quantity = unit.quantity
+                    ..buyingPrice = unit.buyingPrice
+                    ..syncStatus = syncStatus
+                    ..lastModified = lastModified ?? DateTime.now()
+                    ..operationType = 'none'
+                    ..modifiedFields = [];
+                  await existingUnit.save();
+                } else {
+                  await batchUnitBox.add(unit);
+                }
+              } catch (e) {
+                print('❌ Error saving BatchUnit to batch_units box: $e');
+              }
+            }
+          }
+
+          // ================================
+          // ✅ CASE 2: Flat single unit
+          // ================================
+          else {
+            print('Processing flat unit');
+
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (json['syncStatus'] != null) {
+              if (json['syncStatus'] is int) {
+                syncStatus = json['syncStatus'] == 1;
+              } else if (json['syncStatus'] is bool) {
+                syncStatus = json['syncStatus'];
+              }
+            }
+
+            // ✅ Parse modifiedFields
+            List<String> modifiedFields = _decodeToList(json['modifiedFields']);
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (json['lastModified'] != null) {
+              try {
+                if (json['lastModified'] is String) {
+                  lastModified = DateTime.parse(json['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            // ✅ Parse unitBatchCode
+            String? unitBatchCode;
+            if (json['unitBatchCode'] != null) {
+              unitBatchCode = json['unitBatchCode'].toString();
+            }
+
+            final BatchUnit unit = BatchUnit(
+              level: _parsePackagingLevel(json['level']?.toString()),
+              unitsPerPackage: (json['unitsPerPackage'] ?? 0).toDouble(),
+              quantity: (json['quantity'] ?? 0).toInt(),
+              buyingPrice: (json['buyingPrice'] ?? 0).toDouble(),
+              unitBatchCode: unitBatchCode,
+              syncStatus: syncStatus,
+              lastModified: lastModified,
+              operationType: json['operationType']?.toString() ?? 'none',
+              modifiedFields: modifiedFields,
+            );
+
+            builtUnits.add(unit);
+            print('Added flat unit with unitBatchCode: ${unit.unitBatchCode}');
+
+            // ✅ Save each BatchUnit to batch_units box
+            try {
+              var existingUnit = batchUnitBox.values
+                  .where((bu) => bu.unitBatchCode == unit.unitBatchCode)
+                  .firstOrNull;
+
+              if (existingUnit != null) {
+                existingUnit
+                  ..level = unit.level
+                  ..unitsPerPackage = unit.unitsPerPackage
+                  ..quantity = unit.quantity
+                  ..buyingPrice = unit.buyingPrice
+                  ..syncStatus = syncStatus
+                  ..lastModified = lastModified ?? DateTime.now()
+                  ..operationType = 'none'
+                  ..modifiedFields = [];
+                await existingUnit.save();
+                print(
+                    '✅ Updated BatchUnit in batch_units box: ${existingUnit.unitBatchCode}');
+              } else {
+                await batchUnitBox.add(unit);
+                print(
+                    '✅ Added BatchUnit to batch_units box: ${unit.unitBatchCode}');
+              }
+            } catch (e) {
+              print('❌ Error saving BatchUnit to batch_units box: $e');
+            }
+          }
+
+          // =========================================================
+          // 🔄 UPDATE EXISTING ProductBatch
+          // =========================================================
+
+          print(
+              'Updating ProductBatch "${existing.batchCode}" with ${builtUnits.length} units');
+
+          // ✅ Update batch properties if provided
+          if (json.containsKey('productCode')) {
+            existing.productCode = json['productCode']?.toString();
+          }
+          if (json.containsKey('reference')) {
+            existing.reference = json['reference']?.toString();
+          }
+          if (json.containsKey('baseUnitType')) {
+            existing.baseUnitType =
+                _parseStockUnitType(json['baseUnitType']?.toString());
+          }
+          if (json.containsKey('baseUnit')) {
+            existing.baseUnit = json['baseUnit']?.toString();
+          }
+          if (json.containsKey('baseUnitSize')) {
+            existing.baseUnitSize = (json['baseUnitSize'] ?? 1).toDouble();
+          }
+          if (json.containsKey('purchaseDate')) {
+            existing.purchaseDate =
+                DateTime.tryParse(json['purchaseDate'] ?? '') ?? DateTime.now();
+          }
+
+          existing
+            ..units = builtUnits
+            ..syncStatus = true
+            ..operationType = 'none'
+            ..lastModified = DateTime.now()
+            ..modifiedFields = [];
+
+          // ✅ Calculate totals
+          double totalUnits = 0;
+          double totalCost = 0;
+          for (var u in builtUnits) {
+            totalUnits += u.unitsPerPackage * u.quantity;
+            totalCost += u.buyingPrice * u.quantity;
+          }
+          existing.totalBaseUnits = totalUnits;
+          existing.remainingBaseUnits = totalUnits;
+          existing.totalBuyingCost = totalCost;
+
+          await existing.save();
+          print(
+              '✅ ProductBatch "${existing.batchCode}" saved with ${existing.units!.length} units');
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('BatchUnits synced successfully')));
+      } else {
+        print('❌ Failed to fetch BatchUnits. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to fetch BatchUnits. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error fetching/syncing BatchUnits: $e');
+      print('Stack Trace: $stackTrace');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing BatchUnits: $e')));
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+      print('=== _fetchAndSyncBatchUnits END ===');
     }
   }
 
@@ -5042,85 +7130,138 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //================================pull _fetchAndSyncClasses =======================================================================//
 
+  // PULL Classes from server
   Future<void> _fetchAndSyncClasses() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php';
+
     setState(() {
       _isSyncing = true;
     });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final decoded = jsonDecode(response.body);
-        final List<dynamic> classes = decoded is List
-            ? decoded
-            : decoded.entries
-                .where((e) => e.value is Map)
-                .map((e) => e.value)
-                .toList();
 
-        print('Decoded response: $decoded');
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        List<dynamic> classes = jsonDecode(response.body);
+
+        if (classes.isEmpty) {
+          print('No classes found on server');
+          return;
+        }
 
         for (var classData in classes) {
-          DateTime parsedDate =
-              DateTime.tryParse(classData['date']) ?? DateTime.now();
-
-          Classes fetchedClass = Classes(
-            id: int.tryParse(classData['fid'] ?? '0') ?? 0,
-            classCode: classData['classCode'],
-            className: classData['className'],
-            date: parsedDate, // Assign the parsed DateTime
-            termId: classData['termId'],
-            terms: _decodeClassToList(classData['terms']),
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingClassList = _classesBox!.values
-              .where(
-                (classes) => classes.classCode == fetchedClass.classCode,
-              )
-              .toList();
-
-          Classes? existingClasses =
-              existingClassList.isNotEmpty ? existingClassList.first : null;
-
-          if (fetchedClass.classCode != null) {
-            if (existingClasses != null) {
-              // Update existing record
-              existingClasses
-                ..id = fetchedClass.id
-                ..classCode = fetchedClass.classCode
-                ..className = fetchedClass.className
-                ..date = fetchedClass.date
-                ..termId = fetchedClass.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedClass.terms;
-
-              await existingClasses.save();
-              print(
-                  'Classes ${fetchedClass.classCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _classesBox!.add(fetchedClass);
-              print(
-                  'Classes ${fetchedClass.classCode} added successfully to Hive.');
+          // ✅ Parse date from string to DateTime
+          DateTime parsedDate;
+          if (classData['date'] != null) {
+            try {
+              parsedDate = DateTime.parse(classData['date']);
+            } catch (e) {
+              parsedDate = DateTime.now();
             }
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another Class record was Found with no Class Code and was Skipped.'),
-            ));
+            parsedDate = DateTime.now();
+          }
+
+          // ✅ Convert syncStatus from int to bool
+          bool syncStatus = true;
+          if (classData['syncStatus'] != null) {
+            if (classData['syncStatus'] is int) {
+              syncStatus = classData['syncStatus'] == 1;
+            } else if (classData['syncStatus'] is bool) {
+              syncStatus = classData['syncStatus'];
+            }
+          }
+
+          // ✅ Parse terms from JSON to List<String>
+          List<String> terms = [];
+          if (classData['terms'] != null) {
+            if (classData['terms'] is List) {
+              terms = (classData['terms'] as List)
+                  .map((e) => e.toString())
+                  .toList();
+            } else if (classData['terms'] is String) {
+              try {
+                final decoded = jsonDecode(classData['terms']);
+                if (decoded is List) {
+                  terms = decoded.map((e) => e.toString()).toList();
+                }
+              } catch (e) {
+                terms = [];
+              }
+            }
+          }
+
+          // ✅ Handle id mapping
+          int? id;
+          if (classData['id'] != null) {
+            id = classData['id'] is int
+                ? classData['id']
+                : int.tryParse(classData['id'].toString());
+          } else if (classData['fid'] != null) {
+            id = classData['fid'] is int
+                ? classData['fid']
+                : int.tryParse(classData['fid'].toString());
+          }
+
+          // ✅ Parse lastModified
+          DateTime? lastModified;
+          try {
+            if (classData['lastModified'] != null) {
+              lastModified = DateTime.parse(classData['lastModified']);
+            }
+          } catch (e) {
+            lastModified = DateTime.now();
+          }
+
+          Classes fetchedClass = Classes(
+            id: id ?? 0,
+            classCode: classData['classCode'] ?? '',
+            className: classData['className'] ?? '',
+            date: parsedDate,
+            termId: classData['termId'],
+            terms: terms,
+            syncStatus: syncStatus,
+            operationType: 'none',
+            lastModified: lastModified,
+            modifiedFields: [],
+          );
+
+          // Check if class exists in Hive
+          var existingClassList = _classesBox!.values
+              .where((classObj) => classObj.classCode == fetchedClass.classCode)
+              .toList();
+
+          if (existingClassList.isNotEmpty) {
+            // Update existing class
+            var existingClass = existingClassList.first;
+            existingClass
+              ..id = fetchedClass.id
+              ..classCode = fetchedClass.classCode
+              ..className = fetchedClass.className
+              ..date = fetchedClass.date
+              ..termId = fetchedClass.termId
+              ..terms = fetchedClass.terms
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now();
+
+            await existingClass.save();
+            print('Class ${fetchedClass.classCode} updated in Hive.');
+          } else {
+            // Create new class
+            await _classesBox!.add(fetchedClass);
+            print('Class ${fetchedClass.classCode} added to Hive.');
           }
         }
       } else {
         throw Exception(
-            'Failed to fetch Classes from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch classes. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching or syncing Classes: $e');
+      print('Error fetching or syncing classes: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing classes: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5130,82 +7271,218 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //================================pull _fetchAndSyncPurposes =======================================================================//
 
+  //================================pull _fetchAndSyncPurposes =======================================================================//
+
   Future<void> _fetchAndSyncPurposes() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> purposes = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+
+        // ✅ Handle both List and Map responses
+        List<dynamic> purposes;
+        if (decoded is List) {
+          purposes = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format: $decoded');
+          return;
+        }
+
+        if (purposes.isEmpty) {
+          print('No payment purposes found on server');
+          return;
+        }
 
         for (var purposeData in purposes) {
-          PaymentPurpose fetchedPurpose = PaymentPurpose(
-            id: int.tryParse(purposeData['fid'] ?? '0') ?? 0,
-            paymentPurpose: purposeData['paymentPurpose'] ?? '',
-            purposeAmount: purposeData['purposeAmount'] != null
-                ? double.tryParse(purposeData['purposeAmount'].toString()) ??
-                    0.0
-                : 0.0,
-            purposeCode: purposeData['purposeCode'],
-            associatedClasses: _decodeToList(purposeData['associatedClasses']),
-            termId: purposeData['termId'],
-            exceptions: purposeData['exceptions'] != null
-                ? _decodeExceptions(purposeData['exceptions'])
-                : null,
-            forNewcomersOnly: purposeData['forNewcomersOnly'] ?? false,
-          );
+          try {
+            print('Processing purpose data: $purposeData');
 
-          // Check if the record exists in Hive using schoolCode
-          var existingPurposeList = _payment_purposesBox!.values
-              .where(
-                (purposes) =>
-                    purposes.purposeCode == fetchedPurpose.purposeCode,
-              )
-              .toList();
+            // ✅ FIX: Safely convert all values
+            // Handle purposeCode - could be String or int
+            String? purposeCode;
+            if (purposeData['purposeCode'] != null) {
+              if (purposeData['purposeCode'] is String) {
+                purposeCode = purposeData['purposeCode'];
+              } else if (purposeData['purposeCode'] is int) {
+                purposeCode = purposeData['purposeCode'].toString();
+              } else if (purposeData['purposeCode'] is double) {
+                purposeCode = purposeData['purposeCode'].toString();
+              }
+            }
 
-          PaymentPurpose? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
-          if (fetchedPurpose.purposeCode != null) {
-            if (existingPurposes != null) {
-              // Update existing record
-              existingPurposes
+            // ✅ If no purposeCode, use id or fid
+            if (purposeCode == null || purposeCode.isEmpty) {
+              if (purposeData['id'] != null) {
+                purposeCode = purposeData['id'].toString();
+              } else if (purposeData['fid'] != null) {
+                purposeCode = purposeData['fid'].toString();
+              }
+            }
+
+            // Skip if no purposeCode
+            if (purposeCode == null || purposeCode.isEmpty) {
+              print('Skipping purpose with no purposeCode');
+              continue;
+            }
+
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (purposeData['syncStatus'] != null) {
+              if (purposeData['syncStatus'] is int) {
+                syncStatus = purposeData['syncStatus'] == 1;
+              } else if (purposeData['syncStatus'] is bool) {
+                syncStatus = purposeData['syncStatus'];
+              } else if (purposeData['syncStatus'] is String) {
+                syncStatus = purposeData['syncStatus'] == '1' ||
+                    purposeData['syncStatus'].toLowerCase() == 'true';
+              }
+            }
+
+            // ✅ Convert forNewcomersOnly from int to bool
+            bool forNewcomersOnly = false;
+            if (purposeData['forNewcomersOnly'] != null) {
+              if (purposeData['forNewcomersOnly'] is int) {
+                forNewcomersOnly = purposeData['forNewcomersOnly'] == 1;
+              } else if (purposeData['forNewcomersOnly'] is bool) {
+                forNewcomersOnly = purposeData['forNewcomersOnly'];
+              } else if (purposeData['forNewcomersOnly'] is String) {
+                forNewcomersOnly = purposeData['forNewcomersOnly'] == '1' ||
+                    purposeData['forNewcomersOnly'].toLowerCase() == 'true';
+              }
+            }
+
+            // ✅ Parse associatedClasses - handles List or String
+            List<String> associatedClasses =
+                _decodeToList(purposeData['associatedClasses']);
+
+            // ✅ Parse exceptions - handles List or String
+            List<ExceptionalStudents>? exceptions;
+            if (purposeData['exceptions'] != null) {
+              exceptions = _decodeExceptions(purposeData['exceptions']);
+            }
+
+            // ✅ Handle id mapping - safely convert to int
+            int? id;
+            if (purposeData['id'] != null) {
+              if (purposeData['id'] is int) {
+                id = purposeData['id'];
+              } else if (purposeData['id'] is String) {
+                id = int.tryParse(purposeData['id']);
+              } else if (purposeData['id'] is double) {
+                id = purposeData['id'].toInt();
+              }
+            }
+            if (id == null && purposeData['fid'] != null) {
+              if (purposeData['fid'] is int) {
+                id = purposeData['fid'];
+              } else if (purposeData['fid'] is String) {
+                id = int.tryParse(purposeData['fid']);
+              } else if (purposeData['fid'] is double) {
+                id = purposeData['fid'].toInt();
+              }
+            }
+
+            // ✅ Parse purposeAmount - safely convert to double
+            double purposeAmount = 0.0;
+            if (purposeData['purposeAmount'] != null) {
+              if (purposeData['purposeAmount'] is double) {
+                purposeAmount = purposeData['purposeAmount'];
+              } else if (purposeData['purposeAmount'] is int) {
+                purposeAmount = purposeData['purposeAmount'].toDouble();
+              } else if (purposeData['purposeAmount'] is String) {
+                purposeAmount =
+                    double.tryParse(purposeData['purposeAmount']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (purposeData['lastModified'] != null) {
+              try {
+                if (purposeData['lastModified'] is String) {
+                  lastModified = DateTime.parse(purposeData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            PaymentPurpose fetchedPurpose = PaymentPurpose(
+              id: id ?? 0,
+              purposeCode: purposeCode,
+              paymentPurpose: purposeData['paymentPurpose']?.toString() ?? '',
+              purposeAmount: purposeAmount,
+              termId: purposeData['termId']?.toString(),
+              associatedClasses: associatedClasses,
+              exceptions: exceptions,
+              forNewcomersOnly: forNewcomersOnly,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if purpose exists in Hive
+            var existingPurposeList = _payment_purposesBox!.values
+                .where((purpose) =>
+                    purpose.purposeCode == fetchedPurpose.purposeCode)
+                .toList();
+
+            if (existingPurposeList.isNotEmpty) {
+              // Update existing purpose
+              var existingPurpose = existingPurposeList.first;
+              existingPurpose
                 ..id = fetchedPurpose.id
                 ..purposeCode = fetchedPurpose.purposeCode
                 ..paymentPurpose = fetchedPurpose.paymentPurpose
                 ..purposeAmount = fetchedPurpose.purposeAmount
-                ..associatedClasses = fetchedPurpose.associatedClasses
                 ..termId = fetchedPurpose.termId
+                ..associatedClasses = fetchedPurpose.associatedClasses
                 ..exceptions = fetchedPurpose.exceptions
                 ..forNewcomersOnly = fetchedPurpose.forNewcomersOnly
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = existingPurposes.lastModified;
-              await existingPurposes.save();
+                ..lastModified = DateTime.now();
+
+              await existingPurpose.save();
               print(
-                  'PaymentPurpose ${fetchedPurpose.purposeCode} updated successfully in Hive.');
+                  'PaymentPurpose ${fetchedPurpose.purposeCode} updated in Hive.');
             } else {
-              // Create a new record
+              // Create new purpose
               await _payment_purposesBox!.add(fetchedPurpose);
               print(
-                  'PaymentPurpose ${fetchedPurpose.purposeCode} added successfully to Hive.');
+                  'PaymentPurpose ${fetchedPurpose.purposeCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another Student PaymentPurpose record was Found with no Purpose Code  and was Skipped.'),
-            ));
+          } catch (error, stack) {
+            print('❌ Error processing purpose record:');
+            print('Data: ${purposeData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Synced ${purposes.length} payment purposes from server')));
       } else {
         throw Exception(
-            'Failed to fetch PaymentPurpose from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch payment purposes. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching or syncing PaymentPurpose: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing payment purposes: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5214,75 +7491,114 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================================pull _fetchAndSyncSchools =======================================================================//
-
+// PULL Schools from server
   Future<void> _fetchAndSyncSchools() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         List<dynamic> schools = jsonDecode(response.body);
 
+        if (schools.isEmpty) {
+          print('No schools found on server');
+          return;
+        }
+
         for (var schoolData in schools) {
+          // ✅ Convert syncStatus from int to bool
+          bool syncStatus = true;
+          if (schoolData['syncStatus'] != null) {
+            if (schoolData['syncStatus'] is int) {
+              syncStatus = schoolData['syncStatus'] == 1;
+            } else if (schoolData['syncStatus'] is bool) {
+              syncStatus = schoolData['syncStatus'];
+            }
+          }
+
+          // ✅ Handle id mapping
+          int? id;
+          if (schoolData['id'] != null) {
+            id = schoolData['id'] is int
+                ? schoolData['id']
+                : int.tryParse(schoolData['id'].toString());
+          } else if (schoolData['fid'] != null) {
+            id = schoolData['fid'] is int
+                ? schoolData['fid']
+                : int.tryParse(schoolData['fid'].toString());
+          }
+
+          // ✅ Parse lastModified
+          DateTime? lastModified;
+          try {
+            if (schoolData['lastModified'] != null) {
+              lastModified = DateTime.parse(schoolData['lastModified']);
+            }
+          } catch (e) {
+            lastModified = DateTime.now();
+          }
+
           School fetchedSchool = School(
-            id: int.tryParse(schoolData['fid'] ?? '0'),
+            id: id,
+            schoolCode: schoolData['schoolCode'] ?? '',
             schoolName: schoolData['schoolName'],
-            schoolCode: schoolData['schoolCode'],
             schoolAddress: schoolData['schoolAddress'],
             schoolPhoneNumber: schoolData['schoolPhoneNumber'],
             schoolEmail: schoolData['schoolEmail'],
+            schoolLogoPath: schoolData['schoolLogoPath'],
             termId: schoolData['termId'],
+            syncStatus: syncStatus,
+            operationType: 'none',
+            lastModified: lastModified,
+            modifiedFields: [],
           );
 
-          // Check if the record exists in Hive using schoolCode
-          var existingSchoolList = _schoolBox!.values
-              .where(
-                (school) => school.schoolCode == fetchedSchool.schoolCode,
-              )
+          // Check if school exists in Hive
+          var existingSchools = _schoolBox!.values
+              .where((school) => school.schoolCode == fetchedSchool.schoolCode)
               .toList();
 
-          School? existingSchool =
-              existingSchoolList.isNotEmpty ? existingSchoolList.first : null;
-          if (fetchedSchool.schoolCode != null) {
-            if (existingSchool != null) {
-              // Update existing record
-              existingSchool
-                ..schoolName = fetchedSchool.schoolName
-                ..schoolAddress = fetchedSchool.schoolAddress
-                ..schoolPhoneNumber = fetchedSchool.schoolPhoneNumber
-                ..schoolEmail = fetchedSchool.schoolEmail
-                ..termId = fetchedSchool.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedSchool.id;
+          if (existingSchools.isNotEmpty) {
+            // Update existing school
+            var existingSchool = existingSchools.first;
+            existingSchool
+              ..id = fetchedSchool.id
+              ..schoolCode = fetchedSchool.schoolCode
+              ..schoolName = fetchedSchool.schoolName
+              ..schoolAddress = fetchedSchool.schoolAddress
+              ..schoolPhoneNumber = fetchedSchool.schoolPhoneNumber
+              ..schoolEmail = fetchedSchool.schoolEmail
+              ..schoolLogoPath = fetchedSchool.schoolLogoPath
+              ..termId = fetchedSchool.termId
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now();
 
-              await existingSchool.save();
-              print(
-                  'School ${fetchedSchool.schoolCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _schoolBox!.add(fetchedSchool);
-              print(
-                  'School ${fetchedSchool.schoolCode} added successfully to Hive.');
-            }
+            await existingSchool.save();
+            print('School ${fetchedSchool.schoolCode} updated in Hive.');
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another School record was Found with no School Code and was Skipped.'),
-            ));
+            // Create new school
+            await _schoolBox!.add(fetchedSchool);
+            print('School ${fetchedSchool.schoolCode} added to Hive.');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${schools.length} schools from server')));
       } else {
         throw Exception(
-            'Failed to fetch schools from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch schools. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching or syncing schools: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing schools: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5292,94 +7608,235 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //================================pull _fetchAndSyncStudentPayments =======================================================================//
 
+// PULL StudentPayments from server
   Future<void> _fetchAndSyncStudentPayments() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> studentPayments = jsonDecode(response.body);
-        for (var paymentsData in studentPayments) {
-          debugPrint(
-              'Raw paymentDate received: ${paymentsData['paymentDate']}');
+        final decoded = jsonDecode(response.body);
+
+        List<dynamic> studentPayments;
+        if (decoded is List) {
+          studentPayments = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
+
+        if (studentPayments.isEmpty) {
+          print('No student payments found on server');
+          return;
         }
 
         for (var paymentsData in studentPayments) {
-          StudentPayment fetchedPayments = StudentPayment(
-            id: int.tryParse(paymentsData['fid'] ?? '0') ?? 0,
-            studentName: paymentsData['studentName'] ?? '',
-            studentSurname: paymentsData['studentSurname'] ?? '',
-            studentClass: paymentsData['studentClass'] ?? '',
-            phoneNumber: paymentsData['phoneNumber'] ?? '',
-            paymentPurpose: paymentsData['paymentPurpose'] ?? '',
-            amountToPay: paymentsData['amountToPay'] != null
-                ? double.tryParse(paymentsData['amountToPay'].toString()) ?? 0.0
-                : 0.0,
-            paymentDate: DateTime.tryParse(paymentsData['paymentDate']) ??
-                DateTime.now(),
-            receiptNumber: paymentsData['receiptNumber'],
-            termId: paymentsData['termId'],
-            username: paymentsData['username'] ?? '',
-            role: paymentsData['role'] ?? '',
-          );
+          try {
+            // ✅ Debug paymentDate
+            debugPrint(
+                'Raw paymentDate received: ${paymentsData['paymentDate']}');
 
-          // Check if the record exists in Hive using schoolCode
-          var existingPurposeList = _student_paymentsBox!.values
-              .where(
-                (studentPayments) =>
-                    studentPayments.receiptNumber ==
-                    fetchedPayments.receiptNumber,
-              )
-              .toList();
+            // ✅ Parse paymentDate safely
+            DateTime paymentDate;
+            if (paymentsData['paymentDate'] != null) {
+              try {
+                if (paymentsData['paymentDate'] is String) {
+                  paymentDate = DateTime.parse(paymentsData['paymentDate']);
+                } else {
+                  paymentDate = DateTime.now();
+                }
+              } catch (e) {
+                paymentDate = DateTime.now();
+              }
+            } else {
+              paymentDate = DateTime.now();
+            }
 
-          StudentPayment? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (paymentsData['syncStatus'] != null) {
+              if (paymentsData['syncStatus'] is int) {
+                syncStatus = paymentsData['syncStatus'] == 1;
+              } else if (paymentsData['syncStatus'] is bool) {
+                syncStatus = paymentsData['syncStatus'];
+              }
+            }
 
-          if (fetchedPayments.receiptNumber != null) {
-            if (existingPurposes != null) {
-              // Update existing record
-              existingPurposes
-                ..id = fetchedPayments.id
-                ..studentName = fetchedPayments.studentName
-                ..studentSurname = fetchedPayments.studentSurname
-                ..studentClass = fetchedPayments.studentClass
-                ..phoneNumber = fetchedPayments.phoneNumber
-                ..paymentPurpose = fetchedPayments.paymentPurpose
-                ..amountToPay = fetchedPayments.amountToPay
-                ..paymentDate = fetchedPayments.paymentDate
-                ..receiptNumber = fetchedPayments.receiptNumber
-                ..termId = fetchedPayments.termId
-                ..username = fetchedPayments.username
-                ..role = fetchedPayments.role
+            // ✅ Handle id mapping
+            int? id;
+            if (paymentsData['id'] != null) {
+              if (paymentsData['id'] is int) {
+                id = paymentsData['id'];
+              } else if (paymentsData['id'] is String) {
+                id = int.tryParse(paymentsData['id']);
+              }
+            }
+            if (id == null && paymentsData['fid'] != null) {
+              if (paymentsData['fid'] is int) {
+                id = paymentsData['fid'];
+              } else if (paymentsData['fid'] is String) {
+                id = int.tryParse(paymentsData['fid']);
+              }
+            }
+
+            // ✅ Parse amountToPay safely
+            double amountToPay = 0.0;
+            if (paymentsData['amountToPay'] != null) {
+              if (paymentsData['amountToPay'] is double) {
+                amountToPay = paymentsData['amountToPay'];
+              } else if (paymentsData['amountToPay'] is int) {
+                amountToPay = paymentsData['amountToPay'].toDouble();
+              } else if (paymentsData['amountToPay'] is String) {
+                amountToPay =
+                    double.tryParse(paymentsData['amountToPay']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse paymentMethodAmount safely
+            double paymentMethodAmount = 0.0;
+            if (paymentsData['paymentMethodAmount'] != null) {
+              if (paymentsData['paymentMethodAmount'] is double) {
+                paymentMethodAmount = paymentsData['paymentMethodAmount'];
+              } else if (paymentsData['paymentMethodAmount'] is int) {
+                paymentMethodAmount =
+                    paymentsData['paymentMethodAmount'].toDouble();
+              } else if (paymentsData['paymentMethodAmount'] is String) {
+                paymentMethodAmount =
+                    double.tryParse(paymentsData['paymentMethodAmount']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse changeGiven safely
+            double changeGiven = 0.0;
+            if (paymentsData['changeGiven'] != null) {
+              if (paymentsData['changeGiven'] is double) {
+                changeGiven = paymentsData['changeGiven'];
+              } else if (paymentsData['changeGiven'] is int) {
+                changeGiven = paymentsData['changeGiven'].toDouble();
+              } else if (paymentsData['changeGiven'] is String) {
+                changeGiven =
+                    double.tryParse(paymentsData['changeGiven']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (paymentsData['lastModified'] != null) {
+              try {
+                if (paymentsData['lastModified'] is String) {
+                  lastModified = DateTime.parse(paymentsData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            StudentPayment fetchedPayment = StudentPayment(
+              id: id ?? 0,
+              studentName: paymentsData['studentName']?.toString() ?? '',
+              studentSurname: paymentsData['studentSurname']?.toString() ?? '',
+              studentClass: paymentsData['studentClass']?.toString() ?? '',
+              studentRegNumber: paymentsData['studentRegNumber']?.toString(),
+              phoneNumber: paymentsData['phoneNumber']?.toString() ?? '',
+              paymentPurpose: paymentsData['paymentPurpose']?.toString() ?? '',
+              amountToPay: amountToPay,
+              paymentDate: paymentDate,
+              receiptNumber: paymentsData['receiptNumber']?.toString() ?? '',
+              termId: paymentsData['termId']?.toString(),
+              username: paymentsData['username']?.toString(),
+              role: paymentsData['role']?.toString(),
+              paymentMethodType:
+                  paymentsData['paymentMethodType']?.toString() ?? 'cash',
+              paymentMethodAmount: paymentMethodAmount,
+              paymentReference:
+                  paymentsData['paymentReference']?.toString() ?? '',
+              mobileMoneyPhone:
+                  paymentsData['mobileMoneyPhone']?.toString() ?? '',
+              mobileMoneyProvider:
+                  paymentsData['mobileMoneyProvider']?.toString() ?? '',
+              bankAccountNumber:
+                  paymentsData['bankAccountNumber']?.toString() ?? '',
+              bankAccountName:
+                  paymentsData['bankAccountName']?.toString() ?? '',
+              changeGiven: changeGiven,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if payment exists in Hive
+            var existingPaymentList = _student_paymentsBox!.values
+                .where((payment) =>
+                    payment.receiptNumber == fetchedPayment.receiptNumber)
+                .toList();
+
+            if (existingPaymentList.isNotEmpty) {
+              // Update existing payment
+              var existingPayment = existingPaymentList.first;
+              existingPayment
+                ..id = fetchedPayment.id
+                ..studentName = fetchedPayment.studentName
+                ..studentSurname = fetchedPayment.studentSurname
+                ..studentClass = fetchedPayment.studentClass
+                ..studentRegNumber = fetchedPayment.studentRegNumber
+                ..phoneNumber = fetchedPayment.phoneNumber
+                ..paymentPurpose = fetchedPayment.paymentPurpose
+                ..amountToPay = fetchedPayment.amountToPay
+                ..paymentDate = fetchedPayment.paymentDate
+                ..receiptNumber = fetchedPayment.receiptNumber
+                ..termId = fetchedPayment.termId
+                ..username = fetchedPayment.username
+                ..role = fetchedPayment.role
+                ..paymentMethodType = fetchedPayment.paymentMethodType
+                ..paymentMethodAmount = fetchedPayment.paymentMethodAmount
+                ..paymentReference = fetchedPayment.paymentReference
+                ..mobileMoneyPhone = fetchedPayment.mobileMoneyPhone
+                ..mobileMoneyProvider = fetchedPayment.mobileMoneyProvider
+                ..bankAccountNumber = fetchedPayment.bankAccountNumber
+                ..bankAccountName = fetchedPayment.bankAccountName
+                ..changeGiven = fetchedPayment.changeGiven
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
-              await existingPurposes.save();
+
+              await existingPayment.save();
               print(
-                  'StudentPayment ${fetchedPayments.receiptNumber} updated successfully in Hive.');
+                  'StudentPayment ${fetchedPayment.receiptNumber} updated in Hive.');
             } else {
-              // Create a new record
-              await _student_paymentsBox!.add(fetchedPayments);
+              // Create new payment
+              await _student_paymentsBox!.add(fetchedPayment);
               print(
-                  'StudentPayment ${fetchedPayments.receiptNumber} added successfully to Hive.');
+                  'StudentPayment ${fetchedPayment.receiptNumber} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other StudentPayment Record Was Found with no Receipt Numbers and was Skipped.'),
-            ));
+          } catch (error, stack) {
+            print('❌ Error processing payment record:');
+            print('Data: ${paymentsData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Synced ${studentPayments.length} payments from server')));
       } else {
         throw Exception(
-            'Failed to fetch StudentPayment from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch payments. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching or syncing StudentPayment: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing payments: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5399,146 +7856,219 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     return null;
   }
 
+  // PULL Students from server
   Future<void> _fetchAndSyncStudents() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         List<dynamic> students = jsonDecode(response.body);
 
-        for (var studentsData in students) {
+        if (students.isEmpty) {
+          print('No students found on server');
+          return;
+        }
+
+        for (var studentData in students) {
           try {
-            Student fetchedStudents = Student(
-              id: int.tryParse(studentsData['fid']?.toString() ?? '0'),
-              name: studentsData['name'] ?? '', // fallback
-              surname: studentsData['surname'] ?? '', // fallback
-              regNumber: studentsData['regNumber'] ?? '', // fallback
-              class_: studentsData['class'] ?? '', // fallback
-              gender: studentsData['gender'] ?? '',
-
-              age: DateTime.tryParse(studentsData['age']?.toString() ?? '') ??
-                  DateTime(1900),
-              phoneNumber: studentsData['phoneNumber'] ?? '',
-              paymentStatus: studentsData['paymentStatus'] ?? '',
-
-              isPresent: studentsData['isPresent'] ?? false,
-              presentDates: _parseDateList(studentsData['presentDates']),
-              absentDates: _parseDateList(studentsData['absentDates']),
-              termId: studentsData['termId'] ?? '',
-
-              physicalAddress: studentsData['physicalAddress'] ?? '',
-              formerSchool: studentsData['formerSchool'] ?? '',
-              religion: studentsData['religion'] ?? '',
-              denomination: studentsData['denomination'] ?? '',
-
-              studentIdNumber: studentsData['studentIdNumber'] ?? '',
-              nationalIdNumber: studentsData['nationalIdNumber'] ?? '',
-              nationality: studentsData['nationality'] ?? '',
-              district: studentsData['district'] ?? '',
-              previousSchoolPerformanceResults:
-                  studentsData['previousSchoolPerformanceResults'] ?? '',
-              enrollmentStatus: studentsData['enrollmentStatus'] ?? '',
-              emergencyContactName: studentsData['emergencyContactName'] ?? '',
-              emergencyContactNumber:
-                  studentsData['emergencyContactNumber'] ?? '',
-              terms: _decodeToList(studentsData['terms']),
-              isNewComer: _parseBool(studentsData['isNewComer']),
-              isNewComerFrom:
-                  DateTime.tryParse(studentsData['isNewComerFrom'] ?? '') ??
-                      null,
-              isNewComerUntil:
-                  DateTime.tryParse(studentsData['isNewComerUntil'] ?? '') ??
-                      null,
-              exceptions: studentsData['exceptions'] != null
-                  ? _decodeExceptions(studentsData['exceptions'])
-                  : null,
-            );
-
-            // Proceed with save/update...
-            var existingStudentsList = _studentsBox!.values
-                .where((students) =>
-                    students.studentIdNumber == fetchedStudents.studentIdNumber)
-                .toList();
-
-            Student? existingStudents = existingStudentsList.isNotEmpty
-                ? existingStudentsList.first
-                : null;
-
-            if (fetchedStudents.studentIdNumber != null &&
-                fetchedStudents.studentIdNumber!.isNotEmpty) {
-              if (existingStudents != null) {
-                existingStudents
-                  ..name = fetchedStudents.name
-                  ..surname = fetchedStudents.surname
-                  ..regNumber = fetchedStudents.regNumber
-                  ..class_ = fetchedStudents.class_
-                  ..gender = fetchedStudents.gender
-                  ..termId = fetchedStudents.termId
-                  ..age = fetchedStudents.age
-                  ..phoneNumber = fetchedStudents.phoneNumber
-                  ..paymentStatus = fetchedStudents.paymentStatus
-                  ..isPresent = fetchedStudents.isPresent
-                  ..presentDates = fetchedStudents.presentDates
-                  ..absentDates = fetchedStudents.absentDates
-                  ..id = fetchedStudents.id
-                  ..physicalAddress = fetchedStudents.physicalAddress
-                  ..formerSchool = fetchedStudents.formerSchool
-                  ..religion = fetchedStudents.religion
-                  ..denomination = fetchedStudents.denomination
-                  ..studentIdNumber = fetchedStudents.studentIdNumber
-                  ..nationalIdNumber = fetchedStudents.nationalIdNumber
-                  ..nationality = fetchedStudents.nationality
-                  ..district = fetchedStudents.district
-                  ..previousSchoolPerformanceResults =
-                      fetchedStudents.previousSchoolPerformanceResults
-                  ..enrollmentStatus = fetchedStudents.enrollmentStatus
-                  ..emergencyContactName = fetchedStudents.emergencyContactName
-                  ..emergencyContactNumber =
-                      fetchedStudents.emergencyContactNumber
-                  ..syncStatus = true
-                  ..operationType = 'none'
-                  ..lastModified = DateTime.now()
-                  ..terms = fetchedStudents.terms
-                  ..isNewComer = fetchedStudents.isNewComer
-                  ..isNewComerFrom = fetchedStudents.isNewComerFrom
-                  ..isNewComerUntil = fetchedStudents.isNewComerUntil
-                  ..exceptions = fetchedStudents.exceptions;
-
-                await existingStudents.save();
-                print(
-                    'Student ${fetchedStudents.studentIdNumber} updated successfully in Hive.');
-              } else {
-                await _studentsBox!.add(fetchedStudents);
-                print(
-                    'Student ${fetchedStudents.studentIdNumber} added successfully to Hive.');
+            // ✅ Parse age from date string to DateTime
+            DateTime age;
+            if (studentData['age'] != null) {
+              try {
+                age = DateTime.parse(studentData['age']);
+              } catch (e) {
+                age = DateTime.now();
               }
             } else {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text(
-                    'Other Student Record was Found with no Student Reg Number and was Skipped.'),
-              ));
+              age = DateTime.now();
+            }
+
+            // ✅ Convert isPresent from int to bool
+            bool isPresent = true;
+            if (studentData['isPresent'] != null) {
+              if (studentData['isPresent'] is int) {
+                isPresent = studentData['isPresent'] == 1;
+              } else if (studentData['isPresent'] is bool) {
+                isPresent = studentData['isPresent'];
+              }
+            }
+
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (studentData['syncStatus'] != null) {
+              if (studentData['syncStatus'] is int) {
+                syncStatus = studentData['syncStatus'] == 1;
+              } else if (studentData['syncStatus'] is bool) {
+                syncStatus = studentData['syncStatus'];
+              }
+            }
+
+            // ✅ Convert isNewComer from int to bool
+            bool isNewComer = false;
+            if (studentData['isNewComer'] != null) {
+              if (studentData['isNewComer'] is int) {
+                isNewComer = studentData['isNewComer'] == 1;
+              } else if (studentData['isNewComer'] is bool) {
+                isNewComer = studentData['isNewComer'];
+              }
+            }
+
+            // ✅ Handle id mapping
+            int? id;
+            if (studentData['id'] != null) {
+              id = studentData['id'] is int
+                  ? studentData['id']
+                  : int.tryParse(studentData['id'].toString());
+            } else if (studentData['fid'] != null) {
+              id = studentData['fid'] is int
+                  ? studentData['fid']
+                  : int.tryParse(studentData['fid'].toString());
+            }
+
+            // ✅ Parse date lists
+            List<DateTime> presentDates =
+                _parseDateList(studentData['presentDates']);
+            List<DateTime> absentDates =
+                _parseDateList(studentData['absentDates']);
+
+            // ✅ Parse terms
+            List<String> terms = _decodeToList(studentData['terms']);
+
+            // ✅ Parse exceptions
+            List<ExceptionalStudents>? exceptions;
+            if (studentData['exceptions'] != null) {
+              exceptions = _decodeExceptions(studentData['exceptions']);
+            }
+
+            Student fetchedStudent = Student(
+              id: id ?? 0,
+              name: studentData['name'] ?? '',
+              surname: studentData['surname'] ?? '',
+              regNumber: studentData['regNumber'] ?? '',
+              class_: studentData['class'] ?? studentData['class_'] ?? '',
+              gender: studentData['gender'] ?? '',
+              age: age,
+              phoneNumber: studentData['phoneNumber'] ?? '',
+              paymentStatus: studentData['paymentStatus'] ?? '',
+              isPresent: isPresent,
+              presentDates: presentDates,
+              absentDates: absentDates,
+              termId: studentData['termId'],
+              physicalAddress: studentData['physicalAddress'],
+              formerSchool: studentData['formerSchool'],
+              religion: studentData['religion'],
+              denomination: studentData['denomination'],
+              studentIdNumber: studentData['studentIdNumber'] ?? '',
+              nationalIdNumber: studentData['nationalIdNumber'],
+              nationality: studentData['nationality'],
+              district: studentData['district'],
+              previousSchoolPerformanceResults:
+                  studentData['previousSchoolPerformanceResults'],
+              enrollmentStatus: studentData['enrollmentStatus'],
+              emergencyContactName: studentData['emergencyContactName'],
+              emergencyContactNumber: studentData['emergencyContactNumber'],
+              healthStauts: studentData[
+                  'healthStatus'], // ✅ Map from healthStatus to healthStauts
+              healthDetailedInformation:
+                  studentData['healthDetailedInformation'],
+              terms: terms,
+              exceptions: exceptions,
+              isNewComer: isNewComer,
+              isNewComerFrom: studentData['isNewComerFrom'] != null
+                  ? DateTime.tryParse(studentData['isNewComerFrom'])
+                  : null,
+              isNewComerUntil: studentData['isNewComerUntil'] != null
+                  ? DateTime.tryParse(studentData['isNewComerUntil'])
+                  : null,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: studentData['lastModified'] != null
+                  ? DateTime.tryParse(studentData['lastModified'])
+                  : DateTime.now(),
+              modifiedFields: [],
+            );
+
+            // Check if student exists in Hive
+            var existingStudentsList = _studentsBox!.values
+                .where((student) =>
+                    student.studentIdNumber == fetchedStudent.studentIdNumber)
+                .toList();
+
+            if (existingStudentsList.isNotEmpty) {
+              // Update existing student
+              var existingStudent = existingStudentsList.first;
+              existingStudent
+                ..id = fetchedStudent.id
+                ..name = fetchedStudent.name
+                ..surname = fetchedStudent.surname
+                ..regNumber = fetchedStudent.regNumber
+                ..class_ = fetchedStudent.class_
+                ..gender = fetchedStudent.gender
+                ..age = fetchedStudent.age
+                ..phoneNumber = fetchedStudent.phoneNumber
+                ..paymentStatus = fetchedStudent.paymentStatus
+                ..isPresent = fetchedStudent.isPresent
+                ..presentDates = fetchedStudent.presentDates
+                ..absentDates = fetchedStudent.absentDates
+                ..termId = fetchedStudent.termId
+                ..physicalAddress = fetchedStudent.physicalAddress
+                ..formerSchool = fetchedStudent.formerSchool
+                ..religion = fetchedStudent.religion
+                ..denomination = fetchedStudent.denomination
+                ..studentIdNumber = fetchedStudent.studentIdNumber
+                ..nationalIdNumber = fetchedStudent.nationalIdNumber
+                ..nationality = fetchedStudent.nationality
+                ..district = fetchedStudent.district
+                ..previousSchoolPerformanceResults =
+                    fetchedStudent.previousSchoolPerformanceResults
+                ..enrollmentStatus = fetchedStudent.enrollmentStatus
+                ..emergencyContactName = fetchedStudent.emergencyContactName
+                ..emergencyContactNumber = fetchedStudent.emergencyContactNumber
+                ..healthStauts = fetchedStudent.healthStauts
+                ..healthDetailedInformation =
+                    fetchedStudent.healthDetailedInformation
+                ..terms = fetchedStudent.terms
+                ..exceptions = fetchedStudent.exceptions
+                ..isNewComer = fetchedStudent.isNewComer
+                ..isNewComerFrom = fetchedStudent.isNewComerFrom
+                ..isNewComerUntil = fetchedStudent.isNewComerUntil
+                ..syncStatus = true
+                ..operationType = 'none'
+                ..lastModified = DateTime.now();
+
+              await existingStudent.save();
+              print(
+                  'Student ${fetchedStudent.studentIdNumber} updated in Hive.');
+            } else {
+              // Create new student
+              await _studentsBox!.add(fetchedStudent);
+              print('Student ${fetchedStudent.studentIdNumber} added to Hive.');
             }
           } catch (error, stack) {
-            // Here we pinpoint the error:
-            debugPrint(
-              '❌ Error processing student record:\n'
-              'Data: ${studentsData.toString()}\n'
-              'Error: $error\n'
-              'Stack Trace: $stack',
-            );
+            debugPrint('❌ Error processing student record:\n'
+                'Data: ${studentData.toString()}\n'
+                'Error: $error\n'
+                'Stack Trace: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${students.length} students from server')));
       } else {
         throw Exception(
-            'Failed to fetch students from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch students. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching or syncing students: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing students: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5556,12 +8086,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //================================pull teacherPayments =======================================================================//
 
+// PULL TeacherPayments from server
   Future<void> _fetchAndSyncTeacherPayments() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
@@ -5583,67 +8116,154 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var paymentsData in teacherPayments) {
-          TeacherPayment fetchedPayments = TeacherPayment(
-            id: int.tryParse(paymentsData['fid'] ?? '0') ?? 0,
-            studentName: paymentsData['studentName'] ?? '',
-            studentSurname: paymentsData['studentSurname'] ?? '',
-            studentClass: paymentsData['studentClass'] ?? '',
-            phoneNumber: paymentsData['phoneNumber'] ?? '',
-            paymentPurpose: paymentsData['paymentPurpose'] ?? '',
-            amountToPay: paymentsData['amountToPay'] != null
-                ? double.tryParse(paymentsData['amountToPay'].toString()) ?? 0.0
-                : 0.0,
-            paymentDate: DateTime.tryParse(paymentsData['paymentDate']) ??
-                DateTime.now(),
-            receiptNumber: paymentsData['receiptNumber'],
-            termId: paymentsData['termId'],
-          );
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (paymentsData['syncStatus'] != null) {
+              if (paymentsData['syncStatus'] is int) {
+                syncStatus = paymentsData['syncStatus'] == 1;
+              } else if (paymentsData['syncStatus'] is bool) {
+                syncStatus = paymentsData['syncStatus'];
+              }
+            }
 
-          var existingPurposeList = _teacher_paymentsBox!.values
-              .where(
-                (teacherPayments) =>
-                    teacherPayments.receiptNumber ==
-                    fetchedPayments.receiptNumber,
-              )
-              .toList();
+            // ✅ Handle id mapping
+            int? id;
+            if (paymentsData['id'] != null) {
+              if (paymentsData['id'] is int) {
+                id = paymentsData['id'];
+              } else if (paymentsData['id'] is String) {
+                id = int.tryParse(paymentsData['id']);
+              }
+            }
+            if (id == null && paymentsData['fid'] != null) {
+              if (paymentsData['fid'] is int) {
+                id = paymentsData['fid'];
+              } else if (paymentsData['fid'] is String) {
+                id = int.tryParse(paymentsData['fid']);
+              }
+            }
 
-          TeacherPayment? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
+            // ✅ Parse amountToPay
+            double amountToPay = 0.0;
+            if (paymentsData['amountToPay'] != null) {
+              if (paymentsData['amountToPay'] is double) {
+                amountToPay = paymentsData['amountToPay'];
+              } else if (paymentsData['amountToPay'] is int) {
+                amountToPay = paymentsData['amountToPay'].toDouble();
+              } else if (paymentsData['amountToPay'] is String) {
+                amountToPay =
+                    double.tryParse(paymentsData['amountToPay']) ?? 0.0;
+              }
+            }
 
-          if (fetchedPayments.receiptNumber != null) {
-            if (existingPurposes != null) {
-              existingPurposes
-                ..id = fetchedPayments.id
-                ..studentName = fetchedPayments.studentName
-                ..studentSurname = fetchedPayments.studentSurname
-                ..studentClass = fetchedPayments.studentClass
-                ..phoneNumber = fetchedPayments.phoneNumber
-                ..paymentPurpose = fetchedPayments.paymentPurpose
-                ..amountToPay = fetchedPayments.amountToPay
-                ..paymentDate = fetchedPayments.paymentDate
-                ..receiptNumber = fetchedPayments.receiptNumber
-                ..termId = fetchedPayments.termId
+            // ✅ Parse paymentDate
+            DateTime paymentDate;
+            if (paymentsData['paymentDate'] != null) {
+              try {
+                if (paymentsData['paymentDate'] is String) {
+                  paymentDate = DateTime.parse(paymentsData['paymentDate']);
+                } else {
+                  paymentDate = DateTime.now();
+                }
+              } catch (e) {
+                paymentDate = DateTime.now();
+              }
+            } else {
+              paymentDate = DateTime.now();
+            }
+
+            // ✅ Parse receiptNumber - could be int or String
+            String? receiptNumber;
+            if (paymentsData['receiptNumber'] != null) {
+              if (paymentsData['receiptNumber'] is String) {
+                receiptNumber = paymentsData['receiptNumber'];
+              } else if (paymentsData['receiptNumber'] is int) {
+                receiptNumber = paymentsData['receiptNumber'].toString();
+              }
+            }
+
+            // ✅ Parse associatedStaff
+            List<String> associatedStaff =
+                _decodeToList(paymentsData['associatedStaff']);
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (paymentsData['lastModified'] != null) {
+              try {
+                if (paymentsData['lastModified'] is String) {
+                  lastModified = DateTime.parse(paymentsData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            TeacherPayment fetchedPayment = TeacherPayment(
+              id: id ?? 0,
+              receiptNumber: receiptNumber ??
+                  'TCH_PAY_${DateTime.now().millisecondsSinceEpoch}',
+              studentName: paymentsData['studentName']?.toString() ?? '',
+              studentSurname: paymentsData['studentSurname']?.toString() ?? '',
+              studentClass: paymentsData['studentClass']?.toString() ?? '',
+              phoneNumber: paymentsData['phoneNumber']?.toString() ?? '',
+              paymentPurpose: paymentsData['paymentPurpose']?.toString() ?? '',
+              amountToPay: amountToPay,
+              paymentDate: paymentDate,
+              termId: paymentsData['termId']?.toString(),
+              associatedStaff: associatedStaff,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if payment exists in Hive
+            var existingPaymentList = _teacher_paymentsBox!.values
+                .where((payment) =>
+                    payment.receiptNumber == fetchedPayment.receiptNumber)
+                .toList();
+
+            TeacherPayment? existingPayment = existingPaymentList.isNotEmpty
+                ? existingPaymentList.first
+                : null;
+
+            if (existingPayment != null) {
+              // Update existing payment
+              existingPayment
+                ..id = fetchedPayment.id
+                ..receiptNumber = fetchedPayment.receiptNumber
+                ..studentName = fetchedPayment.studentName
+                ..studentSurname = fetchedPayment.studentSurname
+                ..studentClass = fetchedPayment.studentClass
+                ..phoneNumber = fetchedPayment.phoneNumber
+                ..paymentPurpose = fetchedPayment.paymentPurpose
+                ..amountToPay = fetchedPayment.amountToPay
+                ..paymentDate = fetchedPayment.paymentDate
+                ..termId = fetchedPayment.termId
+                ..associatedStaff = fetchedPayment.associatedStaff
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
-              await existingPurposes.save();
+
+              await existingPayment.save();
               debugPrint(
-                  'TeacherPayment ${fetchedPayments.receiptNumber} updated successfully in Hive.');
+                  'TeacherPayment ${fetchedPayment.receiptNumber} updated in Hive.');
             } else {
-              await _teacher_paymentsBox!.add(fetchedPayments);
+              await _teacher_paymentsBox!.add(fetchedPayment);
               debugPrint(
-                  'TeacherPayment ${fetchedPayments.receiptNumber} added successfully to Hive.');
+                  'TeacherPayment ${fetchedPayment.receiptNumber} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff Payment Record was found with no Receipt Number and was skipped.'),
-            ));
+          } catch (error, stack) {
+            debugPrint('❌ Error processing teacher payment:');
+            debugPrint('Data: ${paymentsData.toString()}');
+            debugPrint('Error: $error');
+            debugPrint('Stack: $stack');
           }
         }
       } else {
         throw Exception(
-            'Failed to fetch TeacherPayment from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch teacher payments. Status: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('Error fetching or syncing TeacherPayment: $e');
@@ -5653,99 +8273,168 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-
 //================================pull _fetchAndSyncTeacherPurposes =======================================================================//
 
   Future<void> _fetchAndSyncTeacherPurposes() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseBody = response.body.trim();
+        final decoded = jsonDecode(response.body);
 
-        if (responseBody.isEmpty) {
-          debugPrint(
-              'Warning: TeacherPaymentPurposes API returned an empty response.');
+        List<dynamic> purposes;
+        if (decoded is List) {
+          purposes = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
           return;
         }
 
-        List<dynamic> teacherPurposes;
-        try {
-          teacherPurposes = jsonDecode(responseBody);
-        } catch (e) {
-          debugPrint('Error decoding TeacherPaymentPurposes JSON: $e');
+        if (purposes.isEmpty) {
+          print('No teacher payment purposes found on server');
           return;
         }
 
-        for (var teacherPurposeData in teacherPurposes) {
-          TeacherPaymentsPurposes fetchedTeacherPurpose =
-              TeacherPaymentsPurposes(
-            id: int.tryParse(teacherPurposeData['fid'] ?? '0') ?? 0,
-            paymentPurpose: teacherPurposeData['paymentPurpose'] ?? '',
-            purposeAmount: teacherPurposeData['purposeAmount'] != null
-                ? double.tryParse(
-                        teacherPurposeData['purposeAmount'].toString()) ??
-                    0.0
-                : 0.0,
-            purposeCode: teacherPurposeData['purposeCode'],
-            associatedStaff:
-                _decodeToList(teacherPurposeData['associatedStaff']),
-            termId: teacherPurposeData['termId'],
-          );
+        for (var purposeData in purposes) {
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (purposeData['syncStatus'] != null) {
+              if (purposeData['syncStatus'] is int) {
+                syncStatus = purposeData['syncStatus'] == 1;
+              } else if (purposeData['syncStatus'] is bool) {
+                syncStatus = purposeData['syncStatus'];
+              }
+            }
 
-          var existingTeacherPurposeList = _teacher_payments_purposesBox!.values
-              .where(
-                (teacherPurposes) =>
-                    teacherPurposes.purposeCode ==
-                    fetchedTeacherPurpose.purposeCode,
-              )
-              .toList();
+            // ✅ Parse associatedStaff
+            List<String> associatedStaff =
+                _decodeToList(purposeData['associatedStaff']);
 
-          TeacherPaymentsPurposes? existingTeacherPurposes =
-              existingTeacherPurposeList.isNotEmpty
-                  ? existingTeacherPurposeList.first
-                  : null;
+            // ✅ Handle id mapping
+            int? id;
+            if (purposeData['id'] != null) {
+              if (purposeData['id'] is int) {
+                id = purposeData['id'];
+              } else if (purposeData['id'] is String) {
+                id = int.tryParse(purposeData['id']);
+              }
+            }
+            if (id == null && purposeData['fid'] != null) {
+              if (purposeData['fid'] is int) {
+                id = purposeData['fid'];
+              } else if (purposeData['fid'] is String) {
+                id = int.tryParse(purposeData['fid']);
+              }
+            }
 
-          if (fetchedTeacherPurpose.purposeCode != null) {
-            if (existingTeacherPurposes != null) {
-              existingTeacherPurposes
-                ..id = fetchedTeacherPurpose.id
-                ..purposeCode = fetchedTeacherPurpose.purposeCode
-                ..paymentPurpose = fetchedTeacherPurpose.paymentPurpose
-                ..purposeAmount = fetchedTeacherPurpose.purposeAmount
-                ..associatedStaff = fetchedTeacherPurpose.associatedStaff
-                ..termId = fetchedTeacherPurpose.termId
+            // ✅ Parse purposeAmount
+            double purposeAmount = 0.0;
+            if (purposeData['purposeAmount'] != null) {
+              if (purposeData['purposeAmount'] is double) {
+                purposeAmount = purposeData['purposeAmount'];
+              } else if (purposeData['purposeAmount'] is int) {
+                purposeAmount = purposeData['purposeAmount'].toDouble();
+              } else if (purposeData['purposeAmount'] is String) {
+                purposeAmount =
+                    double.tryParse(purposeData['purposeAmount']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse purposeCode - could be int or String
+            String? purposeCode;
+            if (purposeData['purposeCode'] != null) {
+              if (purposeData['purposeCode'] is String) {
+                purposeCode = purposeData['purposeCode'];
+              } else if (purposeData['purposeCode'] is int) {
+                purposeCode = purposeData['purposeCode'].toString();
+              }
+            }
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (purposeData['lastModified'] != null) {
+              try {
+                if (purposeData['lastModified'] is String) {
+                  lastModified = DateTime.parse(purposeData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            TeacherPaymentsPurposes fetchedPurpose = TeacherPaymentsPurposes(
+              id: id ?? 0,
+              purposeCode: purposeCode ??
+                  'PURP_${DateTime.now().millisecondsSinceEpoch}',
+              paymentPurpose: purposeData['paymentPurpose']?.toString() ?? '',
+              purposeAmount: purposeAmount,
+              termId: purposeData['termId']?.toString(),
+              associatedStaff: associatedStaff,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if purpose exists in Hive
+            var existingPurposeList = _teacher_payments_purposesBox!.values
+                .where((purpose) =>
+                    purpose.purposeCode == fetchedPurpose.purposeCode)
+                .toList();
+
+            if (existingPurposeList.isNotEmpty) {
+              // Update existing purpose
+              var existingPurpose = existingPurposeList.first;
+              existingPurpose
+                ..id = fetchedPurpose.id
+                ..purposeCode = fetchedPurpose.purposeCode
+                ..paymentPurpose = fetchedPurpose.paymentPurpose
+                ..purposeAmount = fetchedPurpose.purposeAmount
+                ..termId = fetchedPurpose.termId
+                ..associatedStaff = fetchedPurpose.associatedStaff
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
 
-              await existingTeacherPurposes.save();
-              debugPrint(
-                  'TeacherPaymentsPurposes ${fetchedTeacherPurpose.purposeCode} updated successfully in Hive.');
+              await existingPurpose.save();
+              print(
+                  'TeacherPaymentPurpose ${fetchedPurpose.purposeCode} updated in Hive.');
             } else {
-              await _teacher_payments_purposesBox!.add(fetchedTeacherPurpose);
-              debugPrint(
-                  'TeacherPaymentsPurposes ${fetchedTeacherPurpose.purposeCode} added successfully to Hive.');
+              // Create new purpose
+              await _teacher_payments_purposesBox!.add(fetchedPurpose);
+              print(
+                  'TeacherPaymentPurpose ${fetchedPurpose.purposeCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff Payment Purpose Record Was Found with no purposeCode and was Skipped.'),
-            ));
+          } catch (error, stack) {
+            print('❌ Error processing teacher payment purpose:');
+            print('Data: ${purposeData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Synced ${purposes.length} teacher payment purposes from server')));
       } else {
         throw Exception(
-          'Failed to fetch TeacherPaymentsPurposes from the server. Status Code: ${response.statusCode}',
-        );
+            'Failed to fetch teacher payment purposes. Status: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error fetching or syncing TeacherPaymentsPurposes: $e');
+      print('Error fetching or syncing TeacherPaymentPurpose: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error syncing teacher payment purposes: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5758,9 +8447,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Future<void> _fetchAndSyncTeachers() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
 
@@ -5782,71 +8473,210 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var teachersData in teachers) {
-          Teachers fetchedTeachers = Teachers(
-              id: int.tryParse(teachersData['fid'] ?? '0') ?? 0,
-              name: teachersData['name'] ?? '',
-              surname: teachersData['surname'] ?? '',
-              IdNumber: teachersData['IdNumber'],
-              assignedClass: teachersData['assignedClass'] ?? '',
-              assignedClasses: _decodeToList(teachersData['assignedClasses']),
-              gender: teachersData['gender'] ?? '',
-              dateOfBirth: DateTime.tryParse(teachersData['dateOfBirth']) ??
-                  DateTime.now(),
-              phoneNumber: teachersData['phoneNumber'] ?? '',
-              paymentPurpose: teachersData['paymentPurpose'] ?? '',
-              isPaid: teachersData['isPaid'],
-              paymentAmount: teachersData['paymentAmount'] != null
-                  ? double.tryParse(teachersData['paymentAmount'].toString()) ??
-                      0.0
-                  : 0.0,
-              paymentDate: teachersData['paymentDate'] != null
-                  ? DateTime.tryParse(teachersData['paymentDate'])
-                  : null,
-              email: teachersData['email'] ?? '',
-              address: teachersData['address'] ?? '',
-              hireDate:
-                  DateTime.tryParse(teachersData['hireDate']) ?? DateTime(1900),
-              qualifications: teachersData['qualifications'] ?? '',
-              employmentStatus: teachersData['employmentStatus'] ?? '',
-              termId: teachersData['termId'],
-              terms: _decodeToList(teachersData['terms']));
+          try {
+            // ✅ FIX: Safely convert all values with proper type handling
 
-          // Check if the record exists in Hive using IdNumber
-          var existingTeachersList = _teachersBox!.values
-              .where(
-                  (teachers) => teachers.IdNumber == fetchedTeachers.IdNumber)
-              .toList();
+            // ✅ Handle IdNumber - could be String or int
+            String? IdNumber;
+            if (teachersData['IdNumber'] != null) {
+              if (teachersData['IdNumber'] is String) {
+                IdNumber = teachersData['IdNumber'];
+              } else if (teachersData['IdNumber'] is int) {
+                IdNumber = teachersData['IdNumber'].toString();
+              } else if (teachersData['IdNumber'] is double) {
+                IdNumber = teachersData['IdNumber'].toString();
+              }
+            }
 
-          Teachers? existingTeachers = existingTeachersList.isNotEmpty
-              ? existingTeachersList.first
-              : null;
+            // Skip if no IdNumber
+            if (IdNumber == null || IdNumber.isEmpty) {
+              debugPrint('Skipping teacher with no IdNumber');
+              continue;
+            }
 
-          if (fetchedTeachers.IdNumber != null) {
+            // ✅ Handle id/fid mapping
+            int? id;
+            if (teachersData['id'] != null) {
+              if (teachersData['id'] is int) {
+                id = teachersData['id'];
+              } else if (teachersData['id'] is String) {
+                id = int.tryParse(teachersData['id']);
+              }
+            }
+            if (id == null && teachersData['fid'] != null) {
+              if (teachersData['fid'] is int) {
+                id = teachersData['fid'];
+              } else if (teachersData['fid'] is String) {
+                id = int.tryParse(teachersData['fid']);
+              }
+            }
+
+            // ✅ Convert isPaid from int to bool
+            bool isPaid = true;
+            if (teachersData['isPaid'] != null) {
+              if (teachersData['isPaid'] is int) {
+                isPaid = teachersData['isPaid'] == 1;
+              } else if (teachersData['isPaid'] is bool) {
+                isPaid = teachersData['isPaid'];
+              } else if (teachersData['isPaid'] is String) {
+                isPaid = teachersData['isPaid'] == '1' ||
+                    teachersData['isPaid'].toLowerCase() == 'true';
+              }
+            }
+
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (teachersData['syncStatus'] != null) {
+              if (teachersData['syncStatus'] is int) {
+                syncStatus = teachersData['syncStatus'] == 1;
+              } else if (teachersData['syncStatus'] is bool) {
+                syncStatus = teachersData['syncStatus'];
+              } else if (teachersData['syncStatus'] is String) {
+                syncStatus = teachersData['syncStatus'] == '1' ||
+                    teachersData['syncStatus'].toLowerCase() == 'true';
+              }
+            }
+
+            // ✅ Parse dateOfBirth
+            DateTime dateOfBirth;
+            if (teachersData['dateOfBirth'] != null) {
+              try {
+                if (teachersData['dateOfBirth'] is String) {
+                  dateOfBirth = DateTime.parse(teachersData['dateOfBirth']);
+                } else {
+                  dateOfBirth = DateTime.now();
+                }
+              } catch (e) {
+                dateOfBirth = DateTime.now();
+              }
+            } else {
+              dateOfBirth = DateTime.now();
+            }
+
+            // ✅ Parse hireDate
+            DateTime hireDate;
+            if (teachersData['hireDate'] != null) {
+              try {
+                if (teachersData['hireDate'] is String) {
+                  hireDate = DateTime.parse(teachersData['hireDate']);
+                } else {
+                  hireDate = DateTime.now();
+                }
+              } catch (e) {
+                hireDate = DateTime.now();
+              }
+            } else {
+              hireDate = DateTime.now();
+            }
+
+            // ✅ Parse paymentDate
+            DateTime? paymentDate;
+            if (teachersData['paymentDate'] != null) {
+              try {
+                if (teachersData['paymentDate'] is String) {
+                  paymentDate = DateTime.parse(teachersData['paymentDate']);
+                }
+              } catch (e) {
+                paymentDate = null;
+              }
+            }
+
+            // ✅ Parse paymentAmount
+            double paymentAmount = 0.0;
+            if (teachersData['paymentAmount'] != null) {
+              if (teachersData['paymentAmount'] is double) {
+                paymentAmount = teachersData['paymentAmount'];
+              } else if (teachersData['paymentAmount'] is int) {
+                paymentAmount = teachersData['paymentAmount'].toDouble();
+              } else if (teachersData['paymentAmount'] is String) {
+                paymentAmount =
+                    double.tryParse(teachersData['paymentAmount']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse assignedClasses
+            List<String> assignedClasses =
+                _decodeToList(teachersData['assignedClasses']);
+
+            // ✅ Parse terms
+            List<String> terms = _decodeToList(teachersData['terms']);
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (teachersData['lastModified'] != null) {
+              try {
+                if (teachersData['lastModified'] is String) {
+                  lastModified = DateTime.parse(teachersData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            Teachers fetchedTeachers = Teachers(
+              id: id ?? 0,
+              IdNumber: IdNumber,
+              name: teachersData['name']?.toString() ?? '',
+              surname: teachersData['surname']?.toString() ?? '',
+              gender: teachersData['gender']?.toString() ?? '',
+              dateOfBirth: dateOfBirth,
+              phoneNumber: teachersData['phoneNumber']?.toString() ?? '',
+              email: teachersData['email']?.toString() ?? '',
+              address: teachersData['address']?.toString() ?? '',
+              hireDate: hireDate,
+              qualifications: teachersData['qualifications']?.toString() ?? '',
+              employmentStatus:
+                  teachersData['employmentStatus']?.toString() ?? '',
+              assignedClass: teachersData['assignedClass']?.toString(),
+              assignedClasses: assignedClasses,
+              paymentPurpose: teachersData['paymentPurpose']?.toString() ?? '',
+              isPaid: isPaid,
+              paymentAmount: paymentAmount,
+              paymentDate: paymentDate,
+              termId: teachersData['termId']?.toString(),
+              terms: terms,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if the record exists in Hive using IdNumber
+            var existingTeachersList = _teachersBox!.values
+                .where(
+                    (teachers) => teachers.IdNumber == fetchedTeachers.IdNumber)
+                .toList();
+
+            Teachers? existingTeachers = existingTeachersList.isNotEmpty
+                ? existingTeachersList.first
+                : null;
+
             if (existingTeachers != null) {
               // Update existing record
               existingTeachers
                 ..id = fetchedTeachers.id
+                ..IdNumber = fetchedTeachers.IdNumber
                 ..name = fetchedTeachers.name
                 ..surname = fetchedTeachers.surname
-                ..IdNumber = fetchedTeachers.IdNumber
-                ..assignedClass = fetchedTeachers.assignedClass
-                ..assignedClass = fetchedTeachers.assignedClass
                 ..gender = fetchedTeachers.gender
                 ..dateOfBirth = fetchedTeachers.dateOfBirth
                 ..phoneNumber = fetchedTeachers.phoneNumber
+                ..email = fetchedTeachers.email
+                ..address = fetchedTeachers.address
+                ..hireDate = fetchedTeachers.hireDate
+                ..qualifications = fetchedTeachers.qualifications
+                ..employmentStatus = fetchedTeachers.employmentStatus
+                ..assignedClass = fetchedTeachers.assignedClass
+                ..assignedClasses = fetchedTeachers.assignedClasses
                 ..paymentPurpose = fetchedTeachers.paymentPurpose
                 ..isPaid = fetchedTeachers.isPaid
                 ..paymentAmount = fetchedTeachers.paymentAmount
                 ..paymentDate = fetchedTeachers.paymentDate
-                ..email = fetchedTeachers.email
-                ..address = fetchedTeachers.address
-                ..hireDate = fetchedTeachers.hireDate
-                ..employmentStatus = fetchedTeachers.employmentStatus
                 ..termId = fetchedTeachers.termId
+                ..terms = fetchedTeachers.terms
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedTeachers.terms;
+                ..lastModified = DateTime.now();
 
               await existingTeachers.save();
               debugPrint(
@@ -5856,11 +8686,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               debugPrint(
                   'Teachers ${fetchedTeachers.IdNumber} added successfully to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff record was found with no IdNumber and was skipped.'),
-            ));
+          } catch (error, stack) {
+            debugPrint('❌ Error processing teacher record:');
+            debugPrint('Data: ${teachersData.toString()}');
+            debugPrint('Error: $error');
+            debugPrint('Stack: $stack');
           }
         }
       } else {
@@ -5877,7 +8707,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================================pull _fetchAndSyncTerms =======================================================================//
-
   Future<void> _fetchAndSyncTerms() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php';
@@ -5888,81 +8717,174 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
     try {
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> terms = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
 
-        for (var termsData in terms) {
-          DateTime parsedStartDate =
-              DateTime.tryParse(termsData['startDate'] ?? '') ?? DateTime.now();
-          DateTime? parsedEndDate = termsData['endDate'] != null
-              ? DateTime.tryParse(termsData['endDate'])
-              : null;
-          String statuses;
-          bool isactive = termsData['isActive'];
+        List<dynamic> terms;
+        if (decoded is List) {
+          terms = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
 
-          if (isactive == false) {
-            statuses = 'Closed';
-          } else {
-            statuses = 'Opened';
-          }
-          Terms fetchedTerms = Terms(
-            id: int.tryParse(termsData['fid'] ?? '0'),
-            termName: termsData['termName'],
-            startDate: parsedStartDate,
-            endDate: parsedEndDate,
-            isActive: termsData['isActive'] == true,
-            status: statuses,
-            termId: termsData['termId'],
-          );
+        if (terms.isEmpty) {
+          print('No terms found on server');
+          return;
+        }
 
-          var existingTermsList = _termsBox!.values
-              .where(
-                (school) => school.termId == fetchedTerms.termId,
-              )
-              .toList();
+        for (var termData in terms) {
+          try {
+            // ✅ Parse startDate with time
+            DateTime startDate;
+            if (termData['startDate'] != null) {
+              try {
+                if (termData['startDate'] is String) {
+                  startDate = DateTime.parse(termData['startDate']);
+                  print('Parsed startDate with time: $startDate');
+                } else {
+                  startDate = DateTime.now();
+                }
+              } catch (e) {
+                print('Error parsing startDate: $e');
+                startDate = DateTime.now();
+              }
+            } else {
+              startDate = DateTime.now();
+            }
 
-          Terms? existingTerms =
-              existingTermsList.isNotEmpty ? existingTermsList.first : null;
+            // ✅ Parse endDate with time
+            DateTime? endDate;
+            if (termData['endDate'] != null) {
+              try {
+                if (termData['endDate'] is String) {
+                  endDate = DateTime.parse(termData['endDate']);
+                  print('Parsed endDate with time: $endDate');
+                }
+              } catch (e) {
+                print('Error parsing endDate: $e');
+                endDate = null;
+              }
+            }
 
-          if (fetchedTerms.termId != null) {
-            if (existingTerms != null) {
-              // Update existing record
-              existingTerms
-                ..termName = fetchedTerms.termName
-                ..startDate = fetchedTerms.startDate
-                ..endDate = fetchedTerms.endDate
-                ..isActive = fetchedTerms.isActive
-                ..status = fetchedTerms.status
-                ..termId = fetchedTerms.termId
+            // ✅ Convert isActive from int to bool
+            bool isActive = true;
+            if (termData['isActive'] != null) {
+              if (termData['isActive'] is int) {
+                isActive = termData['isActive'] == 1;
+              } else if (termData['isActive'] is bool) {
+                isActive = termData['isActive'];
+              }
+            }
+
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (termData['syncStatus'] != null) {
+              if (termData['syncStatus'] is int) {
+                syncStatus = termData['syncStatus'] == 1;
+              } else if (termData['syncStatus'] is bool) {
+                syncStatus = termData['syncStatus'];
+              }
+            }
+
+            // ✅ Handle id mapping
+            int? id;
+            if (termData['id'] != null) {
+              if (termData['id'] is int) {
+                id = termData['id'];
+              } else if (termData['id'] is String) {
+                id = int.tryParse(termData['id']);
+              }
+            }
+            if (id == null && termData['fid'] != null) {
+              if (termData['fid'] is int) {
+                id = termData['fid'];
+              } else if (termData['fid'] is String) {
+                id = int.tryParse(termData['fid']);
+              }
+            }
+
+            // ✅ Determine status if not provided
+            String status = termData['status']?.toString() ??
+                (isActive ? 'Opened' : 'Closed');
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (termData['lastModified'] != null) {
+              try {
+                if (termData['lastModified'] is String) {
+                  lastModified = DateTime.parse(termData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            Terms fetchedTerm = Terms(
+              id: id ?? 0,
+              termId: termData['termId']?.toString() ?? '',
+              termName: termData['termName']?.toString() ?? '',
+              startDate: startDate,
+              endDate: endDate,
+              isActive: isActive,
+              status: status,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if term exists in Hive
+            var existingTermList = _termsBox!.values
+                .where((term) => term.termId == fetchedTerm.termId)
+                .toList();
+
+            Terms? existingTerm =
+                existingTermList.isNotEmpty ? existingTermList.first : null;
+
+            if (existingTerm != null) {
+              // ✅ Update existing term
+              existingTerm
+                ..id = fetchedTerm.id
+                ..termId = fetchedTerm.termId
+                ..termName = fetchedTerm.termName
+                ..startDate = fetchedTerm.startDate
+                ..endDate = fetchedTerm.endDate
+                ..isActive = fetchedTerm.isActive
+                ..status = fetchedTerm.status
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedTerms.id;
+                ..lastModified = DateTime.now();
 
-              await existingTerms.save();
-              debugPrint(
-                  'Terms ${fetchedTerms.termId} updated successfully in Hive.');
+              await existingTerm.save();
+              print('Term ${fetchedTerm.termId} updated in Hive.');
             } else {
-              // Create a new record
-              await _termsBox!.add(fetchedTerms);
-              debugPrint(
-                  'Terms ${fetchedTerms.termId} added successfully to Hive.');
+              // ✅ Create new term
+              await _termsBox!.add(fetchedTerm);
+              print('Term ${fetchedTerm.termId} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Skipped a term record without a term ID.'),
-            ));
+          } catch (error, stack) {
+            print('❌ Error processing term:');
+            print('Data: ${termData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${terms.length} terms from server')));
       } else {
         throw Exception(
-            'Failed to fetch terms. Status Code: ${response.statusCode}');
+            'Failed to fetch terms. Status: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error syncing terms: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error fetching terms: $e'),
-      ));
+      print('Error fetching or syncing terms: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing terms: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -5974,74 +8896,117 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Future<void> _fetchAndSyncUsers() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         List<dynamic> users = jsonDecode(response.body);
 
+        if (users.isEmpty) {
+          print('No users found on server');
+          return;
+        }
+
         for (var userData in users) {
+          // Parse security fields from JSON string to List<String>
+          List<String> securityQuestions = [];
+          List<String> securityAnswers = [];
+          List<String> assignedClasses = [];
+
+          try {
+            securityQuestions = _decodeToList(userData['securityQuestions']);
+            securityAnswers = _decodeToList(userData['securityAnswers']);
+            assignedClasses = _decodeToList(userData['assignedClasses']);
+          } catch (e) {
+            print('Error parsing JSON fields for user: $e');
+          }
+
+          // ✅ FIX: Convert isActive from int to bool
+          bool isActive = true;
+          if (userData['isActive'] != null) {
+            if (userData['isActive'] is int) {
+              isActive = userData['isActive'] == 1;
+            } else if (userData['isActive'] is bool) {
+              isActive = userData['isActive'];
+            } else if (userData['isActive'] is String) {
+              isActive = userData['isActive'] == '1' ||
+                  userData['isActive'].toLowerCase() == 'true';
+            }
+          }
+
           User fetchedUser = User(
-            id: int.tryParse(userData['fid'] ?? '0'),
+            id: userData['id'] ?? int.tryParse(userData['fid'] ?? '0'),
+            userCode: userData['userCode'] ?? '',
             username: userData['username'] ?? '',
             password: userData['password'] ?? '',
+            email: userData['email'],
             role: userData['role'] ?? '',
-            securityQuestions: _decodeToList(userData['securityQuestions']),
-            securityAnswers: _decodeToList(userData['securityAnswers']),
             phone: userData['phone'] ?? '',
-            userCode: userData['userCode'],
+            isActive: isActive,
+            securityQuestions: securityQuestions,
+            securityAnswers: securityAnswers,
+            assignedClasses: assignedClasses,
             termId: userData['termId'],
+            syncStatus: true,
+            operationType: 'none',
+            lastModified: DateTime.parse(
+                userData['lastModified'] ?? DateTime.now().toIso8601String()),
+            createdAt: userData['createdAt'] != null
+                ? DateTime.parse(userData['createdAt'])
+                : null,
+            isLogged: false,
+            modifiedFields: [],
           );
 
-          // Check if the record exists in Hive using schoolCode
-          var existingUserList = _usersBox!.values
-              .where(
-                (users) => users.userCode == fetchedUser.userCode,
-              )
+          // Check if user exists in Hive
+          var existingUsers = _usersBox!.values
+              .where((user) => user.userCode == fetchedUser.userCode)
               .toList();
 
-          User? existingUsers =
-              existingUserList.isNotEmpty ? existingUserList.first : null;
-          if (fetchedUser.userCode != null) {
-            if (existingUsers != null) {
-              // Update existing record
-              existingUsers
-                ..id = fetchedUser.id
-                ..userCode = fetchedUser.userCode
-                ..username = fetchedUser.username
-                ..password = fetchedUser.password
-                ..role = fetchedUser.role
-                ..securityQuestions = fetchedUser.securityQuestions
-                ..securityAnswers = fetchedUser.securityAnswers
-                ..phone = fetchedUser.phone
-                ..termId = fetchedUser.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingUsers.save();
-              print(
-                  'User ${fetchedUser.userCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _usersBox!.add(fetchedUser);
-              print('User ${fetchedUser.userCode} added successfully to Hive.');
-            }
+          if (existingUsers.isNotEmpty) {
+            // Update existing user
+            var existingUser = existingUsers.first;
+            existingUser
+              ..id = fetchedUser.id
+              ..userCode = fetchedUser.userCode
+              ..username = fetchedUser.username
+              ..password = fetchedUser.password
+              ..email = fetchedUser.email
+              ..role = fetchedUser.role
+              ..phone = fetchedUser.phone
+              ..isActive = fetchedUser.isActive
+              ..securityQuestions = fetchedUser.securityQuestions
+              ..securityAnswers = fetchedUser.securityAnswers
+              ..assignedClasses = fetchedUser.assignedClasses
+              ..termId = fetchedUser.termId
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now();
+
+            await existingUser.save();
+            print('User ${fetchedUser.userCode} updated in Hive.');
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other User  Record Was Found with no User Code and was Skipped.'),
-            ));
+            // Create new user
+            await _usersBox!.add(fetchedUser);
+            print('User ${fetchedUser.userCode} added to Hive.');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${users.length} users from server')));
       } else {
         throw Exception(
-            'Failed to fetch User from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch users. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching or syncing User: $e');
+      print('Error fetching or syncing users: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing users: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -6049,90 +9014,238 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
-//================================pull _fetchAndSyncwithdrawals =======================================================================//
+// PULL Withdrawals from server
+  //================================pull _fetchAndSyncWithdrawals =======================================================================//
 
-  Future<void> _fetchAndSyncwithdrawals() async {
+  Future<void> _fetchAndSyncWithdrawals() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
-      // Fetch data from API
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> withdrawals = jsonDecode(response.body);
+        final responseBody = response.body.trim();
+
+        if (responseBody.isEmpty) {
+          debugPrint('Warning: Withdrawals API returned an empty response.');
+          return;
+        }
+
+        List<dynamic> withdrawals;
+        try {
+          withdrawals = jsonDecode(responseBody);
+        } catch (e) {
+          debugPrint('Error decoding Withdrawals JSON: $e');
+          return;
+        }
 
         for (var withdrawalData in withdrawals) {
-          DateTime date =
-              DateTime.tryParse(withdrawalData['date']) ?? DateTime.now();
+          try {
+            // ✅ Parse date with time
+            DateTime date;
+            if (withdrawalData['date'] != null) {
+              try {
+                if (withdrawalData['date'] is String) {
+                  date = DateTime.parse(withdrawalData['date']);
+                  print('Parsed date with time: $date');
+                } else {
+                  date = DateTime.now();
+                }
+              } catch (e) {
+                print('Error parsing date: $e');
+                date = DateTime.now();
+              }
+            } else {
+              date = DateTime.now();
+            }
 
-          Withdrawal fetchedWthdrawals = Withdrawal(
-            id: int.tryParse(withdrawalData['fid'] ?? '0'),
-            amount: withdrawalData['amount'] != null
-                ? double.tryParse(withdrawalData['amount'].toString()) ?? 0.0
-                : 0.0,
-            date: date,
-            withdrawalPurpose: withdrawalData['withdrawalPurpose'],
-            withdrawalCode: withdrawalData['withdrawalCode'],
-            termId: withdrawalData['termId'],
-          );
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = true;
+            if (withdrawalData['syncStatus'] != null) {
+              if (withdrawalData['syncStatus'] is int) {
+                syncStatus = withdrawalData['syncStatus'] == 1;
+              } else if (withdrawalData['syncStatus'] is bool) {
+                syncStatus = withdrawalData['syncStatus'];
+              } else if (withdrawalData['syncStatus'] is String) {
+                syncStatus = withdrawalData['syncStatus'] == '1' ||
+                    withdrawalData['syncStatus'].toLowerCase() == 'true';
+              }
+            }
 
-          // Check if the record exists in Hive using termId
-          var existingWithdrawalsList = _withdrawalsBox!.values
-              .where(
-                (withdrawal) =>
+            // ✅ Handle id mapping
+            int? id;
+            if (withdrawalData['id'] != null) {
+              if (withdrawalData['id'] is int) {
+                id = withdrawalData['id'];
+              } else if (withdrawalData['id'] is String) {
+                id = int.tryParse(withdrawalData['id']);
+              }
+            }
+            if (id == null && withdrawalData['fid'] != null) {
+              if (withdrawalData['fid'] is int) {
+                id = withdrawalData['fid'];
+              } else if (withdrawalData['fid'] is String) {
+                id = int.tryParse(withdrawalData['fid']);
+              }
+            }
+
+            // ✅ Parse amount
+            double amount = 0.0;
+            if (withdrawalData['amount'] != null) {
+              if (withdrawalData['amount'] is double) {
+                amount = withdrawalData['amount'];
+              } else if (withdrawalData['amount'] is int) {
+                amount = withdrawalData['amount'].toDouble();
+              } else if (withdrawalData['amount'] is String) {
+                amount = double.tryParse(withdrawalData['amount']) ?? 0.0;
+              }
+            }
+
+            // ✅ FIX: Parse withdrawalCode - could be int or String
+            String? withdrawalCode;
+            if (withdrawalData['withdrawalCode'] != null) {
+              if (withdrawalData['withdrawalCode'] is String) {
+                withdrawalCode = withdrawalData['withdrawalCode'];
+              } else if (withdrawalData['withdrawalCode'] is int) {
+                withdrawalCode = withdrawalData['withdrawalCode'].toString();
+              } else if (withdrawalData['withdrawalCode'] is double) {
+                withdrawalCode = withdrawalData['withdrawalCode'].toString();
+              }
+            }
+
+            // ✅ If no withdrawalCode, generate one from id
+            if (withdrawalCode == null || withdrawalCode.isEmpty) {
+              withdrawalCode =
+                  'WTH_${id ?? DateTime.now().millisecondsSinceEpoch}';
+            }
+
+            // ✅ Parse withdrawalPurpose - could be int or String
+            String withdrawalPurpose;
+            if (withdrawalData['withdrawalPurpose'] != null) {
+              if (withdrawalData['withdrawalPurpose'] is String) {
+                withdrawalPurpose = withdrawalData['withdrawalPurpose'];
+              } else if (withdrawalData['withdrawalPurpose'] is int) {
+                withdrawalPurpose =
+                    withdrawalData['withdrawalPurpose'].toString();
+              } else {
+                withdrawalPurpose = '';
+              }
+            } else {
+              withdrawalPurpose = '';
+            }
+
+            // ✅ Parse termId - could be int or String
+            String? termId;
+            if (withdrawalData['termId'] != null) {
+              if (withdrawalData['termId'] is String) {
+                termId = withdrawalData['termId'];
+              } else if (withdrawalData['termId'] is int) {
+                termId = withdrawalData['termId'].toString();
+              }
+            }
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (withdrawalData['lastModified'] != null) {
+              try {
+                if (withdrawalData['lastModified'] is String) {
+                  lastModified = DateTime.parse(withdrawalData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            // ✅ Parse operationType
+            String operationType;
+            if (withdrawalData['operationType'] != null) {
+              if (withdrawalData['operationType'] is String) {
+                operationType = withdrawalData['operationType'];
+              } else if (withdrawalData['operationType'] is int) {
+                operationType = withdrawalData['operationType'].toString();
+              } else {
+                operationType = 'none';
+              }
+            } else {
+              operationType = 'none';
+            }
+
+            Withdrawal fetchedWithdrawal = Withdrawal(
+              id: id ?? 0,
+              withdrawalCode: withdrawalCode,
+              withdrawalPurpose: withdrawalPurpose,
+              amount: amount,
+              date: date,
+              termId: termId,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: [],
+            );
+
+            // Check if withdrawal exists in Hive
+            var existingWithdrawalList = _withdrawalsBox!.values
+                .where((withdrawal) =>
                     withdrawal.withdrawalCode ==
-                    fetchedWthdrawals.withdrawalCode,
-              )
-              .toList();
+                    fetchedWithdrawal.withdrawalCode)
+                .toList();
 
-          Withdrawal? existingWithdrawals = existingWithdrawalsList.isNotEmpty
-              ? existingWithdrawalsList.first
-              : null;
-          if (fetchedWthdrawals.withdrawalCode != null) {
-            if (existingWithdrawals != null) {
-              // Update existing record
-              existingWithdrawals
-                ..amount = fetchedWthdrawals.amount
-                ..withdrawalPurpose = fetchedWthdrawals.withdrawalPurpose
-                ..withdrawalCode = fetchedWthdrawals.withdrawalCode
-                ..date = fetchedWthdrawals.date
-                ..termId = fetchedWthdrawals.termId
+            Withdrawal? existingWithdrawal = existingWithdrawalList.isNotEmpty
+                ? existingWithdrawalList.first
+                : null;
+
+            if (existingWithdrawal != null) {
+              // ✅ Update existing withdrawal
+              existingWithdrawal
+                ..id = fetchedWithdrawal.id
+                ..withdrawalCode = fetchedWithdrawal.withdrawalCode
+                ..withdrawalPurpose = fetchedWithdrawal.withdrawalPurpose
+                ..amount = fetchedWithdrawal.amount
+                ..date = fetchedWithdrawal.date
+                ..termId = fetchedWithdrawal.termId
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedWthdrawals.id;
+                ..lastModified = DateTime.now();
 
-              await existingWithdrawals.save();
-              print(
-                  'Withdrawal ${fetchedWthdrawals.withdrawalCode} updated successfully in Hive.');
+              await existingWithdrawal.save();
+              debugPrint(
+                  'Withdrawal ${fetchedWithdrawal.withdrawalCode} updated in Hive.');
             } else {
-              // Create a new record
-              await _withdrawalsBox!.add(fetchedWthdrawals);
-              print(
-                  'Withdrawal ${fetchedWthdrawals.withdrawalCode} added successfully to Hive.');
+              // ✅ Create new withdrawal
+              await _withdrawalsBox!.add(fetchedWithdrawal);
+              debugPrint(
+                  'Withdrawal ${fetchedWithdrawal.withdrawalCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other Withdrawal  Record Was Found with no Withdrawal Code and was Skipped'),
-            ));
+          } catch (error, stack) {
+            debugPrint('❌ Error processing withdrawal record:');
+            debugPrint('Data: ${withdrawalData.toString()}');
+            debugPrint('Error: $error');
+            debugPrint('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Synced ${withdrawals.length} withdrawals from server')));
       } else {
         throw Exception(
-            'Failed to fetch withdrawals from the server. Status Code: ${response.statusCode}');
+            'Failed to fetch withdrawals. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching or syncing withdrawals: $e');
+      debugPrint('Error fetching or syncing withdrawals: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing withdrawals: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
       });
     }
   }
-
 //================================pull _fetchAndSyncDomainRecord =======================================================================//
 
   Future<void> _fetchAndSyncDomainRecord() async {
@@ -6204,70 +9317,155 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //================================pull _fetchAndSyncAccount =======================================================================//
 
+// PULL Accounts from server
   Future<void> _fetchAndSyncAccount() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> accounts = jsonDecode(response.body);
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
+        final decoded = jsonDecode(response.body);
+
+        List<dynamic> accounts;
+        if (decoded is List) {
+          accounts = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
+
+        if (accounts.isEmpty) {
+          print('No accounts found on server');
+          return;
         }
 
         for (var accData in accounts) {
-          Account fetchedAcc = Account(
-            id: accData['id'],
-            accountType: accData['accountType'],
-            accountSubType: accData['accountSubType'],
-            accountName: accData['accountName'],
-            accountCode: accData['accountCode'],
-            isALiquidAccount: _intToBool(accData['isALiquidAccount']),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(accData['lastModified'] ?? ''),
-          );
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = false;
+            if (accData['syncStatus'] != null) {
+              if (accData['syncStatus'] is int) {
+                syncStatus = accData['syncStatus'] == 1;
+              } else if (accData['syncStatus'] is bool) {
+                syncStatus = accData['syncStatus'];
+              }
+            }
 
-          var existingList =
-              _accountBox!.values.where((a) => a.id == fetchedAcc.id).toList();
+            // ✅ Convert isALiquidAccount from int to bool
+            bool isALiquidAccount = false;
+            if (accData['isALiquidAccount'] != null) {
+              if (accData['isALiquidAccount'] is int) {
+                isALiquidAccount = accData['isALiquidAccount'] == 1;
+              } else if (accData['isALiquidAccount'] is bool) {
+                isALiquidAccount = accData['isALiquidAccount'];
+              }
+            }
 
-          Account? existing =
-              existingList.isNotEmpty ? existingList.first : null;
+            // ✅ Handle id - could be int or String
+            int? id;
+            if (accData['id'] != null) {
+              if (accData['id'] is int) {
+                id = accData['id'];
+              } else if (accData['id'] is String) {
+                id = int.tryParse(accData['id']);
+              }
+            }
 
-          if (fetchedAcc.id != null) {
+            // ✅ Handle accountCode - could be int or String
+            String? accountCode;
+            if (accData['accountCode'] != null) {
+              if (accData['accountCode'] is String) {
+                accountCode = accData['accountCode'];
+              } else if (accData['accountCode'] is int) {
+                accountCode = accData['accountCode'].toString();
+              }
+            }
+
+            // ✅ Parse modifiedFields
+            List<String> modifiedFields =
+                _decodeToList(accData['modifiedFields']);
+
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (accData['lastModified'] != null) {
+              try {
+                if (accData['lastModified'] is String) {
+                  lastModified = DateTime.parse(accData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
+
+            Account fetchedAccount = Account(
+              id: id,
+              accountCode: accountCode,
+              accountType: accData['accountType']?.toString(),
+              accountSubType: accData['accountSubType']?.toString(),
+              accountName: accData['accountName']?.toString(),
+              isALiquidAccount: isALiquidAccount,
+              syncStatus: syncStatus,
+              operationType: 'none',
+              lastModified: lastModified,
+              modifiedFields: modifiedFields,
+            );
+
+            // Check if account exists in Hive
+            var existingList = _accountBox!.values
+                .where((a) => a.accountCode == fetchedAccount.accountCode)
+                .toList();
+
+            Account? existing =
+                existingList.isNotEmpty ? existingList.first : null;
+
             if (existing != null) {
+              // ✅ Update existing account
               existing
-                ..accountType = fetchedAcc.accountType
-                ..accountSubType = fetchedAcc.accountSubType
-                ..accountName = fetchedAcc.accountName
-                ..accountCode = fetchedAcc.accountCode
-                ..isALiquidAccount = fetchedAcc.isALiquidAccount
+                ..id = fetchedAccount.id
+                ..accountCode = fetchedAccount.accountCode
+                ..accountType = fetchedAccount.accountType
+                ..accountSubType = fetchedAccount.accountSubType
+                ..accountName = fetchedAccount.accountName
+                ..isALiquidAccount = fetchedAccount.isALiquidAccount
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..modifiedFields = [];
+
               await existing.save();
-              print('Account ${fetchedAcc.id} updated successfully.');
+              print('Account ${fetchedAccount.accountCode} updated in Hive.');
             } else {
-              await _accountBox!.add(fetchedAcc);
-              print('Account ${fetchedAcc.id} added successfully.');
+              // ✅ Create new account
+              await _accountBox!.add(fetchedAccount);
+              print('Account ${fetchedAccount.accountCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Account with no ID was skipped.')),
-            );
+          } catch (error, stack) {
+            print('❌ Error processing account:');
+            print('Data: ${accData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${accounts.length} accounts from server')));
       } else {
         throw Exception(
-            'Failed to fetch Accounts. Code: ${response.statusCode}');
+            'Failed to fetch accounts. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error syncing Accounts: $e');
+      print('Error fetching or syncing accounts: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing accounts: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
@@ -6436,144 +9634,276 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
 //================================pull _fetchAndSyncProject =======================================================================//
 
+// PULL Projects from server
   Future<void> _fetchAndSyncProject() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> projects = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+
+        List<dynamic> projects;
+        if (decoded is List) {
+          projects = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
+
+        if (projects.isEmpty) {
+          print('No projects found on server');
+          return;
+        }
 
         for (var projectData in projects) {
-          Project fetchedProject = Project(
-            projectCode: projectData['projectCode'],
-            name: projectData['name'],
-            description: projectData['description'],
-            status: projectData['status'],
-            createdAt: DateTime.tryParse(projectData['createdAt'] ?? '') ??
-                DateTime.now(),
-            updatedAt: DateTime.tryParse(projectData['updatedAt'] ?? '') ??
-                DateTime.now(),
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = false;
+            if (projectData['syncStatus'] != null) {
+              if (projectData['syncStatus'] is int) {
+                syncStatus = projectData['syncStatus'] == 1;
+              } else if (projectData['syncStatus'] is bool) {
+                syncStatus = projectData['syncStatus'];
+              }
+            }
 
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(projectData['lastModified'] ?? ''),
+            // ✅ Convert studentPayable from int to bool
+            bool studentPayable = true;
+            if (projectData['studentPayable'] != null) {
+              if (projectData['studentPayable'] is int) {
+                studentPayable = projectData['studentPayable'] == 1;
+              } else if (projectData['studentPayable'] is bool) {
+                studentPayable = projectData['studentPayable'];
+              }
+            }
 
-            // ✅ NEW REQUIRED FIELDS
-            projectType: projectData['projectType'] ?? 'sales',
-            participationType: projectData['participationType'] ?? 'optional',
-            studentPayable: projectData['studentPayable'],
-          );
+            // ✅ Parse dates
+            DateTime createdAt = DateTime.now();
+            if (projectData['createdAt'] != null) {
+              try {
+                createdAt = DateTime.parse(projectData['createdAt']);
+              } catch (e) {
+                createdAt = DateTime.now();
+              }
+            }
 
-          var existingProjectList = _projectBox!.values
-              .where((p) => p.projectCode == fetchedProject.projectCode)
-              .toList();
+            DateTime updatedAt = DateTime.now();
+            if (projectData['updatedAt'] != null) {
+              try {
+                updatedAt = DateTime.parse(projectData['updatedAt']);
+              } catch (e) {
+                updatedAt = DateTime.now();
+              }
+            }
 
-          Project? existingProject =
-              existingProjectList.isNotEmpty ? existingProjectList.first : null;
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (projectData['lastModified'] != null) {
+              try {
+                if (projectData['lastModified'] is String) {
+                  lastModified = DateTime.parse(projectData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
 
-          if (fetchedProject.projectCode.isNotEmpty) {
+            // ✅ Parse modifiedFields
+            List<String> modifiedFields =
+                _decodeToList(projectData['modifiedFields']);
+
+            Project fetchedProject = Project(
+              projectCode: projectData['projectCode']?.toString() ?? '',
+              name: projectData['name']?.toString() ?? '',
+              description: projectData['description']?.toString(),
+              status: projectData['status']?.toString() ?? 'active',
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              syncStatus: syncStatus,
+              lastModified: lastModified,
+              operationType: 'none',
+              modifiedFields: modifiedFields,
+              // ✅ NEW FIELDS
+              projectType: projectData['projectType']?.toString() ?? 'sales',
+              participationType:
+                  projectData['participationType']?.toString() ?? 'optional',
+              studentPayable: studentPayable,
+            );
+
+            // Check if project exists in Hive
+            var existingProjectList = _projectBox!.values
+                .where((p) => p.projectCode == fetchedProject.projectCode)
+                .toList();
+
+            Project? existingProject = existingProjectList.isNotEmpty
+                ? existingProjectList.first
+                : null;
+
             if (existingProject != null) {
+              // ✅ Update existing project
               existingProject
+                ..projectCode = fetchedProject.projectCode
                 ..name = fetchedProject.name
                 ..description = fetchedProject.description
                 ..status = fetchedProject.status
                 ..createdAt = fetchedProject.createdAt
                 ..updatedAt = fetchedProject.updatedAt
+                ..projectType = fetchedProject.projectType
+                ..participationType = fetchedProject.participationType
+                ..studentPayable = fetchedProject.studentPayable
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now()
-
-                // ✅ UPDATE NEW FIELDS
-                ..projectType = fetchedProject.projectType
-                ..participationType = fetchedProject.participationType
-                ..studentPayable = fetchedProject.studentPayable;
+                ..modifiedFields = [];
 
               await existingProject.save();
-
-              print(
-                  'Project ${fetchedProject.projectCode} updated successfully.');
+              print('Project ${fetchedProject.projectCode} updated in Hive.');
             } else {
+              // ✅ Create new project
               await _projectBox!.add(fetchedProject);
-
-              print(
-                  'Project ${fetchedProject.projectCode} added successfully.');
+              print('Project ${fetchedProject.projectCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Project with no code was skipped.'),
-              ),
-            );
+          } catch (error, stack) {
+            print('❌ Error processing project:');
+            print('Data: ${projectData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${projects.length} projects from server')));
       } else {
         throw Exception(
-            'Failed to fetch Projects. Code: ${response.statusCode}');
+            'Failed to fetch projects. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error syncing Projects: $e');
+      print('Error fetching or syncing projects: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error syncing projects: $e')));
     } finally {
       setState(() {
         _isSyncing = false;
       });
     }
   }
+
 //================================pull _fetchAndSyncProjectItem =======================================================================//
 
+// PULL ProjectItems from server
   Future<void> _fetchAndSyncProjectItem() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php';
+
     setState(() {
       _isSyncing = true;
     });
+
     try {
       final response = await http.get(Uri.parse(apiUrl));
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> items = jsonDecode(response.body);
-        double? _toDouble(dynamic value) {
-          if (value == null) return null;
-          if (value is double) return value;
-          if (value is int) return value.toDouble();
-          if (value is String) return double.tryParse(value);
-          return null;
+        final decoded = jsonDecode(response.body);
+
+        List<dynamic> items;
+        if (decoded is List) {
+          items = decoded;
+        } else if (decoded is Map && decoded.containsKey('message')) {
+          print('Server message: ${decoded['message']}');
+          return;
+        } else {
+          print('Unexpected response format');
+          return;
         }
 
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
+        if (items.isEmpty) {
+          print('No project items found on server');
+          return;
         }
 
         for (var itemData in items) {
-          ProjectItem fetchedItem = ProjectItem(
-            projectItemCode: itemData['projectItemCode'],
-            projectCode: itemData['projectCode'],
-            name: itemData['name'],
+          try {
+            // ✅ Convert syncStatus from int to bool
+            bool syncStatus = false;
+            if (itemData['syncStatus'] != null) {
+              if (itemData['syncStatus'] is int) {
+                syncStatus = itemData['syncStatus'] == 1;
+              } else if (itemData['syncStatus'] is bool) {
+                syncStatus = itemData['syncStatus'];
+              }
+            }
 
-            // ✅ NEW FIELDS
-            itemType: itemData['itemType'],
-            active: _intToBool(itemData['active']),
-            trackStock: _intToBool(itemData['trackStock']),
+            // ✅ Convert active from int to bool
+            bool active = true;
+            if (itemData['active'] != null) {
+              if (itemData['active'] is int) {
+                active = itemData['active'] == 1;
+              } else if (itemData['active'] is bool) {
+                active = itemData['active'];
+              }
+            }
 
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(itemData['lastModified'] ?? ''),
-          );
+            // ✅ Convert trackStock from int to bool
+            bool trackStock = false;
+            if (itemData['trackStock'] != null) {
+              if (itemData['trackStock'] is int) {
+                trackStock = itemData['trackStock'] == 1;
+              } else if (itemData['trackStock'] is bool) {
+                trackStock = itemData['trackStock'];
+              }
+            }
 
-          var existingItemList = _projectItemBox!.values
-              .where((i) => i.projectItemCode == fetchedItem.projectItemCode)
-              .toList();
+            // ✅ Parse lastModified
+            DateTime? lastModified;
+            if (itemData['lastModified'] != null) {
+              try {
+                if (itemData['lastModified'] is String) {
+                  lastModified = DateTime.parse(itemData['lastModified']);
+                }
+              } catch (e) {
+                lastModified = DateTime.now();
+              }
+            }
 
-          ProjectItem? existingItem =
-              existingItemList.isNotEmpty ? existingItemList.first : null;
+            // ✅ Parse modifiedFields
+            List<String> modifiedFields =
+                _decodeToList(itemData['modifiedFields']);
 
-          if ((fetchedItem.projectItemCode ?? '').isNotEmpty) {
+            ProjectItem fetchedItem = ProjectItem(
+              projectItemCode: itemData['projectItemCode']?.toString() ?? '',
+              projectCode: itemData['projectCode']?.toString() ?? '',
+              name: itemData['name']?.toString() ?? '',
+              itemType: itemData['itemType']?.toString() ?? 'goods',
+              active: active,
+              trackStock: trackStock,
+              syncStatus: syncStatus,
+              lastModified: lastModified,
+              operationType: 'none',
+              modifiedFields: modifiedFields,
+            );
+
+            // Check if item exists in Hive
+            var existingItemList = _projectItemBox!.values
+                .where((i) => i.projectItemCode == fetchedItem.projectItemCode)
+                .toList();
+
+            ProjectItem? existingItem =
+                existingItemList.isNotEmpty ? existingItemList.first : null;
+
             if (existingItem != null) {
+              // ✅ Update existing item
               existingItem
+                ..projectItemCode = fetchedItem.projectItemCode
                 ..projectCode = fetchedItem.projectCode
                 ..name = fetchedItem.name
                 ..itemType = fetchedItem.itemType
@@ -6581,35 +9911,39 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..trackStock = fetchedItem.trackStock
                 ..syncStatus = true
                 ..operationType = 'none'
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..modifiedFields = [];
 
               await existingItem.save();
-
               print(
-                  'ProjectItem ${fetchedItem.projectItemCode} updated successfully.');
+                  'ProjectItem ${fetchedItem.projectItemCode} updated in Hive.');
             } else {
+              // ✅ Create new item
               await _projectItemBox!.add(fetchedItem);
-
               print(
-                  'ProjectItem ${fetchedItem.projectItemCode} added successfully.');
+                  'ProjectItem ${fetchedItem.projectItemCode} added to Hive.');
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('ProjectItem with no code was skipped.'),
-              ),
-            );
+          } catch (error, stack) {
+            print('❌ Error processing project item:');
+            print('Data: ${itemData.toString()}');
+            print('Error: $error');
+            print('Stack: $stack');
           }
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Synced ${items.length} project items from server')));
       } else {
         throw Exception(
-            'Failed to fetch ProjectItems. Code: ${response.statusCode}');
+            'Failed to fetch project items. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error syncing ProjectItems: $e');
+      print('Error fetching or syncing project items: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing project items: $e')));
     } finally {
       setState(() {
-        _isSyncing = false;
+        _isSyncings = false;
       });
     }
   }
@@ -6689,8 +10023,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-
-//================================pull _fetchAndSyncProjectStudentPayment =======================================================================//
 
   @override
   void dispose() {
@@ -6835,4829 +10167,3 @@ class SyncQueueManager {
     });
   }
 }
-
-
-
-
-
-
-
-/*
-import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:hive/hive.dart';
-import 'package:zitf_system/database/accounting_module_models/account_type.dart';
-import 'package:zitf_system/database/accounting_module_models/assets.dart';
-
-import 'package:zitf_system/database/classes.dart';
-import 'package:zitf_system/database/projects/project_daily_activity_model.dart';
-import 'package:zitf_system/database/projects/project_item_model.dart';
-import 'package:zitf_system/database/projects/project_model.dart';
-import 'package:zitf_system/database/projects/project_student_payment_model.dart';
-import 'package:zitf_system/database/school_info.dart';
-import 'package:zitf_system/database/syncConfigs/syncConfig.dart';
-import 'package:zitf_system/database/terms.dart';
-import 'package:zitf_system/database/withdrawalshome.dart';
-import 'package:zitf_system/database/student.dart';
-import 'package:zitf_system/auth/userdb.dart';
-import 'package:zitf_system/database/payment_purpose.dart';
-import 'package:zitf_system/database/student_payments.dart';
-import 'package:zitf_system/database/teachers.dart';
-import 'package:zitf_system/database/teacher_payment_purpose.dart';
-import 'package:zitf_system/database/teacher_payments.dart';
-
-import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
-import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
-import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
-import 'package:zitf_system/reusable_codes/footer/footer.dart';
-import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
-
-class ClassesFinal extends StatefulWidget {
-  const ClassesFinal({super.key});
-
-  @override
-  _SyncClassesPageState createState() => _SyncClassesPageState();
-}
-
-class _SyncClassesPageState extends State<ClassesFinal> {
-  int _selectedIndex = 0;
-
-  void _handleItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-    onItemTapped(context, index); // Use the navigation logic
-  }
-
-  Box<Classes>? _classesBox;
-  Box<School>? _schoolBox;
-  Box<Terms>? _termsBox;
-  Box<Withdrawal>? _withdrawalsBox;
-  Box<Student>? _studentsBox;
-  Box<User>? _usersBox;
-  Box<PaymentPurpose>? _payment_purposesBox;
-  Box<StudentPayment>? _student_paymentsBox;
-  Box<Teachers>? _teachersBox;
-  Box<TeacherPaymentsPurposes>? _teacher_payments_purposesBox;
-  Box<TeacherPayment>? _teacher_paymentsBox;
-
-  Box<DomainRecord>? _domainRecordBox;
-  Box<Account>? _accountBox;
-  Box<Asset>? _assetBox;
-  Box<Project>? _projectBox;
-  Box<ProjectItem>? _projectItemBox;
-  Box<DailyActivity>? _dailyActivityBox;
-  Box<ProjectStudentPayment>? _projectStudentPaymentBox;
-
-  bool _isSyncing = false;
-  bool _isSyncings = false;
-  bool areDomainsActive = false;
-  String _domainName = ""; // Local variable to store domain name
-
-  @override
-  void initState() {
-    super.initState();
-    _openHiveBox();
-    _loadExistingConfig(); // Load domain name from Hive
-  }
-
-  Future<void> _openHiveBox() async {
-    _classesBox = await Hive.openBox<Classes>('classes');
-    _schoolBox = await Hive.openBox<School>('school');
-    _termsBox = await Hive.openBox<Terms>('terms');
-    _withdrawalsBox = await Hive.openBox<Withdrawal>('withdrawals');
-    _studentsBox = await Hive.openBox<Student>('students');
-    _usersBox = await Hive.openBox<User>('users');
-    _payment_purposesBox =
-        await Hive.openBox<PaymentPurpose>('payment_purposes');
-    _student_paymentsBox =
-        await Hive.openBox<StudentPayment>('student_payments');
-    _teachersBox = await Hive.openBox<Teachers>('teachers');
-    _teacher_payments_purposesBox = await Hive.openBox<TeacherPaymentsPurposes>(
-        'teacher_payments_purposes');
-    _teacher_paymentsBox =
-        await Hive.openBox<TeacherPayment>('teacher_payments');
-
-    _domainRecordBox = await Hive.openBox<DomainRecord>('domainBox');
-    _accountBox = await Hive.openBox<Account>('account');
-    _assetBox = await Hive.openBox<Asset>('asset');
-    _projectBox = await Hive.openBox<Project>('projects');
-    _projectItemBox = await Hive.openBox<ProjectItem>('projectItems');
-    _dailyActivityBox = await Hive.openBox<DailyActivity>('dailyActivities');
-    _projectStudentPaymentBox =
-        await Hive.openBox<ProjectStudentPayment>('projectStudentPayments');
-  }
-
-  Future<void> _loadExistingConfig() async {
-    final box = await Hive.openBox<DomainRecord>('domainBox');
-    if (box.isNotEmpty) {
-      final record = box.getAt(0);
-      if (record != null) {
-        setState(() {
-          _domainName = record.domainName ?? "null"; // Default value
-          if (_domainName != "null") {
-            areDomainsActive = record.areDomainsActive ?? false;
-          } else {
-            areDomainsActive = false;
-          }
-          debugPrint(_domainName);
-          debugPrint(areDomainsActive.toString());
-        });
-      }
-    }
-  }
-
-  Future<List<Classes>> _fetchClassesForCreate() async {
-    List<Classes> createClasses = _classesBox!.values
-        .where((cls) => cls.syncStatus == false && cls.classCode != null)
-        .toList();
-
-    return createClasses;
-  }
-
-  Future<List<School>> _fetch_schoolForCreate() async {
-    List<School> createSchools = _schoolBox!.values
-        .where((cls) => cls.syncStatus == false && cls.schoolCode != null)
-        .toList();
-
-    return createSchools;
-  }
-
-  Future<List<Terms>> _fetch_termsForCreate() async {
-    List<Terms> createTerms = _termsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.termId != null)
-        .toList();
-
-    return createTerms;
-  }
-
-  Future<List<Withdrawal>> _fetch_withdrawalsForCreate() async {
-    List<Withdrawal> createWithdrawal = _withdrawalsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.withdrawalCode != null)
-        .toList();
-    return createWithdrawal;
-  }
-
-  Future<List<Student>> _fetch_studentsForCreate() async {
-    List<Student> createStudent = _studentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.studentIdNumber != null)
-        .toList();
-    return createStudent;
-  }
-
-  Future<List<User>> _fetch_usersForCreate() async {
-    List<User> createUser = _usersBox!.values
-        .where((cls) => cls.syncStatus == false && cls.userCode != null)
-        .toList();
-    return createUser;
-  }
-
-  Future<List<PaymentPurpose>> _fetch_paymentPurposesForCreate() async {
-    List<PaymentPurpose> createPaymentPurpose = _payment_purposesBox!.values
-        .where((cls) => cls.syncStatus == false && cls.purposeCode != null)
-        .toList();
-    return createPaymentPurpose;
-  }
-
-  Future<List<StudentPayment>> _fetch_studentPaymentsForCreate() async {
-    List<StudentPayment> createStudentPayment = _student_paymentsBox!.values
-        .where((cls) => cls.syncStatus == false && cls.receiptNumber != null)
-        .toList();
-    return createStudentPayment;
-  }
-
-  Future<List<Teachers>> _fetch_teachersForCreate() async {
-    List<Teachers> createTeachers = _teachersBox!.values
-        .where((cls) => cls.syncStatus == false && cls.IdNumber != null)
-        .toList();
-    return createTeachers;
-  }
-
-  // Sync models to MySQL
-  Future<void> _syncModels() async {
-    try {
-      // Sync PaymentPurpose records
-
-      List<Classes> createClasses =
-          _classesBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (Classes cls in createClasses) {
-        if (cls.operationType == 'create') {
-          await _createClassInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateClassesInMySQL(cls);
-        }
-      }
-
-      List<School> createSchool =
-          _schoolBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (School cls in createSchool) {
-        if (cls.operationType == 'create') {
-          await _createSchoolInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateSchoolInMySQL(cls);
-        }
-      }
-
-      List<Terms> createTerms =
-          _termsBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (Terms cls in createTerms) {
-        if (cls.operationType == 'create') {
-          await _createTermsInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateTermsInMySQL(cls);
-        }
-      }
-
-      List<Withdrawal> createWithdrawal = _withdrawalsBox!.values
-          .where((cls) => cls.syncStatus == false)
-          .toList();
-      for (Withdrawal cls in createWithdrawal) {
-        if (cls.operationType == 'create') {
-          await _createWithdrawalsInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateWithdrawalsInMySQL(cls);
-        }
-      }
-      List<Student> createStudent =
-          _studentsBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (Student cls in createStudent) {
-        if (cls.operationType == 'create') {
-          await _createStudentsInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateStudentsInMySQL(cls);
-        }
-      }
-
-      List<User> createUser =
-          _usersBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (User cls in createUser) {
-        if (cls.operationType == 'create') {
-          await _createUserInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateUserInMySQL(cls);
-        }
-      }
-
-      List<PaymentPurpose> createPaymentPurpose = _payment_purposesBox!.values
-          .where((cls) => cls.syncStatus == false)
-          .toList();
-      for (PaymentPurpose cls in createPaymentPurpose) {
-        if (cls.operationType == 'create') {
-          await _createPaymentPurposeInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updatePaymentPurposeInMySQL(cls);
-        }
-      }
-      List<StudentPayment> createStudentPayment = _student_paymentsBox!.values
-          .where((cls) => cls.syncStatus == false)
-          .toList();
-      for (StudentPayment cls in createStudentPayment) {
-        if (cls.operationType == 'create') {
-          await _createStudentPaymentInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateStudentPaymentInMySQL(cls);
-        }
-      }
-
-      List<Teachers> createTeacher =
-          _teachersBox!.values.where((cls) => cls.syncStatus == false).toList();
-      for (Teachers cls in createTeacher) {
-        if (cls.operationType == 'create') {
-          await _createTeacherInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateTeacherInMySQL(cls);
-        }
-      }
-
-      List<TeacherPaymentsPurposes> createTeacherPaymentsPurposes =
-          _teacher_payments_purposesBox!.values
-              .where((cls) => cls.syncStatus == false)
-              .toList();
-      for (TeacherPaymentsPurposes cls in createTeacherPaymentsPurposes) {
-        if (cls.operationType == 'create') {
-          await _createTeacherPaymentPurposeInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateTeacherPaymentPurposeInMySQL(cls);
-        }
-      }
-
-      List<TeacherPayment> createTeacherPayments = _teacher_paymentsBox!.values
-          .where((cls) => cls.syncStatus == false)
-          .toList();
-      for (TeacherPayment cls in createTeacherPayments) {
-        if (cls.operationType == 'create') {
-          await _createTeacherPaymentInMySQL(cls);
-        } else if (cls.operationType == 'update') {
-          await _updateTeacherPaymentInMySQL(cls);
-        }
-      }
-      // Sync DomainRecords
-      List<DomainRecord> createDomains = _domainRecordBox!.values
-          .where((dom) => dom.syncStatus == false)
-          .toList();
-      for (DomainRecord dom in createDomains) {
-        if (dom.operationType == 'create') {
-          await _createDomainInMySQL(dom);
-        } else if (dom.operationType == 'update') {
-          await _updateDomainInMySQL(dom);
-        }
-      }
-
-      // Sync Accounts
-      List<Account> createAccounts =
-          _accountBox!.values.where((acc) => acc.syncStatus == false).toList();
-      for (Account acc in createAccounts) {
-        if (acc.operationType == 'create') {
-          await _createAccountInMySQL(acc);
-        } else if (acc.operationType == 'update') {
-          await _updateAccountInMySQL(acc);
-        }
-      }
-
-      // Sync Assets
-      List<Asset> createAssets =
-          _assetBox!.values.where((a) => a.syncStatus == false).toList();
-      for (Asset a in createAssets) {
-        if (a.operationType == 'create') {
-          await _createAssetInMySQL(a);
-        } else if (a.operationType == 'update') {
-          await _updateAssetInMySQL(a);
-        }
-      }
-
-      // Sync Projects
-      List<Project> createProjects =
-          _projectBox!.values.where((p) => p.syncStatus == false).toList();
-      for (Project p in createProjects) {
-        if (p.operationType == 'create') {
-          await _createProjectInMySQL(p);
-        } else if (p.operationType == 'update') {
-          await _updateProjectInMySQL(p);
-        }
-      }
-
-      // Sync ProjectItems
-      List<ProjectItem> createProjectItems = _projectItemBox!.values
-          .where((pi) => pi.syncStatus == false)
-          .toList();
-      for (ProjectItem pi in createProjectItems) {
-        if (pi.operationType == 'create') {
-          await _createProjectItemInMySQL(pi);
-        } else if (pi.operationType == 'update') {
-          await _updateProjectItemInMySQL(pi);
-        }
-      }
-
-      // Sync DailyActivities
-      List<DailyActivity> createDailyActivities = _dailyActivityBox!.values
-          .where((d) => d.syncStatus == false)
-          .toList();
-      for (DailyActivity d in createDailyActivities) {
-        if (d.operationType == 'create') {
-          await _createDailyActivityInMySQL(d);
-        } else if (d.operationType == 'update') {
-          await _updateDailyActivityInMySQL(d);
-        }
-      }
-
-      // Sync ProjectStudentPayments
-      List<ProjectStudentPayment> createProjectPayments =
-          _projectStudentPaymentBox!.values
-              .where((p) => p.syncStatus == false)
-              .toList();
-      for (ProjectStudentPayment p in createProjectPayments) {
-        if (p.operationType == 'create') {
-          await _createProjectStudentPaymentInMySQL(p);
-        } else if (p.operationType == 'update') {
-          await _updateProjectStudentPaymentInMySQL(p);
-        }
-      }
-    } catch (e) {
-      print('Error syncing models: $e');
-    }
-  }
-
-  Map<String, dynamic> _classToJson(Classes cls) {
-    return {
-      'id': cls.id,
-      'classCode': cls.classCode,
-      'className': cls.className,
-      'date': cls.date.toIso8601String(),
-      'termId': cls.termId,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-    };
-  }
-
-  Map<String, dynamic> _schoolToJson(School cls) {
-    return {
-      'id': cls.id,
-      'schoolName': cls.schoolName,
-      'schoolCode': cls.schoolCode,
-      'schoolAddress': cls.schoolAddress,
-      'schoolPhoneNumber': cls.schoolPhoneNumber,
-      'schoolEmail': cls.schoolEmail,
-      'termId': cls.termId,
-    };
-  }
-
-  Map<String, dynamic> _termsToJson(Terms cls) {
-    return {
-      'id': cls.id,
-      'termId': cls.termId,
-      'termName': cls.termName,
-      'startDate': cls.startDate.toIso8601String(),
-      'endDate': cls.endDate?.toIso8601String(),
-      'isActive': cls.isActive,
-      'status': cls.status,
-    };
-  }
-
-  Map<String, dynamic> _withdrawalToJson(Withdrawal cls) {
-    return {
-      'id': cls.id,
-      'amount': cls.amount,
-      'withdrawalPurpose': cls.withdrawalPurpose,
-      'withdrawalCode': cls.withdrawalCode,
-      'termId': cls.termId,
-      'date': cls.date.toIso8601String(),
-    };
-  }
-
-  Map<String, dynamic> _studentInfoToJson(Student cls) {
-    return {
-      'name': cls.name,
-      'surname': cls.surname,
-      'regNumber': cls.regNumber,
-      'class': cls.class_,
-      'gender': cls.gender,
-      'age': cls.age.toIso8601String(),
-      'phoneNumber': cls.phoneNumber,
-      'paymentStatus': cls.paymentStatus,
-      'isPresent': cls.isPresent,
-      'presentDates': jsonEncode(
-          cls.presentDates.map((date) => date.toIso8601String()).toList()),
-      'absentDates': jsonEncode(
-          cls.absentDates.map((date) => date.toIso8601String()).toList()),
-      'termId': cls.termId,
-      'id': cls.id,
-      'physicalAddress': cls.physicalAddress,
-      'formerSchool': cls.formerSchool,
-      'religion': cls.religion,
-      'denomination': cls.denomination,
-      'studentIdNumber': cls.studentIdNumber,
-      'nationalIdNumber': cls.nationalIdNumber,
-      'nationality': cls.nationality,
-      'district': cls.district,
-      'previousSchoolPerformanceResults': cls.previousSchoolPerformanceResults,
-      'enrollmentStatus': cls.enrollmentStatus,
-      'emergencyContactName': cls.emergencyContactName,
-      'emergencyContactNumber': cls.emergencyContactNumber,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-    };
-  }
-
-  Map<String, dynamic> _userToJson(User cls) {
-    return {
-      'id': cls.id,
-      'username': cls.username,
-      'password': cls.password,
-      'role': cls.role,
-      'securityQuestions': jsonEncode(cls.securityQuestions),
-      'securityAnswers': jsonEncode(cls.securityAnswers),
-      'phone': cls.phone,
-      'termId': cls.termId,
-      'userCode': cls.userCode,
-    };
-  }
-
-  Map<String, dynamic> _paymentPurposeToJson(PaymentPurpose cls) {
-    return {
-      'id': cls.id,
-      'paymentPurpose': cls.paymentPurpose,
-      'purposeAmount': cls.purposeAmount,
-      'termId': cls.termId,
-      'associatedClasses':
-          jsonEncode(cls.associatedClasses), // Convert list to JSON
-      'purposeCode': cls.purposeCode,
-    };
-  }
-
-  Map<String, dynamic> _studentPaymentToJson(StudentPayment cls) {
-    return {
-      'id': cls.id,
-      'studentName': cls.studentName,
-      'studentSurname': cls.studentSurname,
-      'studentClass': cls.studentClass,
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'amountToPay': cls.amountToPay,
-      'paymentDate': cls.paymentDate.toIso8601String(),
-      'termId': cls.termId,
-      'receiptNumber': cls.receiptNumber,
-    };
-  }
-
-  Map<String, dynamic> _teacherToJson(Teachers cls) {
-    return {
-      'id': cls.id,
-      'name': cls.name,
-      'surname': cls.surname,
-      'IdNumber': cls.IdNumber,
-      'assignedClass': cls.assignedClass,
-      'assignedClasses': cls.assignedClasses != null
-          ? jsonEncode(cls.assignedClasses) // JSON encode the list
-          : null,
-      'gender': cls.gender,
-      'dateOfBirth': cls.dateOfBirth.toIso8601String(),
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'isPaid': cls.isPaid,
-      'paymentAmount': cls.paymentAmount,
-      'paymentDate': cls.paymentDate?.toIso8601String(),
-      'email': cls.email,
-      'address': cls.address,
-      'hireDate': cls.hireDate.toIso8601String(),
-      'qualifications': cls.qualifications,
-      'employmentStatus': cls.employmentStatus,
-      'termId': cls.termId,
-      'terms': cls.terms != null
-          ? jsonEncode(cls.terms) // JSON encode the list
-          : null,
-    };
-  }
-
-  Map<String, dynamic> _teacherPaymentsPurposeToJson(
-      TeacherPaymentsPurposes cls) {
-    return {
-      'id': cls.id,
-      'paymentPurpose': cls.paymentPurpose,
-      'purposeCode': cls.purposeCode,
-      'purposeAmount': cls.purposeAmount,
-      'termId': cls.termId,
-      'syncStatus': cls.syncStatus,
-      'lastModified': cls.lastModified?.toIso8601String(),
-      'operationType': cls.operationType,
-      'associatedStaff': cls.associatedStaff != null
-          ? jsonEncode(
-              cls.associatedStaff) // Explicit JSON encode for associatedStaff
-          : null,
-    };
-  }
-
-  Map<String, dynamic> _teacherPaymentclassToJson(TeacherPayment cls) {
-    return {
-      'id': cls.id,
-      'studentName': cls.studentName,
-      'studentSurname': cls.studentSurname,
-      'studentClass': cls.studentClass,
-      'phoneNumber': cls.phoneNumber,
-      'paymentPurpose': cls.paymentPurpose,
-      'amountToPay': cls.amountToPay,
-      'paymentDate': cls.paymentDate.toIso8601String(),
-      'termId': cls.termId,
-      'receiptNumber': cls.receiptNumber,
-    };
-  }
-
-  Map<String, dynamic> _domainsToJson(DomainRecord domain) => {
-        'domainName': domain.domainName,
-        'areDomainsActive': domain.areDomainsActive,
-        'syncStatus': domain.syncStatus,
-        'operationType': domain.operationType,
-        'lastModified': domain.lastModified?.toIso8601String(),
-      };
-  Map<String, dynamic> _accountsToJson(Account acc) => {
-        'id': acc.id,
-        'accountType': acc.accountType,
-        'accountSubType': acc.accountSubType,
-        'accountName': acc.accountName,
-        'accountCode': acc.accountCode,
-        'operationType': acc.operationType,
-        'syncStatus': acc.syncStatus,
-        'lastModified': acc.lastModified?.toIso8601String(),
-        'isALiquidAccount': acc.isALiquidAccount,
-        'modifiedFields': acc.modifiedFields,
-      };
-  Map<String, dynamic> _assetsToJson(Asset asset) {
-    return {
-      'id': asset.id,
-      'assetName': asset.assetName,
-      'assetType': asset.assetType,
-      'assetSubType': asset.assetSubType,
-      'assetCode': asset.assetCode,
-      'assetSerialNo': asset.assetSerialNo,
-      'acquisitionDate': asset.acquisitionDate?.toIso8601String(),
-      'acquisitionCost': asset.acquisitionCost,
-      'acquisitionMethod': asset.acquisitionMethod,
-      'department': asset.department,
-      'location': asset.location,
-      'depreciationRate': asset.depreciationRate,
-      'depreciationMethod': asset.depreciationMethod,
-      'lastDepreciationDate': asset.lastDepreciationDate?.toIso8601String(),
-      'accumulatedDepreciation': asset.accumulatedDepreciation,
-      'bookValue': asset.bookValue,
-      'isImpaired': asset.isImpaired,
-      'impairmentLoss': asset.impairmentLoss,
-      'revaluationDate': asset.revaluationDate?.toIso8601String(),
-      'revaluationAmount': asset.revaluationAmount,
-      'lastMaintenanceDate': asset.lastMaintenanceDate?.toIso8601String(),
-      'maintenanceCost': asset.maintenanceCost,
-      'maintenanceDescription': asset.maintenanceDescription,
-      'capitalImprovementCost': asset.capitalImprovementCost,
-      'capitalImprovementDescription': asset.capitalImprovementDescription,
-      'disposalDate': asset.disposalDate?.toIso8601String(),
-      'disposalProceeds': asset.disposalProceeds,
-      'disposalReason': asset.disposalReason,
-      'gainOrLossOnDisposal': asset.gainOrLossOnDisposal,
-      'isLeased': asset.isLeased,
-      'leaseType': asset.leaseType,
-      'leaseStartDate': asset.leaseStartDate?.toIso8601String(),
-      'leaseEndDate': asset.leaseEndDate?.toIso8601String(),
-      'leasePaymentAmount': asset.leasePaymentAmount,
-      'lastAuditDate': asset.lastAuditDate?.toIso8601String(),
-      'syncStatus': asset.syncStatus,
-      'notes': asset.notes,
-      'createdAt': asset.createdAt?.toIso8601String(),
-      'lastModified': asset.lastModified?.toIso8601String(),
-      'operationType': asset.operationType,
-      'usefulLife': asset.usefulLife,
-      'hasDebitBalance': asset.hasDebitBalance,
-      'hasCreditBalance': asset.hasCreditBalance,
-      'option': asset.option,
-      'modifiedFields': asset.modifiedFields,
-    };
-  }
-
-  Map<String, dynamic> _projectsToJson(Project p) => {
-        'projectCode': p.projectCode,
-        'name': p.name,
-        'description': p.description,
-        'status': p.status,
-        'createdAt': p.createdAt.toIso8601String(),
-        'updatedAt': p.updatedAt.toIso8601String(),
-        'syncStatus': p.syncStatus,
-        'lastModified': p.lastModified?.toIso8601String(),
-        'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
-      };
-  Map<String, dynamic> _project_itemsToJson(ProjectItem i) => {
-        'projectItemCode': i.projectItemCode,
-        'projectCode': i.projectCode,
-        'name': i.name,
-        'amount': i.amount,
-        'isStudentFee': i.isStudentFee,
-        'syncStatus': i.syncStatus,
-        'lastModified': i.lastModified?.toIso8601String(),
-        'operationType': i.operationType,
-        'modifiedFields': i.modifiedFields,
-      };
-  Map<String, dynamic> _daily_activitiesToJson(DailyActivity a) => {
-        'projectDailyActiviyCode': a.projectDailyActiviyCode,
-        'projectCode': a.projectCode,
-        'date': a.date.toIso8601String(),
-        'type': a.type,
-        'description': a.description,
-        'amount': a.amount,
-        'syncStatus': a.syncStatus,
-        'lastModified': a.lastModified?.toIso8601String(),
-        'operationType': a.operationType,
-        'modifiedFields': a.modifiedFields,
-      };
-  Map<String, dynamic> _project_student_paymentsToJson(
-          ProjectStudentPayment p) =>
-      {
-        'projectStudentPaymentCode': p.projectStudentPaymentCode,
-        'studentId': p.studentId,
-        'projectCode': p.projectCode,
-        'itemId': p.itemId,
-        'amountPaid': p.amountPaid,
-        'balance': p.balance,
-        'syncStatus': p.syncStatus,
-        'lastModified': p.lastModified?.toIso8601String(),
-        'operationType': p.operationType,
-        'modifiedFields': p.modifiedFields,
-      };
-  //=================== techers payment  sync =========================
-
-  Future<void> _createTeacherPaymentInMySQL(TeacherPayment newClass) async {
-    final Map<String, dynamic> jsonData = _teacherPaymentclassToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create receiptNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating receiptNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateTeacherPaymentInMySQL(TeacherPayment newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'studentName':
-          modifiedFieldsJson['studentName'] = newClass.studentName;
-          break;
-        case 'studentSurname':
-          modifiedFieldsJson['studentSurname'] = newClass.studentSurname;
-          break;
-        case 'studentClass':
-          modifiedFieldsJson['studentClass'] = newClass.studentClass;
-          break;
-        case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
-          break;
-
-        case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-
-        case 'amountToPay':
-          modifiedFieldsJson['amountToPay'] = newClass.amountToPay;
-          break;
-        case 'paymentDate':
-          modifiedFieldsJson['paymentDate'] =
-              newClass.paymentDate.toIso8601String();
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'receiptNumber':
-          modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
-          break;
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php?receiptNumber=${newClass.receiptNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update receiptNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating receiptNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//=================== techers payment purpose sync =========================
-
-  Future<void> _createTeacherPaymentPurposeInMySQL(
-      TeacherPaymentsPurposes newClass) async {
-    final Map<String, dynamic> jsonData =
-        _teacherPaymentsPurposeToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create IdNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating purposeCode: $e');
-      print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateTeacherPaymentPurposeInMySQL(
-      TeacherPaymentsPurposes newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-        case 'purposeCode':
-          modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
-          break;
-        case 'purposeAmount':
-          modifiedFieldsJson['purposeAmount'] = newClass.purposeAmount;
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-
-        case 'associatedStaff':
-          modifiedFieldsJson['associatedStaff'] = newClass.associatedStaff !=
-                  null
-              ? jsonEncode(newClass
-                  .associatedStaff) // Explicit JSON encode for associatedStaff
-              : null;
-          break;
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php?purposeCode=${newClass.purposeCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update purposeCode.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating purposeCode: $e');
-      print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//=================== techers  sync =========================
-
-  Future<void> _createTeacherInMySQL(Teachers newClass) async {
-    final Map<String, dynamic> jsonData = _teacherToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('IdNumber ${newClass.IdNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create IdNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating IdNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('IdNumber Details:');
-      print('IdNumber: ${newClass.IdNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateTeacherInMySQL(Teachers newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'name':
-          modifiedFieldsJson['name'] = newClass.name;
-          break;
-        case 'surname':
-          modifiedFieldsJson['surname'] = newClass.surname;
-          break;
-        case 'IdNumber':
-          modifiedFieldsJson['IdNumber'] = newClass.IdNumber;
-          break;
-        case 'assignedClass':
-          modifiedFieldsJson['assignedClass'] = newClass.assignedClass;
-          break;
-        case 'assignedClasses':
-          modifiedFieldsJson['assignedClasses'] =
-              newClass.assignedClasses != null
-                  ? jsonEncode(newClass.assignedClasses) // JSON encode the list
-                  : null;
-          break;
-        case 'gender':
-          modifiedFieldsJson['gender'] = newClass.gender;
-          break;
-        case 'dateOfBirth':
-          modifiedFieldsJson['dateOfBirth'] =
-              newClass.dateOfBirth.toIso8601String();
-          break;
-        case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
-          break;
-        case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-        case 'isPaid':
-          modifiedFieldsJson['isPaid'] = newClass.isPaid;
-          break;
-        case 'paymentAmount':
-          modifiedFieldsJson['paymentAmount'] = newClass.paymentAmount;
-          break;
-        case 'paymentDate':
-          modifiedFieldsJson['paymentDate'] =
-              newClass.paymentDate?.toIso8601String();
-          break;
-        case 'email':
-          modifiedFieldsJson['email'] = newClass.email;
-          break;
-        case 'address':
-          modifiedFieldsJson['address'] = newClass.address;
-          break;
-        case 'hireDate':
-          modifiedFieldsJson['hireDate'] = newClass.hireDate.toIso8601String();
-          break;
-        case 'qualifications':
-          modifiedFieldsJson['qualifications'] = newClass.qualifications;
-          break;
-        case 'employmentStatus':
-          modifiedFieldsJson['employmentStatus'] = newClass.employmentStatus;
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-
-        // Add other fields as needed in this format
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['IdNumber'] = newClass.IdNumber;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php?IdNumber=${newClass.IdNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('IdNumber ${newClass.IdNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update IdNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating IdNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('IdNumber Details:');
-      print('IdNumber: ${newClass.IdNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//=================== student payment sync =========================
-
-  Future<void> _createStudentPaymentInMySQL(StudentPayment newClass) async {
-    final Map<String, dynamic> jsonData = _studentPaymentToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create receiptNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating receiptNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateStudentPaymentInMySQL(StudentPayment newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'studentName':
-          modifiedFieldsJson['studentName'] = newClass.studentName;
-          break;
-        case 'studentSurname':
-          modifiedFieldsJson['studentSurname'] = newClass.studentSurname;
-          break;
-        case 'studentClass':
-          modifiedFieldsJson['studentClass'] = newClass.studentClass;
-          break;
-        case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
-          break;
-
-        case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-
-        case 'amountToPay':
-          modifiedFieldsJson['amountToPay'] = newClass.amountToPay;
-          break;
-        case 'paymentDate':
-          modifiedFieldsJson['paymentDate'] =
-              newClass.paymentDate.toIso8601String();
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'receiptNumber':
-          modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
-          break;
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['receiptNumber'] = newClass.receiptNumber;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${newClass.receiptNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('receiptNumber ${newClass.receiptNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update receiptNumber.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating receiptNumber: $e');
-      print('Stack Trace: $stackTrace');
-      print('receiptNumber Details:');
-      print('receiptNumber: ${newClass.receiptNumber}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-  //=================== purpose sync =========================
-
-  Future<void> _createPaymentPurposeInMySQL(PaymentPurpose newClass) async {
-    final Map<String, dynamic> jsonData = _paymentPurposeToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create purposeCode.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating purposeCode: $e');
-      print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updatePaymentPurposeInMySQL(PaymentPurpose newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'paymentPurpose':
-          modifiedFieldsJson['paymentPurpose'] = newClass.paymentPurpose;
-          break;
-        case 'purposeAmount':
-          modifiedFieldsJson['purposeAmount'] = newClass.purposeAmount;
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'associatedClasses':
-          modifiedFieldsJson['associatedClasses'] =
-              jsonEncode(newClass.associatedClasses);
-          break;
-
-        case 'purposeCode':
-          modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
-          break;
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['purposeCode'] = newClass.purposeCode;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${newClass.purposeCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('purposeCode ${newClass.purposeCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update purposeCode.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating purposeCode: $e');
-      print('Stack Trace: $stackTrace');
-      print('purposeCode Details:');
-      print('purposeCode: ${newClass.purposeCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//=================== users sync =========================
-
-  Future<void> _createUserInMySQL(User newClass) async {
-    final Map<String, dynamic> jsonData = _userToJson(newClass);
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Users ${newClass.userCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create Users.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error creating Users: $e');
-      print('Stack Trace: $stackTrace');
-      print('User Details:');
-      print('UserCode: ${newClass.userCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateUserInMySQL(User newClass) async {
-    // final Map<String, dynamic> jsonData = _userToJson(newClass);
-
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'username':
-          modifiedFieldsJson['username'] = newClass.username;
-          break;
-        case 'password':
-          modifiedFieldsJson['password'] = newClass.password;
-          break;
-        case 'role':
-          modifiedFieldsJson['role'] = newClass.role;
-          break;
-        case 'securityQuestions':
-          modifiedFieldsJson['securityQuestions'] =
-              jsonEncode(newClass.securityQuestions);
-          break;
-        case 'securityAnswers':
-          modifiedFieldsJson['securityAnswers'] =
-              jsonEncode(newClass.securityAnswers);
-          break;
-        case 'phone':
-          modifiedFieldsJson['phone'] = newClass.phone;
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'userCode':
-          modifiedFieldsJson['userCode'] = newClass.userCode;
-          break;
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['userCode'] = newClass.userCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?userCode=${newClass.userCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Users ${newClass.userCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update users.');
-      }
-    } catch (e, stackTrace) {
-      // Print a detailed debug log
-      print('--- Exception Details ---');
-      print('Error updating Users: $e');
-      print('Stack Trace: $stackTrace');
-      print('User Details:');
-      print('UserCode: ${newClass.userCode}');
-      print('OperationType: ${newClass.operationType}');
-      print('SyncStatus: ${newClass.syncStatus}');
-      print('--- End of Exception Details ---');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//=================== students sync =========================
-
-  Future<void> _createStudentsInMySQL(Student newClass) async {
-    final Map<String, dynamic> jsonData = _studentInfoToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Students ${newClass.studentIdNumber} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create students.');
-      }
-    } catch (e) {
-      print('Error creating students: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateStudentsInMySQL(Student newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        case 'name':
-          modifiedFieldsJson['name'] = newClass.name;
-          break;
-        case 'surname':
-          modifiedFieldsJson['surname'] = newClass.surname;
-          break;
-        case 'regNumber':
-          modifiedFieldsJson['regNumber'] = newClass.regNumber;
-          break;
-        case 'class_':
-          modifiedFieldsJson['class'] = newClass.class_;
-          break;
-        case 'gender':
-          modifiedFieldsJson['gender'] = newClass.gender;
-          break;
-        case 'age':
-          modifiedFieldsJson['age'] = newClass.age.toIso8601String();
-          break;
-        case 'phoneNumber':
-          modifiedFieldsJson['phoneNumber'] = newClass.phoneNumber;
-          break;
-        case 'paymentStatus':
-          modifiedFieldsJson['paymentStatus'] = newClass.paymentStatus;
-          break;
-        case 'isPresent':
-          modifiedFieldsJson['isPresent'] = newClass.isPresent;
-          break;
-        case 'presentDates':
-          modifiedFieldsJson['presentDates'] = jsonEncode(newClass.presentDates
-              .map((date) => date.toIso8601String())
-              .toList());
-          break;
-        case 'absentDates':
-          modifiedFieldsJson['absentDates'] = jsonEncode(newClass.absentDates
-              .map((date) => date.toIso8601String())
-              .toList());
-          break;
-        case 'id':
-          modifiedFieldsJson['id'] = newClass.id;
-          break;
-        case 'physicalAddress':
-          modifiedFieldsJson['physicalAddress'] = newClass.physicalAddress;
-          break;
-        case 'formerSchool':
-          modifiedFieldsJson['formerSchool'] = newClass.formerSchool;
-          break;
-        case 'religion':
-          modifiedFieldsJson['religion'] = newClass.religion;
-          break;
-        case 'denomination':
-          modifiedFieldsJson['denomination'] = newClass.denomination;
-          break;
-        case 'studentIdNumber':
-          modifiedFieldsJson['studentIdNumber'] = newClass.studentIdNumber;
-          break;
-        case 'nationalIdNumber':
-          modifiedFieldsJson['nationalIdNumber'] = newClass.nationalIdNumber;
-          break;
-        case 'nationality':
-          modifiedFieldsJson['nationality'] = newClass.nationality;
-          break;
-        case 'district':
-          modifiedFieldsJson['district'] = newClass.district;
-          break;
-        case 'previousSchoolPerformanceResults':
-          modifiedFieldsJson['previousSchoolPerformanceResults'] =
-              newClass.previousSchoolPerformanceResults;
-          break;
-        case 'enrollmentStatus':
-          modifiedFieldsJson['enrollmentStatus'] = newClass.enrollmentStatus;
-          break;
-        case 'emergencyContactName':
-          modifiedFieldsJson['emergencyContactName'] =
-              newClass.emergencyContactName;
-          break;
-        case 'emergencyContactNumber':
-          modifiedFieldsJson['emergencyContactNumber'] =
-              newClass.emergencyContactNumber;
-          break;
-        // Add other fields as needed in this format
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['studentIdNumber'] = newClass.studentIdNumber;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?studentIdNumber=${newClass.studentIdNumber}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Students ${newClass.studentIdNumber} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update students.');
-      }
-    } catch (e) {
-      print('Error updating students: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//==================== withdrawal sync ======================
-
-  Future<void> _createWithdrawalsInMySQL(Withdrawal newClass) async {
-    final Map<String, dynamic> jsonData = _withdrawalToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Withdrawals ${newClass.withdrawalCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create withdrawals_information.');
-      }
-    } catch (e) {
-      print('Error creating Withdrawal: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateWithdrawalsInMySQL(Withdrawal newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'amount':
-          modifiedFieldsJson['amount'] = newClass.amount;
-          break;
-        case 'withdrawalPurpose':
-          modifiedFieldsJson['withdrawalPurpose'] = newClass.withdrawalPurpose;
-          break;
-        case 'withdrawalCode':
-          modifiedFieldsJson['withdrawalCode'] = newClass.withdrawalCode;
-          break;
-        case 'date':
-          modifiedFieldsJson['date'] = newClass.date.toIso8601String();
-          break;
-
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        // Add cases for other fields as needed
-      }
-    }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['withdrawalCode'] = newClass.withdrawalCode;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php?withdrawalCode=${newClass.withdrawalCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Withdrawals ${newClass.withdrawalCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        await newClass.save();
-        newClass.modifiedFields = [];
-      } else {
-        throw Exception('Failed to update withdrawals_information.');
-      }
-    } catch (e) {
-      print('Error updating Withdrawal: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//====================== terms sync ==========================
-  Future<void> _createTermsInMySQL(Terms newClass) async {
-    final Map<String, dynamic> jsonData = _termsToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Terms ${newClass.termId} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create terms_information.');
-      }
-    } catch (e) {
-      print('Error creating Terms: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateTermsInMySQL(Terms newClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in newClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'termName':
-          modifiedFieldsJson['termName'] = newClass.termName;
-          break;
-        case 'startDate':
-          modifiedFieldsJson['startDate'] =
-              newClass.startDate.toIso8601String();
-          break;
-        case 'endDate':
-          modifiedFieldsJson['endDate'] = newClass.endDate?.toIso8601String();
-          break;
-        case 'isActive':
-          modifiedFieldsJson['isActive'] = newClass.isActive;
-          break;
-        case 'status':
-          modifiedFieldsJson['status'] = newClass.status;
-          break;
-
-        case 'termId':
-          modifiedFieldsJson['termId'] = newClass.termId;
-          break;
-        // Add cases for other fields as needed
-      }
-    }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['termId'] = newClass.termId;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?termId=${newClass.termId}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Terms ${newClass.termId} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to update terms_information.');
-      }
-    } catch (e) {
-      print('Error updating Terms: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//============== classes sync ==============================
-  Future<void> _createClassInMySQL(Classes newClass) async {
-    final Map<String, dynamic> jsonData = _classToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${newClass.classCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create classes_information.');
-      }
-    } catch (e) {
-      print('Error creating classes_information: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateClassesInMySQL(Classes updatedClass) async {
-    // Extract the modified fields and their values
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in updatedClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'className':
-          modifiedFieldsJson['className'] = updatedClass.className;
-          break;
-        case 'date':
-          modifiedFieldsJson['date'] = updatedClass.date.toIso8601String();
-          break;
-        case 'termId':
-          modifiedFieldsJson['termId'] = updatedClass.termId;
-          break;
-        // Add cases for other fields as needed
-      }
-    }
-
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['classCode'] = updatedClass.classCode;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php?classCode=${updatedClass.classCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Classes ${updatedClass.classCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        updatedClass.syncStatus = true;
-        updatedClass.operationType = 'none';
-        updatedClass.modifiedFields = [];
-
-        await updatedClass.save();
-      } else {
-        throw Exception('Failed to update Class.');
-      }
-    } catch (e) {
-      print('Error updating Class: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//================= schools sync ===========================
-
-  Future<void> _createSchoolInMySQL(School newClass) async {
-    final Map<String, dynamic> jsonData = _schoolToJson(newClass);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${newClass.schoolCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print(
-            'school_information ${newClass.schoolCode} created successfully.');
-        // Update syncStatus and operationType in Hive
-        newClass.syncStatus = true;
-        newClass.operationType = 'none';
-        newClass.modifiedFields = [];
-
-        await newClass.save();
-      } else {
-        throw Exception('Failed to create school_information.');
-      }
-    } catch (e) {
-      print('Error creating school_information: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateSchoolInMySQL(School updatedClass) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in updatedClass.modifiedFields ?? []) {
-      switch (field) {
-        case 'schoolName':
-          modifiedFieldsJson['schoolName'] = updatedClass.schoolName;
-          break;
-        case 'schoolAddress':
-          modifiedFieldsJson['schoolAddress'] = updatedClass.schoolAddress;
-          break;
-        case 'schoolPhoneNumber':
-          modifiedFieldsJson['schoolPhoneNumber'] =
-              updatedClass.schoolPhoneNumber;
-          break;
-        case 'schoolEmail':
-          modifiedFieldsJson['schoolEmail'] = updatedClass.schoolEmail;
-          break;
-
-        case 'termId':
-          modifiedFieldsJson['termId'] = updatedClass.termId;
-          break;
-        // Add cases for other fields as needed
-      }
-    }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['schoolCode'] = updatedClass.schoolCode;
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?schoolCode=${updatedClass.schoolCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('Schools ${updatedClass.schoolCode} updated successfully.');
-        // Update syncStatus and operationType in Hive
-        updatedClass.syncStatus = true;
-        updatedClass.operationType = 'none';
-        updatedClass.modifiedFields = [];
-
-        await updatedClass.save();
-      } else {
-        throw Exception('Failed to update school.');
-      }
-    } catch (e) {
-      print('Error updating school: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  //============================== domains ==========================
-
-  Future<void> _createDomainInMySQL(DomainRecord domain) async {
-    final Map<String, dynamic> jsonData = _domainsToJson(domain);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php?domainName=${domain.domainName}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        domain.syncStatus = true;
-        domain.operationType = 'none';
-        domain.modifiedFields = [];
-        await domain.save();
-      } else {
-        throw Exception('Failed to create domain.');
-      }
-    } catch (e) {
-      print('Error creating domain: \$e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateDomainInMySQL(DomainRecord domain) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in domain.modifiedFields ?? []) {
-      switch (field) {
-        case 'areDomainsActive':
-          modifiedFieldsJson['areDomainsActive'] = domain.areDomainsActive;
-          break;
-      }
-    }
-    // Add the unique identifier to the payload
-    modifiedFieldsJson['domainName'] = domain.domainName;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php?domainName=${domain.domainName}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        domain.syncStatus = true;
-        domain.operationType = 'none';
-        domain.modifiedFields = [];
-        await domain.save();
-      } else {
-        throw Exception('Failed to update domain.');
-      }
-    } catch (e) {
-      print('Error updating domain: \$e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-  //============================== accounts type ==========================
-
-  Future<void> _createAccountInMySQL(Account acc) async {
-    final Map<String, dynamic> jsonData = _accountsToJson(acc);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        acc.syncStatus = true;
-        acc.operationType = 'none';
-        acc.modifiedFields = [];
-        await acc.save();
-      } else {
-        throw Exception('Failed to create account.');
-      }
-    } catch (e) {
-      print('Error creating account: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateAccountInMySQL(Account acc) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in acc.modifiedFields ?? []) {
-      switch (field) {
-        case 'accountType':
-          modifiedFieldsJson['accountType'] = acc.accountType;
-          break;
-        case 'accountSubType':
-          modifiedFieldsJson['accountSubType'] = acc.accountSubType;
-          break;
-        case 'accountName':
-          modifiedFieldsJson['accountName'] = acc.accountName;
-          break;
-
-        case 'lastModified':
-          modifiedFieldsJson['lastModified'] =
-              acc.lastModified?.toIso8601String();
-          break;
-        case 'isALiquidAccount':
-          modifiedFieldsJson['isALiquidAccount'] = acc.isALiquidAccount;
-          break;
-      }
-    }
-
-    // Always include the unique identifier
-    modifiedFieldsJson['accountCode'] = acc.accountCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php?accountCode=${acc.accountCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        acc.syncStatus = true;
-        acc.operationType = 'none';
-        acc.modifiedFields = [];
-        await acc.save();
-      } else {
-        throw Exception('Failed to update account.');
-      }
-    } catch (e) {
-      print('Error updating account: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-//============================== assets ==========================
-
-  Future<void> _createAssetInMySQL(Asset asset) async {
-    final Map<String, dynamic> jsonData = _assetsToJson(asset);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php?assetCode=${asset.assetCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        asset.syncStatus = true;
-        asset.operationType = 'none';
-        asset.modifiedFields = [];
-        await asset.save();
-      } else {
-        throw Exception('Failed to create asset.');
-      }
-    } catch (e) {
-      print('Error creating asset: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateAssetInMySQL(Asset asset) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in asset.modifiedFields ?? []) {
-      switch (field) {
-        case 'assetName':
-          modifiedFieldsJson['assetName'] = asset.assetName;
-          break;
-        case 'assetType':
-          modifiedFieldsJson['assetType'] = asset.assetType;
-          break;
-        case 'assetSubType':
-          modifiedFieldsJson['assetSubType'] = asset.assetSubType;
-          break;
-
-        case 'assetSerialNo':
-          modifiedFieldsJson['assetSerialNo'] = asset.assetSerialNo;
-          break;
-        case 'acquisitionDate':
-          modifiedFieldsJson['acquisitionDate'] =
-              asset.acquisitionDate?.toIso8601String();
-          break;
-        case 'acquisitionCost':
-          modifiedFieldsJson['acquisitionCost'] = asset.acquisitionCost;
-          break;
-        case 'acquisitionMethod':
-          modifiedFieldsJson['acquisitionMethod'] = asset.acquisitionMethod;
-          break;
-        case 'department':
-          modifiedFieldsJson['department'] = asset.department;
-          break;
-        case 'location':
-          modifiedFieldsJson['location'] = asset.location;
-          break;
-        case 'depreciationRate':
-          modifiedFieldsJson['depreciationRate'] = asset.depreciationRate;
-          break;
-        case 'depreciationMethod':
-          modifiedFieldsJson['depreciationMethod'] = asset.depreciationMethod;
-          break;
-        case 'lastDepreciationDate':
-          modifiedFieldsJson['lastDepreciationDate'] =
-              asset.lastDepreciationDate?.toIso8601String();
-          break;
-        case 'accumulatedDepreciation':
-          modifiedFieldsJson['accumulatedDepreciation'] =
-              asset.accumulatedDepreciation;
-          break;
-        case 'bookValue':
-          modifiedFieldsJson['bookValue'] = asset.bookValue;
-          break;
-        case 'isImpaired':
-          modifiedFieldsJson['isImpaired'] = asset.isImpaired;
-          break;
-        case 'impairmentLoss':
-          modifiedFieldsJson['impairmentLoss'] = asset.impairmentLoss;
-          break;
-        case 'revaluationDate':
-          modifiedFieldsJson['revaluationDate'] =
-              asset.revaluationDate?.toIso8601String();
-          break;
-        case 'revaluationAmount':
-          modifiedFieldsJson['revaluationAmount'] = asset.revaluationAmount;
-          break;
-        case 'lastMaintenanceDate':
-          modifiedFieldsJson['lastMaintenanceDate'] =
-              asset.lastMaintenanceDate?.toIso8601String();
-          break;
-        case 'maintenanceCost':
-          modifiedFieldsJson['maintenanceCost'] = asset.maintenanceCost;
-          break;
-        case 'maintenanceDescription':
-          modifiedFieldsJson['maintenanceDescription'] =
-              asset.maintenanceDescription;
-          break;
-        case 'capitalImprovementCost':
-          modifiedFieldsJson['capitalImprovementCost'] =
-              asset.capitalImprovementCost;
-          break;
-        case 'capitalImprovementDescription':
-          modifiedFieldsJson['capitalImprovementDescription'] =
-              asset.capitalImprovementDescription;
-          break;
-        case 'disposalDate':
-          modifiedFieldsJson['disposalDate'] =
-              asset.disposalDate?.toIso8601String();
-          break;
-        case 'disposalProceeds':
-          modifiedFieldsJson['disposalProceeds'] = asset.disposalProceeds;
-          break;
-        case 'disposalReason':
-          modifiedFieldsJson['disposalReason'] = asset.disposalReason;
-          break;
-        case 'gainOrLossOnDisposal':
-          modifiedFieldsJson['gainOrLossOnDisposal'] =
-              asset.gainOrLossOnDisposal;
-          break;
-        case 'isLeased':
-          modifiedFieldsJson['isLeased'] = asset.isLeased;
-          break;
-        case 'leaseType':
-          modifiedFieldsJson['leaseType'] = asset.leaseType;
-          break;
-        case 'leaseStartDate':
-          modifiedFieldsJson['leaseStartDate'] =
-              asset.leaseStartDate?.toIso8601String();
-          break;
-        case 'leaseEndDate':
-          modifiedFieldsJson['leaseEndDate'] =
-              asset.leaseEndDate?.toIso8601String();
-          break;
-        case 'leasePaymentAmount':
-          modifiedFieldsJson['leasePaymentAmount'] = asset.leasePaymentAmount;
-          break;
-        case 'lastAuditDate':
-          modifiedFieldsJson['lastAuditDate'] =
-              asset.lastAuditDate?.toIso8601String();
-          break;
-        case 'notes':
-          modifiedFieldsJson['notes'] = asset.notes;
-          break;
-        case 'lastModified':
-          modifiedFieldsJson['lastModified'] =
-              asset.lastModified?.toIso8601String();
-          break;
-        case 'usefulLife':
-          modifiedFieldsJson['usefulLife'] = asset.usefulLife;
-          break;
-        case 'hasDebitBalance':
-          modifiedFieldsJson['hasDebitBalance'] = asset.hasDebitBalance;
-          break;
-        case 'hasCreditBalance':
-          modifiedFieldsJson['hasCreditBalance'] = asset.hasCreditBalance;
-          break;
-        case 'option':
-          modifiedFieldsJson['option'] = asset.option;
-          break;
-      }
-    }
-
-    modifiedFieldsJson['assetCode'] = asset.assetCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php?assetCode=${asset.assetCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        asset.syncStatus = true;
-        asset.operationType = 'none';
-        asset.modifiedFields = [];
-        await asset.save();
-      } else {
-        throw Exception('Failed to update asset.');
-      }
-    } catch (e) {
-      print('Error updating asset: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-//============================== projects ==========================
-
-  Future<void> _createProjectInMySQL(Project p) async {
-    final Map<String, dynamic> jsonData = _projectsToJson(p);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to create project.');
-      }
-    } catch (e) {
-      print('Error creating project: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateProjectInMySQL(Project p) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in p.modifiedFields ?? []) {
-      switch (field) {
-        case 'name':
-          modifiedFieldsJson['name'] = p.name;
-          break;
-        case 'description':
-          modifiedFieldsJson['description'] = p.description;
-          break;
-        case 'status':
-          modifiedFieldsJson['status'] = p.status;
-          break;
-        case 'createdAt':
-          modifiedFieldsJson['createdAt'] = p.createdAt.toIso8601String();
-          break;
-      }
-    }
-
-    modifiedFieldsJson['projectCode'] = p.projectCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php?projectCode=${p.projectCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to update project.');
-      }
-    } catch (e) {
-      print('Error updating project: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//============================== dailyActivities ==========================
-
-  Future<void> _createDailyActivityInMySQL(DailyActivity a) async {
-    final Map<String, dynamic> jsonData = _daily_activitiesToJson(a);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php?projectDailyActiviyCode=${a.projectDailyActiviyCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        a.syncStatus = true;
-        a.operationType = 'none';
-        a.modifiedFields = [];
-        await a.save();
-      } else {
-        throw Exception('Failed to create daily activity.');
-      }
-    } catch (e) {
-      print('Error creating daily activity: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateDailyActivityInMySQL(DailyActivity a) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in a.modifiedFields ?? []) {
-      switch (field) {
-        case 'projectCode':
-          modifiedFieldsJson['projectCode'] = a.projectCode;
-          break;
-        case 'date':
-          modifiedFieldsJson['date'] = a.date.toIso8601String();
-          break;
-        case 'type':
-          modifiedFieldsJson['type'] = a.type;
-          break;
-        case 'description':
-          modifiedFieldsJson['description'] = a.description;
-          break;
-        case 'amount':
-          modifiedFieldsJson['amount'] = a.amount;
-          break;
-      }
-    }
-
-    modifiedFieldsJson['projectDailyActiviyCode'] = a.projectDailyActiviyCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php?projectDailyActiviyCode=${a.projectDailyActiviyCode}'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        a.syncStatus = true;
-        a.operationType = 'none';
-        a.modifiedFields = [];
-        await a.save();
-      } else {
-        throw Exception('Failed to update daily activity.');
-      }
-    } catch (e) {
-      print('Error updating daily activity: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-//============================== projectStudentPayments ==========================
-
-  Future<void> _createProjectStudentPaymentInMySQL(
-      ProjectStudentPayment p) async {
-    final Map<String, dynamic> jsonData = _project_student_paymentsToJson(p);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to create project student payment.');
-      }
-    } catch (e) {
-      print('Error creating project student payment: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateProjectStudentPaymentInMySQL(
-      ProjectStudentPayment p) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in p.modifiedFields ?? []) {
-      switch (field) {
-        case 'studentId':
-          modifiedFieldsJson['studentId'] = p.studentId;
-          break;
-        case 'projectCode':
-          modifiedFieldsJson['projectCode'] = p.projectCode;
-          break;
-        case 'itemId':
-          modifiedFieldsJson['itemId'] = p.itemId;
-          break;
-        case 'amountPaid':
-          modifiedFieldsJson['amountPaid'] = p.amountPaid;
-          break;
-        case 'balance':
-          modifiedFieldsJson['balance'] = p.balance;
-          break;
-      }
-    }
-
-    modifiedFieldsJson['projectStudentPaymentCode'] =
-        p.projectStudentPaymentCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php?projectStudentPaymentCode=${p.projectStudentPaymentCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        p.syncStatus = true;
-        p.operationType = 'none';
-        p.modifiedFields = [];
-        await p.save();
-      } else {
-        throw Exception('Failed to update project student payment.');
-      }
-    } catch (e) {
-      print('Error updating project student payment: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-//============================== projectItems ==========================
-
-  Future<void> _createProjectItemInMySQL(ProjectItem i) async {
-    final Map<String, dynamic> jsonData = _project_itemsToJson(i);
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.post(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(jsonData),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        i.syncStatus = true;
-        i.operationType = 'none';
-        i.modifiedFields = [];
-        await i.save();
-      } else {
-        throw Exception('Failed to create project item.');
-      }
-    } catch (e) {
-      print('Error creating project item: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  Future<void> _updateProjectItemInMySQL(ProjectItem i) async {
-    final Map<String, dynamic> modifiedFieldsJson = {};
-    for (String field in i.modifiedFields ?? []) {
-      switch (field) {
-        case 'projectCode':
-          modifiedFieldsJson['projectCode'] = i.projectCode;
-          break;
-        case 'name':
-          modifiedFieldsJson['name'] = i.name;
-          break;
-        case 'amount':
-          modifiedFieldsJson['amount'] = i.amount;
-          break;
-        case 'isStudentFee':
-          modifiedFieldsJson['isStudentFee'] = i.isStudentFee;
-          break;
-      }
-    }
-
-    modifiedFieldsJson['projectItemCode'] = i.projectItemCode;
-
-    setState(() {
-      _isSyncings = true;
-    });
-    try {
-      final response = await http.put(
-        Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php?projectItemCode=${i.projectItemCode}',
-        ),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(modifiedFieldsJson),
-      );
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        i.syncStatus = true;
-        i.operationType = 'none';
-        i.modifiedFields = [];
-        await i.save();
-      } else {
-        throw Exception('Failed to update project item.');
-      }
-    } catch (e) {
-      print('Error updating project item: $e');
-    } finally {
-      setState(() {
-        _isSyncings = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final loggedInUser = getLoggedInUser();
-
-    final isLargeScreen =
-        MediaQuery.of(context).size.width > 800; // Example threshold
-
-    return Scaffold(
-      appBar: const CustomAppBar(title: 'Synchronization'),
-      body: LayoutBuilder(builder: (context, constraints) {
-        return Row(
-          children: [
-            if (constraints.maxWidth >= 540)
-              SizedBox(
-                width: 250,
-                child: CustomDrawerAdmin(loggedInUser: loggedInUser),
-              ),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(builder: (context, constraints) {
-                      return Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color.fromRGBO(0, 233, 254, 1),
-                              Color.fromARGB(0, 233, 254, 1),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                        ),
-                        child: Center(
-                          child: SingleChildScrollView(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Container(
-                                constraints:
-                                    const BoxConstraints(maxWidth: 600),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Sync All Records Button
-
-                                    buildFutureSchoolsWidget(
-                                        isLargeScreen: isLargeScreen),
-
-                                    _isSyncings
-                                        ? const Center(
-                                            child: SizedBox(
-                                              height:
-                                                  50, // Specify the size of the CircularProgressIndicator
-                                              width: 50,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth:
-                                                    5, // Adjust the thickness of the progress indicator
-                                              ),
-                                            ),
-                                          )
-                                        : ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  const Color.fromARGB(
-                                                      255, 255, 255, 255),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 16),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                            onPressed: () async {
-                                              if (areDomainsActive) {
-                                                await _syncModels();
-                                                ScaffoldMessenger.of(context)
-                                                    .showSnackBar(
-                                                        const SnackBar(
-                                                  content: Text(
-                                                    'All records have been synchronized successfully.',
-                                                    style: TextStyle(
-                                                        fontSize: 16,
-                                                        color: Colors.black,
-                                                        fontWeight:
-                                                            FontWeight.w600),
-                                                  ),
-                                                  behavior:
-                                                      SnackBarBehavior.floating,
-                                                  backgroundColor:
-                                                      Color.fromARGB(
-                                                          255, 255, 255, 255),
-                                                ));
-                                              } else {
-                                                _showDomainsInactiveMessage(
-                                                    context);
-                                              }
-                                            },
-                                            icon: const Icon(Icons.cloud_upload,
-                                                size: 24),
-                                            label: const Text(
-                                              'Push Records To The Cloud',
-                                              style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.w600),
-                                            ),
-                                          ),
-
-                                    const SizedBox(height: 20),
-
-                                    _isSyncing
-                                        ? const Center(
-                                            child: SizedBox(
-                                              height:
-                                                  50, // Specify the size of the CircularProgressIndicator
-                                              width: 50,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth:
-                                                    5, // Adjust the thickness of the progress indicator
-                                              ),
-                                            ),
-                                          )
-                                        : ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  const Color.fromARGB(
-                                                      255, 255, 255, 255),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 16),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                            onPressed: () async {
-                                              if (areDomainsActive) {
-                                                await _showModelSelectionDialog(
-                                                    context);
-                                              } else {
-                                                _showDomainsInactiveMessage(
-                                                    context);
-                                              }
-                                            },
-                                            icon: const Icon(
-                                                Icons.cloud_download,
-                                                size: 24),
-                                            label: const Text(
-                                              'Pull  Records From The Cloud',
-                                              style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.w600),
-                                            ),
-                                          ),
-                                    const SizedBox(height: 20),
-
-                                    // Retrieve and Save Records Button
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      }),
-      bottomNavigationBar: buildBottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onItemTapped: _handleItemTapped,
-      ),
-    );
-  }
-
-  void _showDomainsInactiveMessage(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            'Domains Not Active',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.redAccent,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 50,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Your domains are currently not active.',
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Please contact the Edutrek Service Provider for assistance.',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                icon: const Icon(Icons.close, color: Colors.white),
-                label: const Text(
-                  'Close',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _showModelSelectionDialog(BuildContext context) async {
-    final loggedInUser = getLoggedInUser();
-    final role = loggedInUser?.role.toLowerCase() ?? '';
-
-    // Define models accessible to specific roles
-    final roleBasedModels = {
-      'admin': [
-        'Teacher Payments',
-        'Withdrawals',
-        'Users',
-        'Terms',
-        'Teachers',
-        'Teacher Purposes',
-        'Students',
-        'Student Payments',
-        'Schools',
-        'Student Payment Purposes',
-        'Classes',
-        'DomainRecord',
-        'Account',
-        'Asset',
-        'Project',
-        'ProjectItem',
-        'DailyActivity',
-        'ProjectStudentPayment',
-      ],
-      'secretary': [
-        'Students',
-        'Schools',
-        'Classes',
-        'Withdrawals',
-        'Terms',
-        'Teachers',
-        'Student Payments',
-        'Student Payment Purposes',
-        'Account',
-        'Asset',
-        'Project',
-        'ProjectItem',
-        'DailyActivity',
-        'ProjectStudentPayment',
-      ],
-      'teacher': [
-        'Students',
-        'Classes',
-        'Terms',
-      ],
-      'accountant': [
-        'Teacher Payments',
-        'Withdrawals',
-        'Student Payments',
-        'Terms',
-        'Teachers',
-        'Students',
-        'Schools',
-        'Classes',
-        'Student Payment Purposes',
-        'Account',
-        'Asset',
-        'Project',
-        'ProjectItem',
-        'DailyActivity',
-        'ProjectStudentPayment',
-      ],
-      'sub-admin': [
-        'Teacher Payments',
-        'Withdrawals',
-        'Users',
-        'Terms',
-        'Teachers',
-        'Teacher Purposes',
-        'Students',
-        'Student Payments',
-        'Schools',
-        'Student Payment Purposes',
-        'Classes',
-        'DomainRecord',
-        'Account',
-        'Asset',
-        'Project',
-        'ProjectItem',
-        'DailyActivity',
-        'ProjectStudentPayment',
-      ],
-    };
-
-    // Determine which models the user can access
-    final models = roleBasedModels[role] ?? [];
-
-    if (models.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You do not have access to any models.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    final Map<String, bool> selectedModels = {
-      for (var model in models) model: false,
-    };
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Select Models to Pull'),
-              content: SingleChildScrollView(
-                child: Column(
-                  children: models.map((model) {
-                    return CheckboxListTile(
-                      title: Text(model),
-                      value: selectedModels[model],
-                      onChanged: (value) {
-                        setState(() {
-                          selectedModels[model] = value ?? false;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _fetchSelectedModels(selectedModels);
-                  },
-                  child: const Text('Sync Selected'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _fetchSelectedModels(Map<String, bool> selectedModels) async {
-    setState(() {
-      _isSyncing = true;
-    });
-
-    final fetchFunctions = {
-      'Teacher Payments': _fetchAndSyncTeacherPayments,
-      'Withdrawals': _fetchAndSyncwithdrawals,
-      'Users': _fetchAndSyncUsers,
-      'Terms': _fetchAndSyncTerms,
-      'Teachers': _fetchAndSyncTeachers,
-      'Teacher Purposes': _fetchAndSyncTeacherPurposes,
-      'Students': _fetchAndSyncStudents,
-      'Student Payments': _fetchAndSyncStudentPayments,
-      'Schools': _fetchAndSyncSchools,
-      'Student Payment Purposes': _fetchAndSyncPurposes,
-      'Classes': _fetchAndSyncClasses,
-      'DomainRecord': _fetchAndSyncDomainRecord,
-      'Account': _fetchAndSyncAccount,
-      'Asset': _fetchAndSyncAsset,
-      'Project': _fetchAndSyncProject,
-      'ProjectItem': _fetchAndSyncProjectItem,
-      'DailyActivity': _fetchAndSyncDailyActivity,
-      'ProjectStudentPayment': _fetchAndSyncProjectStudentPayment,
-    };
-
-    try {
-      for (var entry in selectedModels.entries) {
-        if (entry.value) {
-          await fetchFunctions[entry.key]!();
-        }
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Selected records have been retrieved and saved successfully.',
-            style: TextStyle(
-                fontSize: 16, color: Colors.black, fontWeight: FontWeight.w600),
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Color.fromARGB(255, 255, 255, 255),
-        ),
-      );
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-  // Helper function to decode string to List<String>
-  List<String> _decodeToList(dynamic value) {
-    if (value is String) {
-      // If it's a string, try to decode it as JSON
-      try {
-        return List<String>.from(jsonDecode(value));
-      } catch (e) {
-        print('Error decoding string to List: $e');
-        return [];
-      }
-    } else if (value is List) {
-      // If it's already a list, return it directly
-      return List<String>.from(value);
-    }
-    return [];
-  }
-
-//================================pull _fetchAndSyncClasses =======================================================================//
-  List<String> _decodeClassToList(dynamic value) {
-    try {
-      if (value == null) return [];
-      if (value is List) return List<String>.from(value);
-      if (value is String) {
-        final decoded = jsonDecode(value);
-        if (decoded is List) return List<String>.from(decoded);
-      }
-    } catch (e) {
-      print('Error decoding string to List: $e');
-    }
-    return [];
-  }
-
-  Future<void> _fetchAndSyncClasses() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final decoded = jsonDecode(response.body);
-        final List<dynamic> classes = decoded is List
-            ? decoded
-            : decoded.entries
-                .where((e) => e.value is Map)
-                .map((e) => e.value)
-                .toList();
-
-        print('Decoded response: $decoded');
-
-        for (var classData in classes) {
-          DateTime parsedDate =
-              DateTime.tryParse(classData['date']) ?? DateTime.now();
-
-          Classes fetchedClass = Classes(
-            id: int.tryParse(classData['fid'] ?? '0') ?? 0,
-            classCode: classData['classCode'],
-            className: classData['className'],
-            date: parsedDate, // Assign the parsed DateTime
-            termId: classData['termId'],
-            terms: _decodeClassToList(classData['terms']),
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingClassList = _classesBox!.values
-              .where(
-                (classes) => classes.classCode == fetchedClass.classCode,
-              )
-              .toList();
-
-          Classes? existingClasses =
-              existingClassList.isNotEmpty ? existingClassList.first : null;
-
-          if (fetchedClass.classCode != null) {
-            if (existingClasses != null) {
-              // Update existing record
-              existingClasses
-                ..id = fetchedClass.id
-                ..classCode = fetchedClass.classCode
-                ..className = fetchedClass.className
-                ..date = fetchedClass.date
-                ..termId = fetchedClass.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedClass.terms;
-
-              await existingClasses.save();
-              print(
-                  'Classes ${fetchedClass.classCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _classesBox!.add(fetchedClass);
-              print(
-                  'Classes ${fetchedClass.classCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another Class record was Found with no Class Code and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch Classes from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing Classes: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncPurposes =======================================================================//
-
-  Future<void> _fetchAndSyncPurposes() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> purposes = jsonDecode(response.body);
-
-        for (var purposeData in purposes) {
-          PaymentPurpose fetchedPurpose = PaymentPurpose(
-            id: int.tryParse(purposeData['fid'] ?? '0') ?? 0,
-            paymentPurpose: purposeData['paymentPurpose'] ?? '',
-            purposeAmount: purposeData['purposeAmount'] != null
-                ? double.tryParse(purposeData['purposeAmount'].toString()) ??
-                    0.0
-                : 0.0,
-            purposeCode: purposeData['purposeCode'],
-            associatedClasses: _decodeToList(purposeData['associatedClasses']),
-            termId: purposeData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingPurposeList = _payment_purposesBox!.values
-              .where(
-                (purposes) =>
-                    purposes.purposeCode == fetchedPurpose.purposeCode,
-              )
-              .toList();
-
-          PaymentPurpose? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
-          if (fetchedPurpose.purposeCode != null) {
-            if (existingPurposes != null) {
-              // Update existing record
-              existingPurposes
-                ..id = fetchedPurpose.id
-                ..purposeCode = fetchedPurpose.purposeCode
-                ..paymentPurpose = fetchedPurpose.paymentPurpose
-                ..purposeAmount = fetchedPurpose.purposeAmount
-                ..associatedClasses = fetchedPurpose.associatedClasses
-                ..termId = fetchedPurpose.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingPurposes.save();
-              print(
-                  'PaymentPurpose ${fetchedPurpose.purposeCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _payment_purposesBox!.add(fetchedPurpose);
-              print(
-                  'PaymentPurpose ${fetchedPurpose.purposeCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another Student PaymentPurpose record was Found with no Purpose Code  and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch PaymentPurpose from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing PaymentPurpose: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncSchools =======================================================================//
-
-  Future<void> _fetchAndSyncSchools() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> schools = jsonDecode(response.body);
-
-        for (var schoolData in schools) {
-          School fetchedSchool = School(
-            id: int.tryParse(schoolData['fid'] ?? '0'),
-            schoolName: schoolData['schoolName'],
-            schoolCode: schoolData['schoolCode'],
-            schoolAddress: schoolData['schoolAddress'],
-            schoolPhoneNumber: schoolData['schoolPhoneNumber'],
-            schoolEmail: schoolData['schoolEmail'],
-            termId: schoolData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingSchoolList = _schoolBox!.values
-              .where(
-                (school) => school.schoolCode == fetchedSchool.schoolCode,
-              )
-              .toList();
-
-          School? existingSchool =
-              existingSchoolList.isNotEmpty ? existingSchoolList.first : null;
-          if (fetchedSchool.schoolCode != null) {
-            if (existingSchool != null) {
-              // Update existing record
-              existingSchool
-                ..schoolName = fetchedSchool.schoolName
-                ..schoolAddress = fetchedSchool.schoolAddress
-                ..schoolPhoneNumber = fetchedSchool.schoolPhoneNumber
-                ..schoolEmail = fetchedSchool.schoolEmail
-                ..termId = fetchedSchool.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedSchool.id;
-
-              await existingSchool.save();
-              print(
-                  'School ${fetchedSchool.schoolCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _schoolBox!.add(fetchedSchool);
-              print(
-                  'School ${fetchedSchool.schoolCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Another School record was Found with no School Code and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch schools from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing schools: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncStudentPayments =======================================================================//
-
-  Future<void> _fetchAndSyncStudentPayments() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> studentPayments = jsonDecode(response.body);
-
-        for (var paymentsData in studentPayments) {
-          StudentPayment fetchedPayments = StudentPayment(
-            id: int.tryParse(paymentsData['fid'] ?? '0') ?? 0,
-            studentName: paymentsData['studentName'] ?? '',
-            studentSurname: paymentsData['studentSurname'] ?? '',
-            studentClass: paymentsData['studentClass'] ?? '',
-            phoneNumber: paymentsData['phoneNumber'] ?? '',
-            paymentPurpose: paymentsData['paymentPurpose'] ?? '',
-            amountToPay: paymentsData['amountToPay'] != null
-                ? double.tryParse(paymentsData['amountToPay'].toString()) ?? 0.0
-                : 0.0,
-            paymentDate: DateTime.tryParse(paymentsData['paymentDate']) ??
-                DateTime.now(),
-            receiptNumber: paymentsData['receiptNumber'],
-            termId: paymentsData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingPurposeList = _student_paymentsBox!.values
-              .where(
-                (studentPayments) =>
-                    studentPayments.receiptNumber ==
-                    fetchedPayments.receiptNumber,
-              )
-              .toList();
-
-          StudentPayment? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
-
-          if (fetchedPayments.receiptNumber != null) {
-            if (existingPurposes != null) {
-              // Update existing record
-              existingPurposes
-                ..id = fetchedPayments.id
-                ..studentName = fetchedPayments.studentName
-                ..studentSurname = fetchedPayments.studentSurname
-                ..studentClass = fetchedPayments.studentClass
-                ..phoneNumber = fetchedPayments.phoneNumber
-                ..paymentPurpose = fetchedPayments.paymentPurpose
-                ..amountToPay = fetchedPayments.amountToPay
-                ..paymentDate = fetchedPayments.paymentDate
-                ..receiptNumber = fetchedPayments.receiptNumber
-                ..termId = fetchedPayments.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingPurposes.save();
-              print(
-                  'StudentPayment ${fetchedPayments.receiptNumber} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _student_paymentsBox!.add(fetchedPayments);
-              print(
-                  'StudentPayment ${fetchedPayments.receiptNumber} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other StudentPayment Record Was Found with no Receipt Numbers and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch StudentPayment from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing StudentPayment: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncStudents =======================================================================//
-
-  Future<void> _fetchAndSyncStudents() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> students = jsonDecode(response.body);
-
-        for (var studentsData in students) {
-          Student fetchedStudents = Student(
-            id: int.tryParse(studentsData['fid'] ?? '0'),
-            name: studentsData['name'],
-            surname: studentsData['surname'],
-            regNumber: studentsData['regNumber'],
-            class_: studentsData['class'],
-            gender: studentsData['gender'] ?? '',
-            age: DateTime.tryParse(studentsData['age']) ?? DateTime(1900),
-            phoneNumber: studentsData['phoneNumber'] ?? '',
-            paymentStatus: studentsData['paymentStatus'] ?? '',
-            isPresent: studentsData['isPresent'],
-            presentDates: _parseDateList(studentsData['presentDates']),
-            absentDates: _parseDateList(studentsData['absentDates']),
-            termId: studentsData['termId'] ?? '',
-            physicalAddress: studentsData['physicalAddress'] ?? '',
-            formerSchool: studentsData['formerSchool'] ?? '',
-            religion: studentsData['religion'] ?? '',
-            denomination: studentsData['denomination'] ?? '',
-            studentIdNumber: studentsData['studentIdNumber'],
-            nationalIdNumber: studentsData['nationalIdNumber'] ?? '',
-            nationality: studentsData['nationality'] ?? '',
-            district: studentsData['district'] ?? '',
-            previousSchoolPerformanceResults:
-                studentsData['previousSchoolPerformanceResults'] ?? '',
-            enrollmentStatus: studentsData['enrollmentStatus'] ?? '',
-            emergencyContactName: studentsData['emergencyContactName'] ?? '',
-            emergencyContactNumber:
-                studentsData['emergencyContactNumber'] ?? '',
-            terms: _decodeToList(studentsData['terms']),
-          );
-
-          // Check if the record exists in Hive using termId
-          var existingStudentsList = _studentsBox!.values
-              .where(
-                (students) =>
-                    students.studentIdNumber == fetchedStudents.studentIdNumber,
-              )
-              .toList();
-
-          Student? existingStudents = existingStudentsList.isNotEmpty
-              ? existingStudentsList.first
-              : null;
-          if (fetchedStudents.studentIdNumber != null) {
-            if (existingStudents != null) {
-              // Update existing record
-              existingStudents
-                ..name = fetchedStudents.name
-                ..surname = fetchedStudents.surname
-                ..regNumber = fetchedStudents.regNumber
-                ..class_ = fetchedStudents.class_
-                ..gender = fetchedStudents.gender
-                ..termId = fetchedStudents.termId
-                ..age = fetchedStudents.age
-                ..phoneNumber = fetchedStudents.phoneNumber
-                ..paymentStatus = fetchedStudents.paymentStatus
-                ..isPresent = fetchedStudents.isPresent
-                ..presentDates = fetchedStudents.presentDates
-                ..termId = fetchedStudents.termId
-                ..absentDates = fetchedStudents.absentDates
-                ..termId = fetchedStudents.termId
-                ..id = fetchedStudents.id
-                ..physicalAddress = fetchedStudents.physicalAddress
-                ..formerSchool = fetchedStudents.formerSchool
-                ..termId = fetchedStudents.termId
-                ..religion = fetchedStudents.religion
-                ..denomination = fetchedStudents.denomination
-                ..studentIdNumber = fetchedStudents.studentIdNumber
-                ..nationalIdNumber = fetchedStudents.nationalIdNumber
-                ..nationality = fetchedStudents.nationality
-                ..district = fetchedStudents.district
-                ..previousSchoolPerformanceResults =
-                    fetchedStudents.previousSchoolPerformanceResults
-                ..enrollmentStatus = fetchedStudents.enrollmentStatus
-                ..emergencyContactName = fetchedStudents.emergencyContactName
-                ..emergencyContactNumber =
-                    fetchedStudents.emergencyContactNumber
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedStudents.terms;
-
-              await existingStudents.save();
-              print(
-                  'Student ${fetchedStudents.studentIdNumber} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _studentsBox!.add(fetchedStudents);
-              print(
-                  'Student ${fetchedStudents.studentIdNumber} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other Student Record Was Found with no Student Reg Number and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch students from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing students: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-  List<DateTime> _parseDateList(dynamic jsonList) {
-    if (jsonList == null || jsonList is! List) return [];
-    return jsonList
-        .map<DateTime>(
-            (dateStr) => DateTime.tryParse(dateStr) ?? DateTime(1900))
-        .toList();
-  }
-
-//================================pull teacherPayments =======================================================================//
-
-  Future<void> _fetchAndSyncTeacherPayments() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_information_ipi.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> teacherPayments = jsonDecode(response.body);
-
-        for (var paymentsData in teacherPayments) {
-          TeacherPayment fetchedPayments = TeacherPayment(
-            id: int.tryParse(paymentsData['fid'] ?? '0') ?? 0,
-            studentName: paymentsData['studentName'] ?? '',
-            studentSurname: paymentsData['studentSurname'] ?? '',
-            studentClass: paymentsData['studentClass'] ?? '',
-            phoneNumber: paymentsData['phoneNumber'] ?? '',
-            paymentPurpose: paymentsData['paymentPurpose'] ?? '',
-            amountToPay: paymentsData['amountToPay'] != null
-                ? double.tryParse(paymentsData['amountToPay'].toString()) ?? 0.0
-                : 0.0,
-            paymentDate: DateTime.tryParse(paymentsData['paymentDate']) ??
-                DateTime.now(),
-            receiptNumber: paymentsData['receiptNumber'],
-            termId: paymentsData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingPurposeList = _teacher_paymentsBox!.values
-              .where(
-                (teacherPayments) =>
-                    teacherPayments.receiptNumber ==
-                    fetchedPayments.receiptNumber,
-              )
-              .toList();
-
-          TeacherPayment? existingPurposes =
-              existingPurposeList.isNotEmpty ? existingPurposeList.first : null;
-          if (fetchedPayments.receiptNumber != null) {
-            if (existingPurposes != null) {
-              // Update existing record
-              existingPurposes
-                ..id = fetchedPayments.id
-                ..studentName = fetchedPayments.studentName
-                ..studentSurname = fetchedPayments.studentSurname
-                ..studentClass = fetchedPayments.studentClass
-                ..phoneNumber = fetchedPayments.phoneNumber
-                ..paymentPurpose = fetchedPayments.paymentPurpose
-                ..amountToPay = fetchedPayments.amountToPay
-                ..paymentDate = fetchedPayments.paymentDate
-                ..receiptNumber = fetchedPayments.receiptNumber
-                ..termId = fetchedPayments.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingPurposes.save();
-              print(
-                  'TeacherPayment ${fetchedPayments.receiptNumber} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _teacher_paymentsBox!.add(fetchedPayments);
-              print(
-                  'TeacherPayment ${fetchedPayments.receiptNumber} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff Payment  Record Was Found with no Receipt Number and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch TeacherPayment from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing TeacherPayment: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncTeacherPurposes =======================================================================//
-
-  Future<void> _fetchAndSyncTeacherPurposes() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teacher_payment_purposes_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> teacherPurposes = jsonDecode(response.body);
-
-        for (var teacherPurposeData in teacherPurposes) {
-          TeacherPaymentsPurposes fetchedTeacherPurpose =
-              TeacherPaymentsPurposes(
-            id: int.tryParse(teacherPurposeData['fid'] ?? '0') ?? 0,
-            paymentPurpose: teacherPurposeData['paymentPurpose'] ?? '',
-            purposeAmount: teacherPurposeData['purposeAmount'] != null
-                ? double.tryParse(
-                        teacherPurposeData['purposeAmount'].toString()) ??
-                    0.0
-                : 0.0,
-            purposeCode: teacherPurposeData['purposeCode'],
-            associatedStaff:
-                _decodeToList(teacherPurposeData['associatedStaff']),
-            termId: teacherPurposeData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingTeacherPurposeList = _teacher_payments_purposesBox!.values
-              .where(
-                (teacherPurposes) =>
-                    teacherPurposes.purposeCode ==
-                    fetchedTeacherPurpose.purposeCode,
-              )
-              .toList();
-
-          TeacherPaymentsPurposes? existingTeacherPurposes =
-              existingTeacherPurposeList.isNotEmpty
-                  ? existingTeacherPurposeList.first
-                  : null;
-          if (fetchedTeacherPurpose.purposeCode != null) {
-            if (existingTeacherPurposes != null) {
-              // Update existing record
-              existingTeacherPurposes
-                ..id = fetchedTeacherPurpose.id
-                ..purposeCode = fetchedTeacherPurpose.purposeCode
-                ..paymentPurpose = fetchedTeacherPurpose.paymentPurpose
-                ..purposeAmount = fetchedTeacherPurpose.purposeAmount
-                ..associatedStaff = fetchedTeacherPurpose.associatedStaff
-                ..termId = fetchedTeacherPurpose.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingTeacherPurposes.save();
-              print(
-                  'TeacherPaymentsPurposes ${fetchedTeacherPurpose.purposeCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _teacher_payments_purposesBox!.add(fetchedTeacherPurpose);
-              print(
-                  'TeacherPaymentsPurposes ${fetchedTeacherPurpose.purposeCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff Payment Purpose Record Was Found with no purposeCode and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch TeacherPaymentsPurposes from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing TeacherPaymentsPurposes: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncTeachers =======================================================================//
-
-  Future<void> _fetchAndSyncTeachers() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/teachers_information_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> teachers = jsonDecode(response.body);
-
-        for (var teachersData in teachers) {
-          /* teachersData.forEach((key, value) {
-            print('Key: $key, Value: $value, Type: ${value?.runtimeType}');
-          });*/
-          Teachers fetchedTeachers = Teachers(
-              id: int.tryParse(teachersData['fid'] ?? '0') ?? 0,
-              name: teachersData['name'] ?? '',
-              surname: teachersData['surname'] ?? '',
-              IdNumber: teachersData['IdNumber'],
-              assignedClass: teachersData['assignedClass'] ?? '',
-              assignedClasses: _decodeToList(teachersData['assignedClasses']),
-              gender: teachersData['gender'] ?? '',
-              dateOfBirth: DateTime.tryParse(teachersData['dateOfBirth']) ??
-                  DateTime.now(),
-              phoneNumber: teachersData['phoneNumber'] ?? '',
-              paymentPurpose: teachersData['paymentPurpose'] ?? '',
-              isPaid: teachersData['isPaid'],
-              paymentAmount: teachersData['paymentAmount'] != null
-                  ? double.tryParse(teachersData['paymentAmount'].toString()) ??
-                      0.0
-                  : 0.0,
-              paymentDate: teachersData['paymentDate'] != null
-                  ? DateTime.tryParse(teachersData['paymentDate'])
-                  : null,
-              email: teachersData['email'] ?? '',
-              address: teachersData['address'] ?? '',
-              hireDate:
-                  DateTime.tryParse(teachersData['hireDate']) ?? DateTime(1900),
-              qualifications: teachersData['qualifications'] ?? '',
-              employmentStatus: teachersData['employmentStatus'] ?? '',
-              termId: teachersData['termId'],
-              terms: _decodeToList(teachersData['terms']));
-
-          // Check if the record exists in Hive using schoolCode
-          var existingTeachersList = _teachersBox!.values
-              .where(
-                (teachers) => teachers.IdNumber == fetchedTeachers.IdNumber,
-              )
-              .toList();
-
-          Teachers? existingTeachers = existingTeachersList.isNotEmpty
-              ? existingTeachersList.first
-              : null;
-          if (fetchedTeachers.IdNumber != null) {
-            if (existingTeachers != null) {
-              // Update existing record
-              existingTeachers
-                ..id = fetchedTeachers.id
-                ..name = fetchedTeachers.name
-                ..surname = fetchedTeachers.surname
-                ..IdNumber = fetchedTeachers.IdNumber
-                ..assignedClass = fetchedTeachers.assignedClass
-                ..assignedClass = fetchedTeachers.assignedClass
-                ..gender = fetchedTeachers.gender
-                ..dateOfBirth = fetchedTeachers.dateOfBirth
-                ..phoneNumber = fetchedTeachers.phoneNumber
-                ..paymentPurpose = fetchedTeachers.paymentPurpose
-                ..isPaid = fetchedTeachers.isPaid
-                ..paymentAmount = fetchedTeachers.paymentAmount
-                ..paymentDate = fetchedTeachers.paymentDate
-                ..email = fetchedTeachers.email
-                ..address = fetchedTeachers.address
-                ..hireDate = fetchedTeachers.hireDate
-                ..employmentStatus = fetchedTeachers.employmentStatus
-                ..termId = fetchedTeachers.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..terms = fetchedTeachers.terms;
-              await existingTeachers.save();
-              print(
-                  'Teachers ${fetchedTeachers.IdNumber} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _teachersBox!.add(fetchedTeachers);
-              print(
-                  'Teachers ${fetchedTeachers.IdNumber} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other staff Record Was Found with no Staff ID Number and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch Teachers from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing Teachers: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncTerms =======================================================================//
-
-  Future<void> _fetchAndSyncTerms() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php';
-
-    setState(() {
-      _isSyncing = true;
-    });
-
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> terms = jsonDecode(response.body);
-
-        for (var termsData in terms) {
-          DateTime parsedStartDate =
-              DateTime.tryParse(termsData['startDate'] ?? '') ?? DateTime.now();
-          DateTime? parsedEndDate = termsData['endDate'] != null
-              ? DateTime.tryParse(termsData['endDate'])
-              : null;
-          String statuses;
-          bool isactive = termsData['isActive'];
-
-          if (isactive == false) {
-            statuses = 'Closed';
-          } else {
-            statuses = 'Opened';
-          }
-          Terms fetchedTerms = Terms(
-            id: int.tryParse(termsData['fid'] ?? '0'),
-            termName: termsData['termName'],
-            startDate: parsedStartDate,
-            endDate: parsedEndDate,
-            isActive: termsData['isActive'] == true,
-            status: statuses,
-            termId: termsData['termId'],
-          );
-
-          var existingTermsList = _termsBox!.values
-              .where(
-                (school) => school.termId == fetchedTerms.termId,
-              )
-              .toList();
-
-          Terms? existingTerms =
-              existingTermsList.isNotEmpty ? existingTermsList.first : null;
-
-          if (fetchedTerms.termId != null) {
-            if (existingTerms != null) {
-              // Update existing record
-              existingTerms
-                ..termName = fetchedTerms.termName
-                ..startDate = fetchedTerms.startDate
-                ..endDate = fetchedTerms.endDate
-                ..isActive = fetchedTerms.isActive
-                ..status = fetchedTerms.status
-                ..termId = fetchedTerms.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedTerms.id;
-
-              await existingTerms.save();
-              debugPrint(
-                  'Terms ${fetchedTerms.termId} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _termsBox!.add(fetchedTerms);
-              debugPrint(
-                  'Terms ${fetchedTerms.termId} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Skipped a term record without a term ID.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch terms. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('Error syncing terms: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error fetching terms: $e'),
-      ));
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-//================================pull _fetchAndSyncUsers =======================================================================//
-
-  Future<void> _fetchAndSyncUsers() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> users = jsonDecode(response.body);
-
-        for (var userData in users) {
-          User fetchedUser = User(
-            id: int.tryParse(userData['fid'] ?? '0'),
-            username: userData['username'] ?? '',
-            password: userData['password'] ?? '',
-            role: userData['role'] ?? '',
-            securityQuestions: _decodeToList(userData['securityQuestions']),
-            securityAnswers: _decodeToList(userData['securityAnswers']),
-            phone: userData['phone'] ?? '',
-            userCode: userData['userCode'],
-            termId: userData['termId'],
-          );
-
-          // Check if the record exists in Hive using schoolCode
-          var existingUserList = _usersBox!.values
-              .where(
-                (users) => users.userCode == fetchedUser.userCode,
-              )
-              .toList();
-
-          User? existingUsers =
-              existingUserList.isNotEmpty ? existingUserList.first : null;
-          if (fetchedUser.userCode != null) {
-            if (existingUsers != null) {
-              // Update existing record
-              existingUsers
-                ..id = fetchedUser.id
-                ..userCode = fetchedUser.userCode
-                ..username = fetchedUser.username
-                ..password = fetchedUser.password
-                ..role = fetchedUser.role
-                ..securityQuestions = fetchedUser.securityQuestions
-                ..securityAnswers = fetchedUser.securityAnswers
-                ..phone = fetchedUser.phone
-                ..termId = fetchedUser.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingUsers.save();
-              print(
-                  'User ${fetchedUser.userCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _usersBox!.add(fetchedUser);
-              print('User ${fetchedUser.userCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other User  Record Was Found with no User Code and was Skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch User from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing User: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncwithdrawals =======================================================================//
-
-  Future<void> _fetchAndSyncwithdrawals() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/withdrawals_information.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      // Fetch data from API
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> withdrawals = jsonDecode(response.body);
-
-        for (var withdrawalData in withdrawals) {
-          DateTime date =
-              DateTime.tryParse(withdrawalData['date']) ?? DateTime.now();
-
-          Withdrawal fetchedWthdrawals = Withdrawal(
-            id: int.tryParse(withdrawalData['fid'] ?? '0'),
-            amount: withdrawalData['amount'] != null
-                ? double.tryParse(withdrawalData['amount'].toString()) ?? 0.0
-                : 0.0,
-            date: date,
-            withdrawalPurpose: withdrawalData['withdrawalPurpose'],
-            withdrawalCode: withdrawalData['withdrawalCode'],
-            termId: withdrawalData['termId'],
-          );
-
-          // Check if the record exists in Hive using termId
-          var existingWithdrawalsList = _withdrawalsBox!.values
-              .where(
-                (withdrawal) =>
-                    withdrawal.withdrawalCode ==
-                    fetchedWthdrawals.withdrawalCode,
-              )
-              .toList();
-
-          Withdrawal? existingWithdrawals = existingWithdrawalsList.isNotEmpty
-              ? existingWithdrawalsList.first
-              : null;
-          if (fetchedWthdrawals.withdrawalCode != null) {
-            if (existingWithdrawals != null) {
-              // Update existing record
-              existingWithdrawals
-                ..amount = fetchedWthdrawals.amount
-                ..withdrawalPurpose = fetchedWthdrawals.withdrawalPurpose
-                ..withdrawalCode = fetchedWthdrawals.withdrawalCode
-                ..date = fetchedWthdrawals.date
-                ..termId = fetchedWthdrawals.termId
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now()
-                ..id = fetchedWthdrawals.id;
-
-              await existingWithdrawals.save();
-              print(
-                  'Withdrawal ${fetchedWthdrawals.withdrawalCode} updated successfully in Hive.');
-            } else {
-              // Create a new record
-              await _withdrawalsBox!.add(fetchedWthdrawals);
-              print(
-                  'Withdrawal ${fetchedWthdrawals.withdrawalCode} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Other Withdrawal  Record Was Found with no Withdrawal Code and was Skipped'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch withdrawals from the server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing withdrawals: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncDomainRecord =======================================================================//
-
-  Future<void> _fetchAndSyncDomainRecord() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/domain_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> domainList = jsonDecode(response.body);
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var domainData in domainList) {
-          DomainRecord fetchedDomain = DomainRecord(
-            domainName: domainData['domainName'] ?? '',
-            areDomainsActive: _intToBool(domainData['areDomainsActive']),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(domainData['lastModified'] ?? ''),
-          );
-
-          var existingDomainList = _domainRecordBox!.values
-              .where((d) => d.domainName == fetchedDomain.domainName)
-              .toList();
-
-          DomainRecord? existingDomain =
-              existingDomainList.isNotEmpty ? existingDomainList.first : null;
-
-          if (fetchedDomain.domainName!.isNotEmpty) {
-            if (existingDomain != null) {
-              existingDomain
-                ..areDomainsActive = fetchedDomain.areDomainsActive
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingDomain.save();
-              print(
-                  'DomainRecord ${fetchedDomain.domainName} updated successfully in Hive.');
-            } else {
-              await _domainRecordBox!.add(fetchedDomain);
-              print(
-                  'DomainRecord ${fetchedDomain.domainName} added successfully to Hive.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'A Domain record was found with no domain name and was skipped.'),
-            ));
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch DomainRecords from server. Status Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching or syncing DomainRecords: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncAccount =======================================================================//
-
-  Future<void> _fetchAndSyncAccount() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/account_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> accounts = jsonDecode(response.body);
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var accData in accounts) {
-          Account fetchedAcc = Account(
-            id: accData['id'],
-            accountType: accData['accountType'],
-            accountSubType: accData['accountSubType'],
-            accountName: accData['accountName'],
-            accountCode: accData['accountCode'],
-            isALiquidAccount: _intToBool(accData['isALiquidAccount']),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(accData['lastModified'] ?? ''),
-          );
-
-          var existingList =
-              _accountBox!.values.where((a) => a.id == fetchedAcc.id).toList();
-
-          Account? existing =
-              existingList.isNotEmpty ? existingList.first : null;
-
-          if (fetchedAcc.id != null) {
-            if (existing != null) {
-              existing
-                ..accountType = fetchedAcc.accountType
-                ..accountSubType = fetchedAcc.accountSubType
-                ..accountName = fetchedAcc.accountName
-                ..accountCode = fetchedAcc.accountCode
-                ..isALiquidAccount = fetchedAcc.isALiquidAccount
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existing.save();
-              print('Account ${fetchedAcc.id} updated successfully.');
-            } else {
-              await _accountBox!.add(fetchedAcc);
-              print('Account ${fetchedAcc.id} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Account with no ID was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch Accounts. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing Accounts: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncAsset =======================================================================//
-
-  Future<void> _fetchAndSyncAsset() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/asset_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> assets = jsonDecode(response.body);
-        double? _toDouble(dynamic value) {
-          if (value == null) return null;
-          if (value is double) return value;
-          if (value is int) return value.toDouble();
-          if (value is String) return double.tryParse(value);
-          return null;
-        }
-
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var assetData in assets) {
-          Asset fetchedAsset = Asset(
-            id: assetData['id'],
-            assetName: assetData['assetName'],
-            assetType: assetData['assetType'],
-            assetSubType: assetData['assetSubType'],
-            assetCode: assetData['assetCode'],
-            assetSerialNo: assetData['assetSerialNo'],
-            acquisitionDate:
-                DateTime.tryParse(assetData['acquisitionDate'] ?? ''),
-            acquisitionCost: _toDouble(assetData['acquisitionCost']),
-            acquisitionMethod: assetData['acquisitionMethod'],
-            department: assetData['department'],
-            location: assetData['location'],
-            depreciationRate: _toDouble(assetData['depreciationRate']),
-            depreciationMethod: assetData['depreciationMethod'],
-            lastDepreciationDate:
-                DateTime.tryParse(assetData['lastDepreciationDate'] ?? ''),
-            accumulatedDepreciation:
-                _toDouble(assetData['accumulatedDepreciation']),
-            bookValue: _toDouble(assetData['bookValue']),
-            isImpaired: _intToBool(assetData['isImpaired']),
-            impairmentLoss: _toDouble(assetData['impairmentLoss']),
-            revaluationDate:
-                DateTime.tryParse(assetData['revaluationDate'] ?? ''),
-            revaluationAmount: _toDouble(assetData['revaluationAmount']),
-            lastMaintenanceDate:
-                DateTime.tryParse(assetData['lastMaintenanceDate'] ?? ''),
-            maintenanceCost: _toDouble(assetData['maintenanceCost']),
-            maintenanceDescription: assetData['maintenanceDescription'],
-            capitalImprovementCost:
-                _toDouble(assetData['capitalImprovementCost']),
-            capitalImprovementDescription:
-                assetData['capitalImprovementDescription'],
-            disposalDate: DateTime.tryParse(assetData['disposalDate'] ?? ''),
-            disposalProceeds: _toDouble(assetData['disposalProceeds']),
-            disposalReason: assetData['disposalReason'],
-            gainOrLossOnDisposal: _toDouble(assetData['gainOrLossOnDisposal']),
-            isLeased: _intToBool(assetData['isLeased']),
-            leaseType: assetData['leaseType'],
-            leaseStartDate:
-                DateTime.tryParse(assetData['leaseStartDate'] ?? ''),
-            leaseEndDate: DateTime.tryParse(assetData['leaseEndDate'] ?? ''),
-            leasePaymentAmount: _toDouble(assetData['leasePaymentAmount']),
-            lastAuditDate: DateTime.tryParse(assetData['lastAuditDate'] ?? ''),
-            notes: assetData['notes'],
-            createdAt: DateTime.tryParse(assetData['createdAt'] ?? ''),
-            lastModified: DateTime.tryParse(assetData['lastModified'] ?? ''),
-            operationType: 'none',
-            syncStatus: true,
-            usefulLife: assetData['usefulLife'],
-            hasDebitBalance: _intToBool(assetData['hasDebitBalance']),
-            hasCreditBalance: _intToBool(assetData['hasCreditBalance']),
-            option: assetData['option'],
-          );
-
-          var existingAssetList =
-              _assetBox!.values.where((a) => a.id == fetchedAsset.id).toList();
-
-          Asset? existingAsset =
-              existingAssetList.isNotEmpty ? existingAssetList.first : null;
-
-          if (fetchedAsset.id != null) {
-            if (existingAsset != null) {
-              existingAsset
-                ..assetName = fetchedAsset.assetName
-                ..assetType = fetchedAsset.assetType
-                ..assetSubType = fetchedAsset.assetSubType
-                ..assetCode = fetchedAsset.assetCode
-                ..assetSerialNo = fetchedAsset.assetSerialNo
-                ..acquisitionDate = fetchedAsset.acquisitionDate
-                ..acquisitionCost = fetchedAsset.acquisitionCost
-                ..acquisitionMethod = fetchedAsset.acquisitionMethod
-                ..department = fetchedAsset.department
-                ..location = fetchedAsset.location
-                ..depreciationRate = fetchedAsset.depreciationRate
-                ..depreciationMethod = fetchedAsset.depreciationMethod
-                ..lastDepreciationDate = fetchedAsset.lastDepreciationDate
-                ..accumulatedDepreciation = fetchedAsset.accumulatedDepreciation
-                ..bookValue = fetchedAsset.bookValue
-                ..isImpaired = fetchedAsset.isImpaired
-                ..impairmentLoss = fetchedAsset.impairmentLoss
-                ..revaluationDate = fetchedAsset.revaluationDate
-                ..revaluationAmount = fetchedAsset.revaluationAmount
-                ..lastMaintenanceDate = fetchedAsset.lastMaintenanceDate
-                ..maintenanceCost = fetchedAsset.maintenanceCost
-                ..maintenanceDescription = fetchedAsset.maintenanceDescription
-                ..capitalImprovementCost = fetchedAsset.capitalImprovementCost
-                ..capitalImprovementDescription =
-                    fetchedAsset.capitalImprovementDescription
-                ..disposalDate = fetchedAsset.disposalDate
-                ..disposalProceeds = fetchedAsset.disposalProceeds
-                ..disposalReason = fetchedAsset.disposalReason
-                ..gainOrLossOnDisposal = fetchedAsset.gainOrLossOnDisposal
-                ..isLeased = fetchedAsset.isLeased
-                ..leaseType = fetchedAsset.leaseType
-                ..leaseStartDate = fetchedAsset.leaseStartDate
-                ..leaseEndDate = fetchedAsset.leaseEndDate
-                ..leasePaymentAmount = fetchedAsset.leasePaymentAmount
-                ..lastAuditDate = fetchedAsset.lastAuditDate
-                ..notes = fetchedAsset.notes
-                ..createdAt = fetchedAsset.createdAt
-                ..lastModified = DateTime.now()
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..usefulLife = fetchedAsset.usefulLife
-                ..hasDebitBalance = fetchedAsset.hasDebitBalance
-                ..hasCreditBalance = fetchedAsset.hasCreditBalance
-                ..option = fetchedAsset.option;
-              await existingAsset.save();
-              print('Asset ${fetchedAsset.id} updated successfully.');
-            } else {
-              await _assetBox!.add(fetchedAsset);
-              print('Asset ${fetchedAsset.id} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Asset with no ID was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception('Failed to fetch Assets. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing Assets: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncProject =======================================================================//
-
-  Future<void> _fetchAndSyncProject() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> projects = jsonDecode(response.body);
-
-        for (var projectData in projects) {
-          Project fetchedProject = Project(
-            projectCode: projectData['projectCode'],
-            name: projectData['name'],
-            description: projectData['description'],
-            status: projectData['status'],
-            createdAt: DateTime.tryParse(projectData['createdAt'] ?? '') ??
-                DateTime.now(),
-            updatedAt: DateTime.tryParse(projectData['updatedAt'] ?? '') ??
-                DateTime.now(),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(projectData['lastModified'] ?? ''),
-          );
-
-          var existingProjectList = _projectBox!.values
-              .where((p) => p.projectCode == fetchedProject.projectCode)
-              .toList();
-
-          Project? existingProject =
-              existingProjectList.isNotEmpty ? existingProjectList.first : null;
-
-          if (fetchedProject.projectCode.isNotEmpty) {
-            if (existingProject != null) {
-              existingProject
-                ..name = fetchedProject.name
-                ..description = fetchedProject.description
-                ..status = fetchedProject.status
-                ..createdAt = fetchedProject.createdAt
-                ..updatedAt = fetchedProject.updatedAt
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingProject.save();
-              print(
-                  'Project ${fetchedProject.projectCode} updated successfully.');
-            } else {
-              await _projectBox!.add(fetchedProject);
-              print(
-                  'Project ${fetchedProject.projectCode} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Project with no code was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch Projects. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing Projects: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-//================================pull _fetchAndSyncProjectItem =======================================================================//
-
-  Future<void> _fetchAndSyncProjectItem() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_item_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> items = jsonDecode(response.body);
-        double? _toDouble(dynamic value) {
-          if (value == null) return null;
-          if (value is double) return value;
-          if (value is int) return value.toDouble();
-          if (value is String) return double.tryParse(value);
-          return null;
-        }
-
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var itemData in items) {
-          ProjectItem fetchedItem = ProjectItem(
-            projectItemCode: itemData['projectItemCode'],
-            projectCode: itemData['projectCode'],
-            name: itemData['name'],
-            amount: _toDouble(itemData['amount'])!.toDouble(),
-            isStudentFee: _intToBool(itemData['isStudentFee']),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(itemData['lastModified'] ?? ''),
-          );
-
-          var existingItemList = _projectItemBox!.values
-              .where((i) => i.projectItemCode == fetchedItem.projectItemCode)
-              .toList();
-
-          ProjectItem? existingItem =
-              existingItemList.isNotEmpty ? existingItemList.first : null;
-
-          if (fetchedItem.projectItemCode.isNotEmpty) {
-            if (existingItem != null) {
-              existingItem
-                ..projectCode = fetchedItem.projectCode
-                ..name = fetchedItem.name
-                ..amount = fetchedItem.amount
-                ..isStudentFee = fetchedItem.isStudentFee
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingItem.save();
-              print(
-                  'ProjectItem ${fetchedItem.projectItemCode} updated successfully.');
-            } else {
-              await _projectItemBox!.add(fetchedItem);
-              print(
-                  'ProjectItem ${fetchedItem.projectItemCode} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('ProjectItem with no code was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch ProjectItems. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing ProjectItems: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncDailyActivity =======================================================================//
-
-  Future<void> _fetchAndSyncDailyActivity() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_daily_activity_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> activities = jsonDecode(response.body);
-
-        for (var activityData in activities) {
-          DailyActivity fetchedActivity = DailyActivity(
-            projectDailyActiviyCode: activityData['projectDailyActiviyCode'],
-            projectCode: activityData['projectCode'],
-            date:
-                DateTime.tryParse(activityData['date'] ?? '') ?? DateTime.now(),
-            type: activityData['type'],
-            description: activityData['description'],
-            amount: activityData['amount'],
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(activityData['lastModified'] ?? ''),
-          );
-
-          var existingActivityList = _dailyActivityBox!.values
-              .where((d) =>
-                  d.projectDailyActiviyCode ==
-                  fetchedActivity.projectDailyActiviyCode)
-              .toList();
-
-          DailyActivity? existingActivity = existingActivityList.isNotEmpty
-              ? existingActivityList.first
-              : null;
-
-          if (fetchedActivity.projectDailyActiviyCode.isNotEmpty) {
-            if (existingActivity != null) {
-              existingActivity
-                ..projectCode = fetchedActivity.projectCode
-                ..date = fetchedActivity.date
-                ..type = fetchedActivity.type
-                ..description = fetchedActivity.description
-                ..amount = fetchedActivity.amount
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingActivity.save();
-              print(
-                  'DailyActivity ${fetchedActivity.projectDailyActiviyCode} updated successfully.');
-            } else {
-              await _dailyActivityBox!.add(fetchedActivity);
-              print(
-                  'DailyActivity ${fetchedActivity.projectDailyActiviyCode} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('DailyActivity with no code was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch DailyActivities. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing DailyActivities: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-//================================pull _fetchAndSyncProjectStudentPayment =======================================================================//
-
-  Future<void> _fetchAndSyncProjectStudentPayment() async {
-    final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_student_payment_api.php';
-    setState(() {
-      _isSyncing = true;
-    });
-    try {
-      final response = await http.get(Uri.parse(apiUrl));
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        List<dynamic> payments = jsonDecode(response.body);
-        double? _toDouble(dynamic value) {
-          if (value == null) return null;
-          if (value is double) return value;
-          if (value is int) return value.toDouble();
-          if (value is String) return double.tryParse(value);
-          return null;
-        }
-
-        bool _intToBool(dynamic value) {
-          if (value is bool) return value;
-          if (value is int) return value == 1;
-          return false;
-        }
-
-        for (var paymentData in payments) {
-          ProjectStudentPayment fetchedPayment = ProjectStudentPayment(
-            projectStudentPaymentCode: paymentData['projectStudentPaymentCode'],
-            studentId: paymentData['studentId'],
-            projectCode: paymentData['projectCode'],
-            itemId: paymentData['itemId'],
-            amountPaid: _toDouble(paymentData['amountPaid'])!.toDouble(),
-            balance: _toDouble(paymentData['balance'])!.toDouble(),
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.tryParse(paymentData['lastModified'] ?? ''),
-          );
-
-          var existingPaymentList = _projectStudentPaymentBox!.values
-              .where((p) =>
-                  p.projectStudentPaymentCode ==
-                  fetchedPayment.projectStudentPaymentCode)
-              .toList();
-
-          ProjectStudentPayment? existingPayment =
-              existingPaymentList.isNotEmpty ? existingPaymentList.first : null;
-
-          if (fetchedPayment.projectStudentPaymentCode.isNotEmpty) {
-            if (existingPayment != null) {
-              existingPayment
-                ..studentId = fetchedPayment.studentId
-                ..projectCode = fetchedPayment.projectCode
-                ..itemId = fetchedPayment.itemId
-                ..amountPaid = fetchedPayment.amountPaid
-                ..balance = fetchedPayment.balance
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-              await existingPayment.save();
-              print(
-                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} updated successfully.');
-            } else {
-              await _projectStudentPaymentBox!.add(fetchedPayment);
-              print(
-                  'ProjectStudentPayment ${fetchedPayment.projectStudentPaymentCode} added successfully.');
-            }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content:
-                      Text('ProjectStudentPayment with no code was skipped.')),
-            );
-          }
-        }
-      } else {
-        throw Exception(
-            'Failed to fetch ProjectStudentPayments. Code: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error syncing ProjectStudentPayments: $e');
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-}
-
-
-*/
- 

@@ -1,3 +1,6 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 
 part 'exceptional_students.g.dart'; // Required for code generation
@@ -37,6 +40,8 @@ class ExceptionalStudents extends HiveObject {
   @HiveField(10)
   List<String>? terms; // stores a list of terms associated with the exception
 
+  @HiveField(11) // New field for priority flag
+  int? priorityFlag; // 1 for top priority, 0 for less
   ExceptionalStudents({
     this.id,
     this.exceptionId,
@@ -48,6 +53,7 @@ class ExceptionalStudents extends HiveObject {
     this.lastModified,
     this.operationType,
     this.modifiedFields,
+    this.priorityFlag = 0, // Default value for priorityFlag,
     List<String>? terms,
   }) : terms = terms ?? [];
 
@@ -62,6 +68,7 @@ class ExceptionalStudents extends HiveObject {
     DateTime? lastModified,
     String? operationType,
     List<String>? modifiedFields,
+    int? priorityFlag,
     List<String>? terms,
   }) {
     return ExceptionalStudents(
@@ -76,6 +83,16 @@ class ExceptionalStudents extends HiveObject {
       operationType: operationType ?? this.operationType,
       modifiedFields: modifiedFields ?? this.modifiedFields,
       terms: terms ?? this.terms,
+      priorityFlag: priorityFlag ?? this.priorityFlag,
     );
   }
+
+  // Helper method to check if it's a priority exception
+  bool get isPriority => priorityFlag == 1;
+
+  // Helper method to get priority label
+  String get priorityLabel => priorityFlag == 1 ? ' Priority' : 'Normal';
+
+  // Helper method to get priority color
+  Color get priorityColor => priorityFlag == 1 ? Colors.red : Colors.grey;
 }
