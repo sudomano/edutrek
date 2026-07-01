@@ -565,57 +565,58 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         'effectiveTo': p.effectiveTo?.toIso8601String(),
       };
 
+// Helper to convert ProjectSaleTransaction to JSON
   Map<String, dynamic> _projectSaleTransactionToJson(
-          ProjectSaleTransaction t) =>
-      {
-        'transactionCode': t.transactionCode,
-        'studentId': t.studentId,
-        'projectCode': t.projectCode,
-        'projectItemCode': t.projectItemCode,
-        'batchCode': t.batchCode,
-        'sellUnitCode': t.sellUnitCode,
-        'sellUnitNameSnapshot': t.sellUnitNameSnapshot,
-        'quantitySold': t.quantitySold,
-        'unitSellingPrice': t.unitSellingPrice,
-        'totalAmount': t.totalAmount,
-        'baseUnitsPerSellUnit': t.baseUnitsPerSellUnit,
-        'totalBaseUnitsSold': t.totalBaseUnitsSold,
-        'baseUnit': t.baseUnit,
-        'baseUnitType': t.baseUnitType.name,
-        'transactionDate': t.transactionDate.toIso8601String(),
-        'paymentMethod': t.paymentMethod,
-        'reference': t.reference,
-        'amountPaid': t.amountPaid,
-        'arrears': t.arrears,
-
-        // 🔴 Soft delete
-        'isDeleted': t.isDeleted,
-        'deletedAt': t.deletedAt?.map((e) => e.toIso8601String()).toList(),
-        'restoredAt': t.restoredAt?.map((e) => e.toIso8601String()).toList(),
-        'deletedByUsers': t.deletedByUsers,
-        'restoredByUsers': t.restoredByUsers,
-
-        // 💳 Payment breakdown
-        'paymentMethodCode': t.paymentMethodCode,
-        'methodType': t.methodType,
-        'amountPaidInPaymentMethod': t.amountPaidInPaymentMethod,
-        'currency': t.currency,
-        'provider': t.provider,
-        'referenceNumber': t.referenceNumber,
-        'phoneNumber': t.phoneNumber,
-        'accountNumber': t.accountNumber,
-        'accountName': t.accountName,
-        'paymentDatetransacted': t.paymentDatetransacted?.toIso8601String(),
-
-        // 🔁 Audit
-        'isReversed': t.isReversed,
-        'lineTransactionCodes': t.lineTransactionCodes,
-        'financialType': t.financialType,
-        'parentTransactionCode': t.parentTransactionCode,
-        'affectsStock': t.affectsStock,
-        'createsObligation': t.createsObligation,
-        'settlesObligation': t.settlesObligation,
-      };
+      ProjectSaleTransaction tx) {
+    return {
+      'transactionCode': tx.transactionCode,
+      'studentId': tx.studentId,
+      'projectCode': tx.projectCode,
+      'projectItemCode': tx.projectItemCode,
+      'batchCode': tx.batchCode,
+      'sellUnitCode': tx.sellUnitCode,
+      'sellUnitNameSnapshot': tx.sellUnitNameSnapshot,
+      'quantitySold': tx.quantitySold,
+      'unitSellingPrice': tx.unitSellingPrice,
+      'totalAmount': tx.totalAmount,
+      'baseUnitsPerSellUnit': tx.baseUnitsPerSellUnit,
+      'totalBaseUnitsSold': tx.totalBaseUnitsSold,
+      'baseUnit': tx.baseUnit,
+      'baseUnitType': tx.baseUnitType.name,
+      'transactionDate': tx.transactionDate.toIso8601String(),
+      'paymentMethod': tx.paymentMethod,
+      'reference': tx.reference,
+      'amountPaid': tx.amountPaid,
+      'arrears': tx.arrears,
+      'paymentMethodCode': tx.paymentMethodCode,
+      'methodType': tx.methodType,
+      'amountPaidInPaymentMethod': tx.amountPaidInPaymentMethod,
+      'currency': tx.currency,
+      'provider': tx.provider,
+      'referenceNumber': tx.referenceNumber,
+      'phoneNumber': tx.phoneNumber,
+      'accountNumber': tx.accountNumber,
+      'accountName': tx.accountName,
+      'paymentDatetransacted': tx.paymentDatetransacted?.toIso8601String(),
+      'isDeleted': tx.isDeleted ?? false,
+      'deletedAt': tx.deletedAt?.map((d) => d.toIso8601String()).toList() ?? [],
+      'restoredAt':
+          tx.restoredAt?.map((d) => d.toIso8601String()).toList() ?? [],
+      'deletedByUsers': tx.deletedByUsers ?? [],
+      'restoredByUsers': tx.restoredByUsers ?? [],
+      'isReversed': tx.isReversed ?? false,
+      'lineTransactionCodes': tx.lineTransactionCodes ?? [],
+      'financialType': tx.financialType,
+      'parentTransactionCode': tx.parentTransactionCode,
+      'affectsStock': tx.affectsStock,
+      'createsObligation': tx.createsObligation,
+      'settlesObligation': tx.settlesObligation,
+      'syncStatus': tx.syncStatus ?? false,
+      'lastModified': tx.lastModified?.toIso8601String(),
+      'operationType': tx.operationType,
+      'modifiedFields': tx.modifiedFields ?? [],
+    };
+  }
 
   Map<String, dynamic> _batchSellUnitToJson(BatchSellUnit unit) {
     return {
@@ -653,20 +654,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     };
   }
 
+  // Helper to convert ReceiptSnapshot to JSON
   Map<String, dynamic> _receiptSnapshotToJson(ReceiptSnapshot r) {
     return {
-      "receiptCode": r.receiptCode,
-      "receiptDate": r.receiptDate.toIso8601String(),
-      "cashier": r.cashier,
-      "totalExpected": r.totalExpected,
-      "totalPaid": r.totalPaid,
-      "amountReceived": r.amountReceived,
-      "change": r.change,
-      "currency": r.currency,
-      "receiptLinesJson": r.receiptLinesJson,
-      "isReprint": r.isReprint,
-      "studentName": r.studentName,
-      "studentClass": r.studentClass,
+      'receiptCode': r.receiptCode,
+      'receiptDate': r.receiptDate.toIso8601String(),
+      'cashier': r.cashier,
+      'totalExpected': r.totalExpected,
+      'totalPaid': r.totalPaid,
+      'amountReceived': r.amountReceived,
+      'change': r.change,
+      'currency': r.currency,
+      'receiptLinesJson': r.receiptLinesJson,
+      'isReprint': r.isReprint,
+      'studentName': r.studentName,
+      'studentClass': r.studentClass,
+      'syncStatus': r.syncStatus ?? false,
+      'lastModified': r.lastModified?.toIso8601String(),
+      'operationType': r.operationType,
+      'modifiedFields': r.modifiedFields ?? [],
     };
   }
 
@@ -1571,12 +1577,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //==================== _createProjectSaleTransactionInMySQL sync ======================
 
+// CREATE ProjectSaleTransaction on server
   Future<void> _createProjectSaleTransactionInMySQL(
       ProjectSaleTransaction tx) async {
     final Map<String, dynamic> jsonData = _projectSaleTransactionToJson(tx);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
@@ -1588,20 +1597,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((tx.modifiedFields?.isNotEmpty ?? false) &&
-            tx.operationType != null &&
-            tx.operationType != 'none') {
-          SyncQueueManager().enqueue(tx);
-        }
+        print(
+            'ProjectSaleTransaction ${tx.transactionCode} created/updated successfully.');
+
         tx.syncStatus = true;
         tx.operationType = 'none';
         tx.modifiedFields = [];
         await tx.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Transaction synced successfully')));
       } else {
-        throw Exception('Failed to create BatchUnit');
+        throw Exception(
+            'Failed to create transaction. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('BatchUnit create error: $e');
+      print('Transaction create error: $e');
+      await tx.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -1609,196 +1621,154 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// UPDATE ProjectSaleTransaction on server
   Future<void> _updateProjectSaleTransactionInMySQL(
       ProjectSaleTransaction tx) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
 
     for (String field in tx.modifiedFields ?? []) {
       switch (field) {
-        // 🔹 Core transaction fields
         case 'studentId':
           modifiedFieldsJson['studentId'] = tx.studentId;
           break;
-
         case 'projectCode':
           modifiedFieldsJson['projectCode'] = tx.projectCode;
           break;
-
         case 'projectItemCode':
           modifiedFieldsJson['projectItemCode'] = tx.projectItemCode;
           break;
-
         case 'batchCode':
           modifiedFieldsJson['batchCode'] = tx.batchCode;
           break;
-
         case 'sellUnitCode':
           modifiedFieldsJson['sellUnitCode'] = tx.sellUnitCode;
           break;
-
         case 'sellUnitNameSnapshot':
           modifiedFieldsJson['sellUnitNameSnapshot'] = tx.sellUnitNameSnapshot;
           break;
-
         case 'quantitySold':
           modifiedFieldsJson['quantitySold'] = tx.quantitySold;
           break;
-
         case 'unitSellingPrice':
           modifiedFieldsJson['unitSellingPrice'] = tx.unitSellingPrice;
           break;
-
         case 'totalAmount':
           modifiedFieldsJson['totalAmount'] = tx.totalAmount;
           break;
-
         case 'baseUnitsPerSellUnit':
           modifiedFieldsJson['baseUnitsPerSellUnit'] = tx.baseUnitsPerSellUnit;
           break;
-
         case 'totalBaseUnitsSold':
           modifiedFieldsJson['totalBaseUnitsSold'] = tx.totalBaseUnitsSold;
           break;
-
         case 'baseUnit':
           modifiedFieldsJson['baseUnit'] = tx.baseUnit;
           break;
-
         case 'baseUnitType':
           modifiedFieldsJson['baseUnitType'] = tx.baseUnitType.name;
           break;
-
         case 'transactionDate':
           modifiedFieldsJson['transactionDate'] =
               tx.transactionDate.toIso8601String();
           break;
-
         case 'paymentMethod':
           modifiedFieldsJson['paymentMethod'] = tx.paymentMethod;
           break;
-
         case 'reference':
           modifiedFieldsJson['reference'] = tx.reference;
           break;
-
         case 'amountPaid':
           modifiedFieldsJson['amountPaid'] = tx.amountPaid;
           break;
-
         case 'arrears':
           modifiedFieldsJson['arrears'] = tx.arrears;
           break;
-
-        // 🔴 Soft delete
-        case 'isDeleted':
-          modifiedFieldsJson['isDeleted'] = tx.isDeleted;
-          break;
-
-        case 'deletedAt':
-          modifiedFieldsJson['deletedAt'] = tx.deletedAt?.isNotEmpty == true
-              ? tx.deletedAt!.last.toIso8601String()
-              : null;
-          break;
-
-        case 'restoredAt':
-          modifiedFieldsJson['restoredAt'] = tx.restoredAt?.isNotEmpty == true
-              ? tx.restoredAt!.last.toIso8601String()
-              : null;
-          break;
-
-        case 'deletedByUsers':
-          modifiedFieldsJson['deletedByUsers'] = tx.deletedByUsers;
-          break;
-
-        case 'restoredByUsers':
-          modifiedFieldsJson['restoredByUsers'] = tx.restoredByUsers;
-          break;
-
-        // 💳 Payment breakdown
         case 'paymentMethodCode':
           modifiedFieldsJson['paymentMethodCode'] = tx.paymentMethodCode;
           break;
-
         case 'methodType':
           modifiedFieldsJson['methodType'] = tx.methodType;
           break;
-
         case 'amountPaidInPaymentMethod':
           modifiedFieldsJson['amountPaidInPaymentMethod'] =
               tx.amountPaidInPaymentMethod;
           break;
-
         case 'currency':
           modifiedFieldsJson['currency'] = tx.currency;
           break;
-
         case 'provider':
           modifiedFieldsJson['provider'] = tx.provider;
           break;
-
         case 'referenceNumber':
           modifiedFieldsJson['referenceNumber'] = tx.referenceNumber;
           break;
-
         case 'phoneNumber':
           modifiedFieldsJson['phoneNumber'] = tx.phoneNumber;
           break;
-
         case 'accountNumber':
           modifiedFieldsJson['accountNumber'] = tx.accountNumber;
           break;
-
         case 'accountName':
           modifiedFieldsJson['accountName'] = tx.accountName;
           break;
-
         case 'paymentDatetransacted':
           modifiedFieldsJson['paymentDatetransacted'] =
               tx.paymentDatetransacted?.toIso8601String();
           break;
-
-        // 🔁 Audit / financial logic
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] = tx.isDeleted ?? false;
+          break;
+        case 'deletedAt':
+          modifiedFieldsJson['deletedAt'] =
+              tx.deletedAt?.map((d) => d.toIso8601String()).toList() ?? [];
+          break;
+        case 'restoredAt':
+          modifiedFieldsJson['restoredAt'] =
+              tx.restoredAt?.map((d) => d.toIso8601String()).toList() ?? [];
+          break;
+        case 'deletedByUsers':
+          modifiedFieldsJson['deletedByUsers'] = tx.deletedByUsers ?? [];
+          break;
+        case 'restoredByUsers':
+          modifiedFieldsJson['restoredByUsers'] = tx.restoredByUsers ?? [];
+          break;
         case 'isReversed':
-          modifiedFieldsJson['isReversed'] = tx.isReversed;
+          modifiedFieldsJson['isReversed'] = tx.isReversed ?? false;
           break;
-
         case 'lineTransactionCodes':
-          modifiedFieldsJson['lineTransactionCodes'] = tx.lineTransactionCodes;
+          modifiedFieldsJson['lineTransactionCodes'] =
+              tx.lineTransactionCodes ?? [];
           break;
-
         case 'financialType':
           modifiedFieldsJson['financialType'] = tx.financialType;
           break;
-
         case 'parentTransactionCode':
           modifiedFieldsJson['parentTransactionCode'] =
               tx.parentTransactionCode;
           break;
-
         case 'affectsStock':
           modifiedFieldsJson['affectsStock'] = tx.affectsStock;
           break;
-
         case 'createsObligation':
           modifiedFieldsJson['createsObligation'] = tx.createsObligation;
           break;
-
         case 'settlesObligation':
           modifiedFieldsJson['settlesObligation'] = tx.settlesObligation;
           break;
       }
     }
 
-    // ✅ Always include identifier
+    // Always include transactionCode for identification
     modifiedFieldsJson['transactionCode'] = tx.transactionCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php?transactionCode=${tx.transactionCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php?transactionCode=${tx.transactionCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1806,6 +1776,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+            'ProjectSaleTransaction ${tx.transactionCode} updated successfully.');
+
         if ((tx.modifiedFields?.isNotEmpty ?? false) &&
             tx.operationType != null &&
             tx.operationType != 'none') {
@@ -1816,10 +1789,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         tx.modifiedFields = [];
         await tx.save();
       } else {
-        throw Exception('Failed to update ProjectSaleTransaction');
+        throw Exception('Failed to update transaction.');
       }
     } catch (e) {
-      print('ProjectSaleTransaction update error: $e');
+      print('Transaction update error: $e');
     } finally {
       setState(() {
         _isSyncings = false;
@@ -1828,8 +1801,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //==================== _createBatchSellUnitInMySQL sync ======================
 
+// CREATE BatchSellUnit on server
   Future<void> _createBatchSellUnitInMySQL(BatchSellUnit unit) async {
     final Map<String, dynamic> jsonData = _batchSellUnitToJson(unit);
+
     setState(() {
       _isSyncings = true;
     });
@@ -1845,20 +1820,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((unit.modifiedFields?.isNotEmpty ?? false) &&
-            unit.operationType != null &&
-            unit.operationType != 'none') {
-          SyncQueueManager().enqueue(unit);
-        }
+        print(
+            'BatchSellUnit ${unit.sellUnitCode} created/updated successfully.');
+
         unit.syncStatus = true;
         unit.operationType = 'none';
         unit.modifiedFields = [];
         await unit.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('BatchSellUnit synced successfully')));
       } else {
-        throw Exception('Failed to create BatchUnit');
+        throw Exception(
+            'Failed to create BatchSellUnit. Status: ${response.statusCode}');
       }
     } catch (e) {
-      print('BatchUnit create error: $e');
+      print('BatchSellUnit create error: $e');
+      await unit.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -1866,6 +1844,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// UPDATE BatchSellUnit on server
   Future<void> _updateBatchSellUnitInMySQL(BatchSellUnit unit) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
 
@@ -1874,56 +1853,48 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         case 'batchCode':
           modifiedFieldsJson['batchCode'] = unit.batchCode;
           break;
-
         case 'unitName':
           modifiedFieldsJson['unitName'] = unit.unitName;
           break;
-
         case 'quantityMultiplier':
           modifiedFieldsJson['quantityMultiplier'] = unit.quantityMultiplier;
           break;
-
         case 'sellingPrice':
           modifiedFieldsJson['sellingPrice'] = unit.sellingPrice;
           break;
-
         case 'active':
-          modifiedFieldsJson['active'] = unit.active ? 1 : 0;
+          modifiedFieldsJson['active'] = unit.active;
           break;
-
         case 'deletedAt':
           modifiedFieldsJson['deletedAt'] = unit.deletedAt?.toIso8601String();
           break;
-
         case 'packagingLevel':
           modifiedFieldsJson['packagingLevel'] = unit.packagingLevel?.name;
           break;
-
         case 'baseUnitsPerSellUnit':
           modifiedFieldsJson['baseUnitsPerSellUnit'] =
               unit.baseUnitsPerSellUnit;
           break;
-
         case 'baseUnit':
           modifiedFieldsJson['baseUnit'] = unit.baseUnit;
           break;
-
         case 'baseUnitType':
           modifiedFieldsJson['baseUnitType'] = unit.baseUnitType?.name;
           break;
       }
     }
 
-    // ✅ Always include identifier
+    // Always include sellUnitCode for identification
     modifiedFieldsJson['sellUnitCode'] = unit.sellUnitCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php?sellUnitCode=${unit.sellUnitCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php?sellUnitCode=${unit.sellUnitCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -1931,6 +1902,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print('BatchSellUnit ${unit.sellUnitCode} updated successfully.');
+
         if ((unit.modifiedFields?.isNotEmpty ?? false) &&
             unit.operationType != null &&
             unit.operationType != 'none') {
@@ -1941,7 +1914,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         unit.modifiedFields = [];
         await unit.save();
       } else {
-        throw Exception('Failed to update BatchSellUnit');
+        throw Exception('Failed to update BatchSellUnit.');
       }
     } catch (e) {
       print('BatchSellUnit update error: $e');
@@ -1951,6 +1924,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+
 //==================== _createPaymentMethodInMySQL sync ======================
 
   Future<void> _createPaymentMethodInMySQL(PaymentMethod pm) async {
@@ -2079,11 +2053,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //==================== _createReceiptSnapshotInMySQL sync ======================
 
+// CREATE ReceiptSnapshot on server
   Future<void> _createReceiptSnapshotInMySQL(ReceiptSnapshot r) async {
     final Map<String, dynamic> jsonData = _receiptSnapshotToJson(r);
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.post(
         Uri.parse(
@@ -2095,21 +2072,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if ((r.modifiedFields?.isNotEmpty ?? false) &&
-            r.operationType != null &&
-            r.operationType != 'none') {
-          SyncQueueManager().enqueue(r);
-        }
+        print('ReceiptSnapshot ${r.receiptCode} created/updated successfully.');
+
         r.syncStatus = true;
         r.operationType = 'none';
         r.modifiedFields = [];
-
         await r.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Receipt synced successfully')));
       } else {
-        throw Exception('Failed to create ReceiptSnapshot');
+        throw Exception(
+            'Failed to create ReceiptSnapshot. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('ReceiptSnapshot create error: $e');
+      await r.save();
     } finally {
       setState(() {
         _isSyncings = false;
@@ -2117,6 +2095,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// UPDATE ReceiptSnapshot on server
   Future<void> _updateReceiptSnapshotInMySQL(ReceiptSnapshot receipt) async {
     final Map<String, dynamic> modifiedFieldsJson = {};
 
@@ -2126,59 +2105,50 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           modifiedFieldsJson['receiptDate'] =
               receipt.receiptDate.toIso8601String();
           break;
-
         case 'cashier':
           modifiedFieldsJson['cashier'] = receipt.cashier;
           break;
-
         case 'totalExpected':
           modifiedFieldsJson['totalExpected'] = receipt.totalExpected;
           break;
-
         case 'totalPaid':
           modifiedFieldsJson['totalPaid'] = receipt.totalPaid;
           break;
-
         case 'amountReceived':
           modifiedFieldsJson['amountReceived'] = receipt.amountReceived;
           break;
-
         case 'change':
           modifiedFieldsJson['change'] = receipt.change;
           break;
-
         case 'currency':
           modifiedFieldsJson['currency'] = receipt.currency;
           break;
-
         case 'receiptLinesJson':
           modifiedFieldsJson['receiptLinesJson'] = receipt.receiptLinesJson;
           break;
-
         case 'isReprint':
           modifiedFieldsJson['isReprint'] = receipt.isReprint;
           break;
-
         case 'studentName':
           modifiedFieldsJson['studentName'] = receipt.studentName;
           break;
-
         case 'studentClass':
           modifiedFieldsJson['studentClass'] = receipt.studentClass;
           break;
       }
     }
 
-    // ✅ Always include identifier
+    // Always include receiptCode for identification
     modifiedFieldsJson['receiptCode'] = receipt.receiptCode;
+
     setState(() {
       _isSyncings = true;
     });
+
     try {
       final response = await http.put(
         Uri.parse(
-          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_receipt_snapshot_api.php?receiptCode=${receipt.receiptCode}',
-        ),
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_receipt_snapshot_api.php?receiptCode=${receipt.receiptCode}'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
@@ -2186,6 +2156,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print('ReceiptSnapshot ${receipt.receiptCode} updated successfully.');
+
         if ((receipt.modifiedFields?.isNotEmpty ?? false) &&
             receipt.operationType != null &&
             receipt.operationType != 'none') {
@@ -2196,7 +2168,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         receipt.modifiedFields = [];
         await receipt.save();
       } else {
-        throw Exception('Failed to update ReceiptSnapshot');
+        throw Exception('Failed to update ReceiptSnapshot.');
       }
     } catch (e) {
       print('ReceiptSnapshot update error: $e');
@@ -2206,6 +2178,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
+
   //=================== Exceptions  sync =========================
 
   // CREATE Exception on server
@@ -5757,6 +5730,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
   //================================pull _fetchAndSyncProjectReceiptSnapshot =======================================================================//
+//================================pull _fetchAndSyncProjectReceiptSnapshot =======================================================================//
 
   Future<void> _fetchAndSyncProjectReceiptSnapshot() async {
     final String apiUrl =
@@ -5779,15 +5753,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 .map((e) => e.value)
                 .toList();
 
-        print('Decoded ReceiptSnapshot response: $decoded');
+        print('Decoded ${receipts.length} ReceiptSnapshots');
 
         for (var item in receipts) {
-          // 🔹 Ensure valid map
           if (item is! Map) continue;
 
           final Map<String, dynamic> json = Map<String, dynamic>.from(item);
 
-          // 🔹 Primary key
           final String? receiptCode = json['receiptCode'];
 
           if (receiptCode == null) {
@@ -5795,58 +5767,158 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             continue;
           }
 
-          // =========================================================
-          // 🔹 PARSE DATE (EXPLICIT)
-          // =========================================================
-          DateTime? receiptDate = DateTime.tryParse(json['receiptDate'] ?? '');
+          // ✅ Convert syncStatus from int to bool
+          bool syncStatus = true;
+          if (json['syncStatus'] != null) {
+            if (json['syncStatus'] is int) {
+              syncStatus = json['syncStatus'] == 1;
+            } else if (json['syncStatus'] is bool) {
+              syncStatus = json['syncStatus'];
+            }
+          }
 
-          // =========================================================
-          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
-          // =========================================================
+          // ✅ Convert isReprint from int to bool
+          bool isReprint = false;
+          if (json['isReprint'] != null) {
+            if (json['isReprint'] is int) {
+              isReprint = json['isReprint'] == 1;
+            } else if (json['isReprint'] is bool) {
+              isReprint = json['isReprint'];
+            }
+          }
+
+          // ✅ Parse receiptDate
+          DateTime receiptDate = DateTime.now();
+          if (json['receiptDate'] != null) {
+            try {
+              receiptDate = DateTime.parse(json['receiptDate']);
+            } catch (e) {
+              receiptDate = DateTime.now();
+            }
+          }
+
+          // ✅ Parse modifiedFields
+          List<String> modifiedFields = _decodeToList(json['modifiedFields']);
+
+          // ✅ FIX: Parse receiptLinesJson - properly cast to List<Map<String, dynamic>>
+          List<Map<String, dynamic>> receiptLinesJson = [];
+          if (json['receiptLinesJson'] != null) {
+            if (json['receiptLinesJson'] is List) {
+              // ✅ Cast each item to Map<String, dynamic>
+              receiptLinesJson = (json['receiptLinesJson'] as List)
+                  .map((item) {
+                    if (item is Map) {
+                      return Map<String, dynamic>.from(item);
+                    }
+                    return <String, dynamic>{};
+                  })
+                  .where((item) => item.isNotEmpty)
+                  .toList();
+              print('✅ Parsed ${receiptLinesJson.length} receipt lines');
+            } else if (json['receiptLinesJson'] is String) {
+              try {
+                final decoded = jsonDecode(json['receiptLinesJson']);
+                if (decoded is List) {
+                  receiptLinesJson = decoded
+                      .map((item) {
+                        if (item is Map) {
+                          return Map<String, dynamic>.from(item);
+                        }
+                        return <String, dynamic>{};
+                      })
+                      .where((item) => item.isNotEmpty)
+                      .toList();
+                }
+              } catch (e) {
+                print('Error decoding receiptLinesJson: $e');
+              }
+            }
+          }
+
+          // ✅ Parse lastModified
+          DateTime? lastModified;
+          if (json['lastModified'] != null) {
+            try {
+              lastModified = DateTime.parse(json['lastModified']);
+            } catch (e) {
+              lastModified = DateTime.now();
+            }
+          }
+
+          // ✅ Parse amounts safely
+          double totalExpected = 0.0;
+          if (json['totalExpected'] != null) {
+            if (json['totalExpected'] is double) {
+              totalExpected = json['totalExpected'];
+            } else if (json['totalExpected'] is int) {
+              totalExpected = json['totalExpected'].toDouble();
+            } else if (json['totalExpected'] is String) {
+              totalExpected = double.tryParse(json['totalExpected']) ?? 0.0;
+            }
+          }
+
+          double totalPaid = 0.0;
+          if (json['totalPaid'] != null) {
+            if (json['totalPaid'] is double) {
+              totalPaid = json['totalPaid'];
+            } else if (json['totalPaid'] is int) {
+              totalPaid = json['totalPaid'].toDouble();
+            } else if (json['totalPaid'] is String) {
+              totalPaid = double.tryParse(json['totalPaid']) ?? 0.0;
+            }
+          }
+
+          double amountReceived = 0.0;
+          if (json['amountReceived'] != null) {
+            if (json['amountReceived'] is double) {
+              amountReceived = json['amountReceived'];
+            } else if (json['amountReceived'] is int) {
+              amountReceived = json['amountReceived'].toDouble();
+            } else if (json['amountReceived'] is String) {
+              amountReceived = double.tryParse(json['amountReceived']) ?? 0.0;
+            }
+          }
+
+          double change = 0.0;
+          if (json['change'] != null) {
+            if (json['change'] is double) {
+              change = json['change'];
+            } else if (json['change'] is int) {
+              change = json['change'].toDouble();
+            } else if (json['change'] is String) {
+              change = double.tryParse(json['change']) ?? 0.0;
+            }
+          }
+
           final ReceiptSnapshot fetchedReceipt = ReceiptSnapshot(
             receiptCode: receiptCode,
-            receiptDate: receiptDate ?? DateTime.now(),
-            cashier: json['cashier'],
-
-            totalExpected: (json['totalExpected'] ?? 0).toDouble(),
-
-            totalPaid: (json['totalPaid'] ?? 0).toDouble(),
-
-            amountReceived: (json['amountReceived'] ?? 0).toDouble(),
-
-            change: (json['change'] ?? 0).toDouble(),
-
-            currency: json['currency'],
-
-            // 🔹 Stored as JSON string (no decoding here by design)
-            receiptLinesJson: json['receiptLinesJson'],
-
-            isReprint: json['isReprint'] ?? false,
-
-            studentName: json['studentName'],
-            studentClass: json['studentClass'],
-
-            // 🔹 Sync fields (server → local)
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.now(),
-            modifiedFields: [],
+            receiptDate: receiptDate,
+            cashier: json['cashier']?.toString() ?? '',
+            totalExpected: totalExpected,
+            totalPaid: totalPaid,
+            amountReceived: amountReceived,
+            change: change,
+            currency: json['currency']?.toString() ?? 'USD',
+            receiptLinesJson: receiptLinesJson, // ✅ Now properly typed
+            isReprint: isReprint,
+            studentName: json['studentName']?.toString() ?? '',
+            studentClass: json['studentClass']?.toString(),
+            syncStatus: syncStatus,
+            lastModified: lastModified,
+            operationType: json['operationType']?.toString() ?? 'none',
+            modifiedFields: modifiedFields,
           );
 
-          // =========================================================
-          // 🔍 CHECK EXISTING
-          // =========================================================
-          final existingList = _receiptSnapshotBox!.values
+          // Check if receipt exists in Hive
+          var existingList = _receiptSnapshotBox!.values
               .where((r) => r.receiptCode == fetchedReceipt.receiptCode)
               .toList();
 
           ReceiptSnapshot? existing =
               existingList.isNotEmpty ? existingList.first : null;
 
-          // =========================================================
-          // 🔄 UPDATE OR CREATE (EXPLICIT)
-          // =========================================================
           if (existing != null) {
+            // ✅ Update existing
             existing
               ..receiptDate = fetchedReceipt.receiptDate
               ..cashier = fetchedReceipt.cashier
@@ -5859,22 +5931,19 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..isReprint = fetchedReceipt.isReprint
               ..studentName = fetchedReceipt.studentName
               ..studentClass = fetchedReceipt.studentClass
-
-              // 🔹 Sync
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now()
               ..modifiedFields = [];
 
             await existing.save();
-
             print(
-                'ReceiptSnapshot ${fetchedReceipt.receiptCode} updated successfully.');
+                'ReceiptSnapshot ${fetchedReceipt.receiptCode} updated in Hive.');
           } else {
+            // ✅ Create new
             await _receiptSnapshotBox!.add(fetchedReceipt);
-
             print(
-                'ReceiptSnapshot ${fetchedReceipt.receiptCode} added successfully.');
+                'ReceiptSnapshot ${fetchedReceipt.receiptCode} added to Hive.');
           }
         }
       } else {
@@ -5889,7 +5958,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-
   //================================pull _fetchAndSyncProjectPaymentMethod =======================================================================//
 
   Future<void> _fetchAndSyncProjectPaymentMethod() async {
@@ -6027,6 +6095,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// PULL BatchSellUnits from server
   Future<void> _fetchAndSyncBatchUnitSales() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/batch_sell_unit_api.php';
@@ -6051,12 +6120,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         print('Decoded BatchSellUnit response: $decoded');
 
         for (var item in unitsList) {
-          // 🔹 Ensure valid map
           if (item is! Map) continue;
 
           final Map<String, dynamic> json = Map<String, dynamic>.from(item);
 
-          // 🔹 Primary key
           final String? sellUnitCode = json['sellUnitCode'];
 
           if (sellUnitCode == null) {
@@ -6064,59 +6131,71 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             continue;
           }
 
-          // =========================================================
-          // 🔹 PARSE DATE (EXPLICIT)
-          // =========================================================
+          // ✅ Convert syncStatus from int to bool
+          bool syncStatus = true;
+          if (json['syncStatus'] != null) {
+            if (json['syncStatus'] is int) {
+              syncStatus = json['syncStatus'] == 1;
+            } else if (json['syncStatus'] is bool) {
+              syncStatus = json['syncStatus'];
+            }
+          }
+
+          // ✅ Convert active from int to bool
+          bool active = true;
+          if (json['active'] != null) {
+            if (json['active'] is int) {
+              active = json['active'] == 1;
+            } else if (json['active'] is bool) {
+              active = json['active'];
+            }
+          }
+
+          // ✅ Parse dates
           DateTime? deletedAt = DateTime.tryParse(json['deletedAt'] ?? '');
 
-          // =========================================================
-          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
-          // =========================================================
+          DateTime? lastModified;
+          if (json['lastModified'] != null) {
+            try {
+              lastModified = DateTime.parse(json['lastModified']);
+            } catch (e) {
+              lastModified = DateTime.now();
+            }
+          }
+
+          // ✅ Parse modifiedFields
+          List<String> modifiedFields = _decodeToList(json['modifiedFields']);
+
           final BatchSellUnit fetchedUnit = BatchSellUnit(
             sellUnitCode: sellUnitCode,
-            batchCode: json['batchCode'],
-            unitName: json['unitName'],
-
+            batchCode: json['batchCode']?.toString() ?? '',
+            unitName: json['unitName']?.toString() ?? '',
             quantityMultiplier: (json['quantityMultiplier'] ?? 0).toInt(),
-
             sellingPrice: (json['sellingPrice'] ?? 0).toDouble(),
-
-            active: json['active'] ?? true,
-
+            active: active,
             deletedAt: deletedAt,
-
-            // 🔗 SNAPSHOT FIELDS
             packagingLevel:
                 _parsePackagingLevelNullable(json['packagingLevel']),
-
             baseUnitsPerSellUnit:
                 (json['baseUnitsPerSellUnit'] ?? 0).toDouble(),
-
-            baseUnit: json['baseUnit'],
-
+            baseUnit: json['baseUnit']?.toString(),
             baseUnitType: _parseStockUnitType(json['baseUnitType']),
-
-            // 🔹 Sync fields (server → local)
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.now(),
-            modifiedFields: [],
+            syncStatus: syncStatus,
+            lastModified: lastModified,
+            operationType: json['operationType']?.toString() ?? 'none',
+            modifiedFields: modifiedFields,
           );
 
-          // =========================================================
-          // 🔍 CHECK EXISTING
-          // =========================================================
-          final existingList = _batchSellUnitBox!.values
+          // Check if unit exists in Hive
+          var existingList = _batchSellUnitBox!.values
               .where((u) => u.sellUnitCode == fetchedUnit.sellUnitCode)
               .toList();
 
           BatchSellUnit? existing =
               existingList.isNotEmpty ? existingList.first : null;
 
-          // =========================================================
-          // 🔄 UPDATE OR CREATE (EXPLICIT)
-          // =========================================================
           if (existing != null) {
+            // ✅ Update existing
             existing
               ..batchCode = fetchedUnit.batchCode
               ..unitName = fetchedUnit.unitName
@@ -6124,28 +6203,21 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..sellingPrice = fetchedUnit.sellingPrice
               ..active = fetchedUnit.active
               ..deletedAt = fetchedUnit.deletedAt
-
-              // 🔗 SNAPSHOT
               ..packagingLevel = fetchedUnit.packagingLevel
               ..baseUnitsPerSellUnit = fetchedUnit.baseUnitsPerSellUnit
               ..baseUnit = fetchedUnit.baseUnit
               ..baseUnitType = fetchedUnit.baseUnitType
-
-              // 🔹 Sync
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now()
               ..modifiedFields = [];
 
             await existing.save();
-
-            print(
-                'BatchSellUnit ${fetchedUnit.sellUnitCode} updated successfully.');
+            print('BatchSellUnit ${fetchedUnit.sellUnitCode} updated in Hive.');
           } else {
+            // ✅ Create new
             await _batchSellUnitBox!.add(fetchedUnit);
-
-            print(
-                'BatchSellUnit ${fetchedUnit.sellUnitCode} added successfully.');
+            print('BatchSellUnit ${fetchedUnit.sellUnitCode} added to Hive.');
           }
         }
       } else {
@@ -6163,6 +6235,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   //================================pull _fetchAndSyncProjectSaleTransactions =======================================================================//
 
+// PULL ProjectSaleTransactions from server
   Future<void> _fetchAndSyncProjectSaleTransactions() async {
     final String apiUrl =
         'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/project_sale_transaction_api.php';
@@ -6177,22 +6250,21 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
 
-        final List<dynamic> transactions = decoded is List
-            ? decoded
-            : decoded.entries
-                .where((e) => e.value is Map)
-                .map((e) => e.value)
-                .toList();
+        List<dynamic> transactions;
+        if (decoded is List) {
+          transactions = decoded;
+        } else {
+          print('Unexpected response format');
+          return;
+        }
 
-        print('Decoded ProjectSaleTransaction response: $decoded');
+        print('Decoded ${transactions.length} transactions');
 
         for (var item in transactions) {
-          // 🔹 Ensure valid map
           if (item is! Map) continue;
 
           final Map<String, dynamic> json = Map<String, dynamic>.from(item);
 
-          // 🔹 Primary key
           final String? transactionCode = json['transactionCode'];
 
           if (transactionCode == null) {
@@ -6200,175 +6272,164 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             continue;
           }
 
-          // =========================================================
-          // 🔹 PARSE DATES (EXPLICIT)
-          // =========================================================
+          // ✅ Convert bool fields from int
+          bool syncStatus =
+              json['syncStatus'] == true || json['syncStatus'] == 1;
+          bool isDeleted = json['isDeleted'] == true || json['isDeleted'] == 1;
+          bool isReversed =
+              json['isReversed'] == true || json['isReversed'] == 1;
+          bool affectsStock =
+              json['affectsStock'] == true || json['affectsStock'] == 1;
+          bool createsObligation = json['createsObligation'] == true ||
+              json['createsObligation'] == 1;
+          bool settlesObligation = json['settlesObligation'] == true ||
+              json['settlesObligation'] == 1;
+
+          // ✅ Parse dates
           DateTime? transactionDate =
               DateTime.tryParse(json['transactionDate'] ?? '');
-
+          DateTime? lastModified =
+              DateTime.tryParse(json['lastModified'] ?? '');
           DateTime? paymentDatetransacted =
               DateTime.tryParse(json['paymentDatetransacted'] ?? '');
 
-          List<DateTime>? deletedAt = (json['deletedAt'] is List)
-              ? (json['deletedAt'] as List)
-                  .map((e) => DateTime.tryParse(e.toString()))
-                  .whereType<DateTime>()
-                  .toList()
-              : null;
+          // ✅ Parse Lists from JSON
+          List<DateTime> deletedAt = _decodeDateList(json['deletedAt']);
+          List<DateTime> restoredAt = _decodeDateList(json['restoredAt']);
+          List<String> deletedByUsers = _decodeToList(json['deletedByUsers']);
+          List<String> restoredByUsers = _decodeToList(json['restoredByUsers']);
+          List<String> lineTransactionCodes =
+              _decodeToList(json['lineTransactionCodes']);
+          List<String> modifiedFields = _decodeToList(json['modifiedFields']);
 
-          List<DateTime>? restoredAt = (json['restoredAt'] is List)
-              ? (json['restoredAt'] as List)
-                  .map((e) => DateTime.tryParse(e.toString()))
-                  .whereType<DateTime>()
-                  .toList()
-              : null;
+          // ✅ Parse StockUnitType
+          StockUnitType baseUnitType = StockUnitType.piece;
+          if (json['baseUnitType'] != null) {
+            try {
+              baseUnitType = StockUnitType.values.firstWhere(
+                (e) =>
+                    e.name.toLowerCase() ==
+                    json['baseUnitType'].toString().toLowerCase(),
+                orElse: () => StockUnitType.piece,
+              );
+            } catch (e) {
+              baseUnitType = StockUnitType.piece;
+            }
+          }
 
-          // =========================================================
-          // 🔹 BUILD OBJECT (ALL FIELDS EXPLICIT)
-          // =========================================================
-          final ProjectSaleTransaction fetchedTransaction =
-              ProjectSaleTransaction(
+          final ProjectSaleTransaction fetchedTx = ProjectSaleTransaction(
             transactionCode: transactionCode,
-            studentId: json['studentId'],
-            projectCode: json['projectCode'],
-            projectItemCode: json['projectItemCode'],
-            batchCode: json['batchCode'],
-            sellUnitCode: json['sellUnitCode'],
-            sellUnitNameSnapshot: json['sellUnitNameSnapshot'],
-
-            quantitySold: (json['quantitySold'] ?? 0).toDouble(),
+            studentId: json['studentId']?.toString() ?? '',
+            projectCode: json['projectCode']?.toString() ?? '',
+            projectItemCode: json['projectItemCode']?.toString() ?? '',
+            batchCode: json['batchCode']?.toString() ?? '',
+            sellUnitCode: json['sellUnitCode']?.toString() ?? '',
+            sellUnitNameSnapshot:
+                json['sellUnitNameSnapshot']?.toString() ?? '',
+            quantitySold: (json['quantitySold'] ?? 0).toInt(),
             unitSellingPrice: (json['unitSellingPrice'] ?? 0).toDouble(),
             totalAmount: (json['totalAmount'] ?? 0).toDouble(),
-
             baseUnitsPerSellUnit:
                 (json['baseUnitsPerSellUnit'] ?? 0).toDouble(),
             totalBaseUnitsSold: (json['totalBaseUnitsSold'] ?? 0).toDouble(),
-
-            baseUnit: json['baseUnit'],
-            baseUnitType: _parseStockUnitType(json['baseUnitType']) ??
-                StockUnitType.piece,
-
+            baseUnit: json['baseUnit']?.toString() ?? '',
+            baseUnitType: baseUnitType,
             transactionDate: transactionDate ?? DateTime.now(),
-
-            paymentMethod: json['paymentMethod'],
-            reference: json['reference'],
+            paymentMethod: json['paymentMethod']?.toString() ?? '',
+            reference: json['reference']?.toString() ?? '',
             amountPaid: (json['amountPaid'] ?? 0).toDouble(),
             arrears: (json['arrears'] ?? 0).toDouble(),
-
-            // 🔴 Soft delete
-            isDeleted: json['isDeleted'] ?? false,
-            deletedAt: deletedAt,
-            restoredAt: restoredAt,
-            deletedByUsers: _decodeClassToList(json['deletedByUsers']),
-            restoredByUsers: _decodeClassToList(json['restoredByUsers']),
-
-            // 💳 Payment breakdown
-            paymentMethodCode: json['paymentMethodCode'],
-            methodType: json['methodType'],
+            paymentMethodCode: json['paymentMethodCode']?.toString(),
+            methodType: json['methodType']?.toString(),
             amountPaidInPaymentMethod:
                 (json['amountPaidInPaymentMethod'] ?? 0).toDouble(),
-            currency: json['currency'],
-            provider: json['provider'],
-            referenceNumber: json['referenceNumber'],
-            phoneNumber: json['phoneNumber'],
-            accountNumber: json['accountNumber'],
-            accountName: json['accountName'],
+            currency: json['currency']?.toString(),
+            provider: json['provider']?.toString(),
+            referenceNumber: json['referenceNumber']?.toString(),
+            phoneNumber: json['phoneNumber']?.toString(),
+            accountNumber: json['accountNumber']?.toString(),
+            accountName: json['accountName']?.toString(),
             paymentDatetransacted: paymentDatetransacted,
-
-            // 🔁 Audit
-            isReversed: json['isReversed'] ?? false,
-            lineTransactionCodes:
-                _decodeClassToList(json['lineTransactionCodes']),
-            financialType: json['financialType'],
-            parentTransactionCode: json['parentTransactionCode'],
-            affectsStock: json['affectsStock'] ?? false,
-            createsObligation: json['createsObligation'] ?? false,
-            settlesObligation: json['settlesObligation'] ?? false,
-
-            // 🔹 Sync fields
-            syncStatus: true,
-            operationType: 'none',
-            lastModified: DateTime.now(),
-            modifiedFields: [],
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            restoredAt: restoredAt,
+            deletedByUsers: deletedByUsers,
+            restoredByUsers: restoredByUsers,
+            isReversed: isReversed,
+            lineTransactionCodes: lineTransactionCodes,
+            financialType: json['financialType']?.toString() ?? 'sale',
+            parentTransactionCode: json['parentTransactionCode']?.toString(),
+            affectsStock: affectsStock,
+            createsObligation: createsObligation,
+            settlesObligation: settlesObligation,
+            syncStatus: syncStatus,
+            lastModified: lastModified,
+            operationType: json['operationType']?.toString() ?? 'none',
+            modifiedFields: modifiedFields,
           );
 
-          // =========================================================
-          // 🔍 CHECK EXISTING
-          // =========================================================
-          final existingList = _projectSaleTransactionBox!.values
-              .where((t) =>
-                  t.transactionCode == fetchedTransaction.transactionCode)
+          // Check if transaction exists in Hive
+          var existingList = _projectSaleTransactionBox!.values
+              .where((t) => t.transactionCode == fetchedTx.transactionCode)
               .toList();
 
           ProjectSaleTransaction? existing =
               existingList.isNotEmpty ? existingList.first : null;
 
-          // =========================================================
-          // 🔄 UPDATE OR CREATE
-          // =========================================================
           if (existing != null) {
+            // ✅ Update existing
             existing
-              ..studentId = fetchedTransaction.studentId
-              ..projectCode = fetchedTransaction.projectCode
-              ..projectItemCode = fetchedTransaction.projectItemCode
-              ..batchCode = fetchedTransaction.batchCode
-              ..sellUnitCode = fetchedTransaction.sellUnitCode
-              ..sellUnitNameSnapshot = fetchedTransaction.sellUnitNameSnapshot
-              ..quantitySold = fetchedTransaction.quantitySold
-              ..unitSellingPrice = fetchedTransaction.unitSellingPrice
-              ..totalAmount = fetchedTransaction.totalAmount
-              ..baseUnitsPerSellUnit = fetchedTransaction.baseUnitsPerSellUnit
-              ..totalBaseUnitsSold = fetchedTransaction.totalBaseUnitsSold
-              ..baseUnit = fetchedTransaction.baseUnit
-              ..baseUnitType = fetchedTransaction.baseUnitType
-              ..transactionDate = fetchedTransaction.transactionDate
-              ..paymentMethod = fetchedTransaction.paymentMethod
-              ..reference = fetchedTransaction.reference
-              ..amountPaid = fetchedTransaction.amountPaid
-              ..arrears = fetchedTransaction.arrears
-
-              // 🔴 Soft delete
-              ..isDeleted = fetchedTransaction.isDeleted
-              ..deletedAt = fetchedTransaction.deletedAt
-              ..restoredAt = fetchedTransaction.restoredAt
-              ..deletedByUsers = fetchedTransaction.deletedByUsers
-              ..restoredByUsers = fetchedTransaction.restoredByUsers
-
-              // 💳 Payment
-              ..paymentMethodCode = fetchedTransaction.paymentMethodCode
-              ..methodType = fetchedTransaction.methodType
-              ..amountPaidInPaymentMethod =
-                  fetchedTransaction.amountPaidInPaymentMethod
-              ..currency = fetchedTransaction.currency
-              ..provider = fetchedTransaction.provider
-              ..referenceNumber = fetchedTransaction.referenceNumber
-              ..phoneNumber = fetchedTransaction.phoneNumber
-              ..accountNumber = fetchedTransaction.accountNumber
-              ..accountName = fetchedTransaction.accountName
-              ..paymentDatetransacted = fetchedTransaction.paymentDatetransacted
-
-              // 🔁 Audit
-              ..isReversed = fetchedTransaction.isReversed
-              ..lineTransactionCodes = fetchedTransaction.lineTransactionCodes
-              ..financialType = fetchedTransaction.financialType
-              ..parentTransactionCode = fetchedTransaction.parentTransactionCode
-              ..affectsStock = fetchedTransaction.affectsStock
-              ..createsObligation = fetchedTransaction.createsObligation
-              ..settlesObligation = fetchedTransaction.settlesObligation
-
-              // 🔹 Sync
+              ..studentId = fetchedTx.studentId
+              ..projectCode = fetchedTx.projectCode
+              ..projectItemCode = fetchedTx.projectItemCode
+              ..batchCode = fetchedTx.batchCode
+              ..sellUnitCode = fetchedTx.sellUnitCode
+              ..sellUnitNameSnapshot = fetchedTx.sellUnitNameSnapshot
+              ..quantitySold = fetchedTx.quantitySold
+              ..unitSellingPrice = fetchedTx.unitSellingPrice
+              ..totalAmount = fetchedTx.totalAmount
+              ..baseUnitsPerSellUnit = fetchedTx.baseUnitsPerSellUnit
+              ..totalBaseUnitsSold = fetchedTx.totalBaseUnitsSold
+              ..baseUnit = fetchedTx.baseUnit
+              ..baseUnitType = fetchedTx.baseUnitType
+              ..transactionDate = fetchedTx.transactionDate
+              ..paymentMethod = fetchedTx.paymentMethod
+              ..reference = fetchedTx.reference
+              ..amountPaid = fetchedTx.amountPaid
+              ..arrears = fetchedTx.arrears
+              ..paymentMethodCode = fetchedTx.paymentMethodCode
+              ..methodType = fetchedTx.methodType
+              ..amountPaidInPaymentMethod = fetchedTx.amountPaidInPaymentMethod
+              ..currency = fetchedTx.currency
+              ..provider = fetchedTx.provider
+              ..referenceNumber = fetchedTx.referenceNumber
+              ..phoneNumber = fetchedTx.phoneNumber
+              ..accountNumber = fetchedTx.accountNumber
+              ..accountName = fetchedTx.accountName
+              ..paymentDatetransacted = fetchedTx.paymentDatetransacted
+              ..isDeleted = fetchedTx.isDeleted
+              ..deletedAt = fetchedTx.deletedAt
+              ..restoredAt = fetchedTx.restoredAt
+              ..deletedByUsers = fetchedTx.deletedByUsers
+              ..restoredByUsers = fetchedTx.restoredByUsers
+              ..isReversed = fetchedTx.isReversed
+              ..lineTransactionCodes = fetchedTx.lineTransactionCodes
+              ..financialType = fetchedTx.financialType
+              ..parentTransactionCode = fetchedTx.parentTransactionCode
+              ..affectsStock = fetchedTx.affectsStock
+              ..createsObligation = fetchedTx.createsObligation
+              ..settlesObligation = fetchedTx.settlesObligation
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now()
               ..modifiedFields = [];
 
             await existing.save();
-
-            print('Transaction ${fetchedTransaction.transactionCode} updated.');
+            print('Transaction ${fetchedTx.transactionCode} updated in Hive.');
           } else {
-            await _projectSaleTransactionBox!.add(fetchedTransaction);
-
-            print('Transaction ${fetchedTransaction.transactionCode} added.');
+            // ✅ Create new
+            await _projectSaleTransactionBox!.add(fetchedTx);
+            print('Transaction ${fetchedTx.transactionCode} added to Hive.');
           }
         }
       } else {
@@ -6384,6 +6445,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+  List<DateTime> _decodeDateList(dynamic value) {
+    if (value == null) return [];
+    List<DateTime> result = [];
+    if (value is List) {
+      for (var item in value) {
+        try {
+          if (item is String) {
+            result.add(DateTime.parse(item));
+          }
+        } catch (e) {
+          // Skip invalid dates
+        }
+      }
+    }
+    return result;
+  }
 //================================pull _fetchAndSyncProjectItemPricing =======================================================================//
 
   Future<void> _fetchAndSyncProjectItemPricing() async {

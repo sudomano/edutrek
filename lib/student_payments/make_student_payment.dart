@@ -18,6 +18,7 @@ import 'package:zitf_system/database/projects/project_item_batch_sell_model.dart
 import 'package:zitf_system/database/projects/project_item_model.dart';
 import 'package:zitf_system/database/projects/project_model.dart';
 import 'package:zitf_system/database/projects/project_sale_transaction_model.dart';
+import 'package:zitf_system/database/projects/reprint_project_receipt.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/database/student.dart';
 import 'package:zitf_system/database/student_payments.dart';
@@ -2709,7 +2710,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                         arrearsData: arrearsData,
                         projectArrears: projectDetails,
                         termAggregation: termAggregation,
-                        isDuplicate: false, // <-- reprint flag
+                        isDuplicate: false,
                       );
 
                       // ✅ STEP 1: Process payment FIRST
@@ -2721,6 +2722,61 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                         student: studentToSave,
                         receiptLines: list,
                       );
+
+                      // ============================================================
+                      // ✅ NEW: Save ReceiptSnapshot for reprint purposes
+                      // ============================================================
+                      try {
+                        final receiptBox =
+                            Hive.box<ReceiptSnapshot>('receipt_snapshots');
+
+                        // Calculate totals
+                        double totalExpected = _paymentPurposes.fold(0.0,
+                            (sum, p) => sum + (p['currentAmount'] as double));
+                        double totalPaid = totalExpected;
+                        double change = (finalReceived ?? 0) - totalPaid;
+
+                        final snapshot = ReceiptSnapshot(
+                          studentName:
+                              "${studentToSave.name} ${studentToSave.surname}",
+                          studentClass: studentToSave.class_,
+                          receiptCode: receiptNo,
+                          receiptDate: DateTime.now(),
+                          cashier: user,
+                          totalExpected: totalExpected,
+                          totalPaid: totalPaid,
+                          amountReceived: finalReceived ?? 0,
+                          change: change,
+                          currency: _currency,
+                          receiptLinesJson: receiptLinesToJson(list),
+                          isReprint: false,
+                          syncStatus: false,
+                          lastModified: DateTime.now(),
+                          operationType: 'create',
+                          modifiedFields: [
+                            'studentName',
+                            'studentClass',
+                            'receiptCode',
+                            'receiptDate',
+                            'cashier',
+                            'totalExpected',
+                            'totalPaid',
+                            'amountReceived',
+                            'change',
+                            'currency',
+                            'receiptLinesJson',
+                            'isReprint'
+                          ],
+                        );
+
+                        await receiptBox.add(snapshot);
+                        debugPrint(
+                            "✅ ReceiptSnapshot saved for reprint: ${snapshot.receiptCode}");
+                      } catch (e, stack) {
+                        debugPrint("❌ ReceiptSnapshot save failed: $e");
+                        debugPrint("Stack trace: $stack");
+                        // Don't rethrow, let the payment still complete
+                      }
 
                       // Close dialogs
                       Navigator.pop(context); // Close confirmation dialog
@@ -2745,6 +2801,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                   },
                   child: const Text('Confirm And Do Not Print Receipt?'),
                 ),
+                // In the "Confirm & Print Receipt" button's onPressed
                 TextButton(
                   onPressed: _connected
                       ? () async {
@@ -2823,14 +2880,14 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                             );
                             debugPrint(
                                 '⏱️ [PRINT-BUTTON] Receipt built in ${DateTime.now().difference(receiptStart).inMilliseconds}ms (${list.length} lines)');
-                            final paymentStart = DateTime.now();
 
                             // ✅ STEP 1: Process payment FIRST
                             await _makePayment(useId: newId);
                             debugPrint(
-                                '⏱️ [PRINT-BUTTON] Dispatching receipt log save...');
+                                '⏱️ [PRINT-BUTTON] Dispatch payment log save...');
 
                             try {
+                              // ✅ Save PaymentLog
                               await saveReceiptLog(
                                 receiptNumber: newId,
                                 student: studentToSave,
@@ -2842,6 +2899,64 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                               debugPrint("❌ saveReceiptLog failed: $e");
                               debugPrint("Stack trace: $stack");
                               rethrow;
+                            }
+
+                            // ============================================================
+                            // ✅ NEW: Save ReceiptSnapshot for reprint purposes
+                            // ============================================================
+                            try {
+                              final receiptBox = Hive.box<ReceiptSnapshot>(
+                                  'receipt_snapshots');
+
+                              // Calculate totals
+                              double totalExpected = _paymentPurposes.fold(
+                                  0.0,
+                                  (sum, p) =>
+                                      sum + (p['currentAmount'] as double));
+                              double totalPaid =
+                                  totalExpected; // Since we're in the print path
+                              double change = (finalReceived ?? 0) - totalPaid;
+
+                              final snapshot = ReceiptSnapshot(
+                                studentName:
+                                    "${studentToSave.name} ${studentToSave.surname}",
+                                studentClass: studentToSave.class_,
+                                receiptCode: receiptNo,
+                                receiptDate: DateTime.now(),
+                                cashier: user,
+                                totalExpected: totalExpected,
+                                totalPaid: totalPaid,
+                                amountReceived: finalReceived ?? 0,
+                                change: change,
+                                currency: _currency,
+                                receiptLinesJson: receiptLinesToJson(list),
+                                isReprint: false,
+                                syncStatus: false,
+                                lastModified: DateTime.now(),
+                                operationType: 'create',
+                                modifiedFields: [
+                                  'studentName',
+                                  'studentClass',
+                                  'receiptCode',
+                                  'receiptDate',
+                                  'cashier',
+                                  'totalExpected',
+                                  'totalPaid',
+                                  'amountReceived',
+                                  'change',
+                                  'currency',
+                                  'receiptLinesJson',
+                                  'isReprint'
+                                ],
+                              );
+
+                              await receiptBox.add(snapshot);
+                              debugPrint(
+                                  "✅ ReceiptSnapshot saved for reprint: ${snapshot.receiptCode}");
+                            } catch (e, stack) {
+                              debugPrint("❌ ReceiptSnapshot save failed: $e");
+                              debugPrint("Stack trace: $stack");
+                              // Don't rethrow, let the payment still complete
                             }
 
                             // ✅ STEP 3: Print receipt (payment already saved)

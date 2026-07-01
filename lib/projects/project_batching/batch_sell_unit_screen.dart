@@ -100,20 +100,42 @@ class _CreateProductsellBatchScreenState
 
     final box = await Hive.openBox<ProductBatch>('product_batches');
 
+    // ✅ Track modified fields
+    List<String> modifiedFields = [];
+
     final batch = widget.batch ??
         ProductBatch(
           batchCode: DateTime.now().millisecondsSinceEpoch.toString(),
           productCode: widget.projectItem.projectItemCode,
           createdAt: DateTime.now(),
+          syncStatus: false,
+          operationType: 'create',
+          modifiedFields: [],
         );
 
+    // ✅ Check what changed
+    if (batch.reference != _referenceController.text) {
+      modifiedFields.add('reference');
+    }
+    if (batch.totalBaseUnits != double.parse(_totalUnitsController.text)) {
+      modifiedFields.add('totalBaseUnits');
+    }
+    if (batch.totalBuyingCost != double.parse(_totalCostController.text)) {
+      modifiedFields.add('totalBuyingCost');
+    }
+
+    // ✅ Update batch with sync fields
     batch
       ..reference = _referenceController.text
       ..totalBaseUnits = double.parse(_totalUnitsController.text)
       ..remainingBaseUnits = double.parse(_totalUnitsController.text)
       ..totalBuyingCost = double.parse(_totalCostController.text)
       ..lastModified = DateTime.now()
-      ..operationType = 'create';
+      ..syncStatus = false // ✅ Set to false for sync
+      ..operationType = widget.batch == null
+          ? 'create'
+          : 'update' // ✅ Set correct operation type
+      ..modifiedFields = modifiedFields; // ✅ Track changes
 
     await box.put(batch.batchCode, batch);
 
@@ -166,13 +188,39 @@ class BatchSellUnitsScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 12),
             ),
             trailing: const Icon(Icons.restore),
+            // In BatchSellUnitsScreen or RestoreSellUnitsScreen
             onTap: () async {
+              // ✅ Track that this is a restore operation
+              List<String> modifiedFields = u.modifiedFields ?? [];
+              if (!modifiedFields.contains('active')) {
+                modifiedFields.add('active');
+              }
+              if (!modifiedFields.contains('deletedAt')) {
+                modifiedFields.add('deletedAt');
+              }
+
               u
                 ..active = true
                 ..deletedAt = null
-                ..lastModified = DateTime.now();
+                ..lastModified = DateTime.now()
+                ..syncStatus = false // ✅ Set to false for sync
+                ..operationType = 'update' // ✅ Set to update
+                ..modifiedFields = modifiedFields; // ✅ Track changes
 
               await box.put(u.sellUnitCode, u);
+
+              // ✅ Also update the ProductBatch
+              final batchBox = Hive.box<ProductBatch>('product_batches');
+              final batch = batchBox.get(u.batchCode);
+              if (batch != null) {
+                batch
+                  ..lastModified = DateTime.now()
+                  ..syncStatus = false
+                  ..operationType = 'update'
+                  ..modifiedFields = ['sellUnits'];
+                await batch.save();
+              }
+
               Navigator.pop(context);
             },
           );
@@ -278,13 +326,39 @@ class RestoreSellUnitsScreen extends StatelessWidget {
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.restore),
+                  // In BatchSellUnitsScreen or RestoreSellUnitsScreen
                   onTap: () async {
+                    // ✅ Track that this is a restore operation
+                    List<String> modifiedFields = u.modifiedFields ?? [];
+                    if (!modifiedFields.contains('active')) {
+                      modifiedFields.add('active');
+                    }
+                    if (!modifiedFields.contains('deletedAt')) {
+                      modifiedFields.add('deletedAt');
+                    }
+
                     u
                       ..active = true
                       ..deletedAt = null
-                      ..lastModified = DateTime.now();
+                      ..lastModified = DateTime.now()
+                      ..syncStatus = false // ✅ Set to false for sync
+                      ..operationType = 'update' // ✅ Set to update
+                      ..modifiedFields = modifiedFields; // ✅ Track changes
 
                     await box.put(u.sellUnitCode, u);
+
+                    // ✅ Also update the ProductBatch
+                    final batchBox = Hive.box<ProductBatch>('product_batches');
+                    final batch = batchBox.get(u.batchCode);
+                    if (batch != null) {
+                      batch
+                        ..lastModified = DateTime.now()
+                        ..syncStatus = false
+                        ..operationType = 'update'
+                        ..modifiedFields = ['sellUnits'];
+                      await batch.save();
+                    }
+
                     Navigator.pop(context);
                   },
                 );
@@ -551,12 +625,36 @@ class _CreateOrEditSellUnitScreenState
     final box = Hive.box<BatchSellUnit>('batch_sell_units');
     final unit = widget.existing!;
 
+    // ✅ Track changes
+    List<String> modifiedFields = unit.modifiedFields ?? [];
+    if (!modifiedFields.contains('active')) {
+      modifiedFields.add('active');
+    }
+    if (!modifiedFields.contains('deletedAt')) {
+      modifiedFields.add('deletedAt');
+    }
+
     unit
       ..active = false
       ..deletedAt = DateTime.now()
-      ..lastModified = DateTime.now();
+      ..lastModified = DateTime.now()
+      ..syncStatus = false // ✅ Set to false for sync
+      ..operationType = 'update' // ✅ Set to update
+      ..modifiedFields = modifiedFields; // ✅ Track changes
 
     await box.put(unit.sellUnitCode, unit);
+
+    // ✅ Also update the ProductBatch
+    final batchBox = Hive.box<ProductBatch>('product_batches');
+    final batch = batchBox.get(widget.batch.batchCode);
+    if (batch != null) {
+      batch
+        ..lastModified = DateTime.now()
+        ..syncStatus = false
+        ..operationType = 'update'
+        ..modifiedFields = ['sellUnits'];
+      await batch.save();
+    }
 
     Navigator.pop(context);
   }
@@ -697,6 +795,11 @@ class _CreateOrEditSellUnitScreenState
 
     final box = Hive.box<BatchSellUnit>('batch_sell_units');
 
+    // ✅ Track modified fields
+    List<String> modifiedFields = [];
+
+    final bool isNew = widget.existing == null;
+
     final sellUnit = widget.existing ??
         BatchSellUnit(
           sellUnitCode:
@@ -710,17 +813,49 @@ class _CreateOrEditSellUnitScreenState
           quantityMultiplier: int.parse(_quantityMultiplierController.text),
           sellingPrice: 0,
           active: true,
+          syncStatus: false, // ✅ Set for new
+          operationType: 'create', // ✅ Set for new
           lastModified: DateTime.now(),
+          modifiedFields: [],
         );
 
+    // ✅ Check what changed
+    if (sellUnit.unitName != _unitNameController.text) {
+      modifiedFields.add('unitName');
+    }
+    if (sellUnit.quantityMultiplier !=
+        int.parse(_quantityMultiplierController.text)) {
+      modifiedFields.add('quantityMultiplier');
+    }
+    if (sellUnit.sellingPrice != double.parse(_sellingPriceController.text)) {
+      modifiedFields.add('sellingPrice');
+    }
+
+    // ✅ Update sell unit with sync fields
     sellUnit
       ..unitName = _unitNameController.text
       ..quantityMultiplier = int.parse(_quantityMultiplierController.text)
       ..sellingPrice = double.parse(_sellingPriceController.text)
       ..active = true
-      ..lastModified = DateTime.now();
+      ..lastModified = DateTime.now()
+      ..syncStatus = false // ✅ Set to false for sync
+      ..operationType =
+          isNew ? 'create' : 'update' // ✅ Set correct operation type
+      ..modifiedFields = modifiedFields; // ✅ Track changes
 
     await box.put(sellUnit.sellUnitCode, sellUnit);
+
+    // ✅ Also update the ProductBatch to know it has changes
+    final batchBox = Hive.box<ProductBatch>('product_batches');
+    final batch = batchBox.get(widget.batch.batchCode);
+    if (batch != null) {
+      batch
+        ..lastModified = DateTime.now()
+        ..syncStatus = false
+        ..operationType = 'update'
+        ..modifiedFields = ['sellUnits'];
+      await batch.save();
+    }
 
     Navigator.pop(context);
   }

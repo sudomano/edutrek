@@ -415,6 +415,9 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
 
     final totalBaseUnitsSold = _quantity.toDouble();
 
+    // ✅ Track modified fields
+    List<String> modifiedFields = [];
+
     if (_isArrearsPayment) {
       return ProjectSaleTransaction(
         transactionCode: _uuid.v4(),
@@ -428,7 +431,7 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
         unitSellingPrice: 0,
         totalAmount: _expectedAmount,
         amountPaid: _amountPaid,
-        arrears: 0, // legacy only
+        arrears: 0,
         baseUnit: '',
         baseUnitType: StockUnitType.piece,
         baseUnitsPerSellUnit: 0,
@@ -442,17 +445,18 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
         referenceNumber: _pmReferenceCtrl.text.trim(),
         paymentDatetransacted: _paymentDate,
         provider: _provider,
-
-        // 🔥 NEW ENGINE FIELDS
         financialType: 'payment',
         createsObligation: false,
         settlesObligation: true,
         affectsStock: false,
         parentTransactionCode: _linkedSaleCode,
-
         isDeleted: false,
         lastModified: DateTime.now(),
         reference: '',
+        // ✅ SYNC FIELDS
+        syncStatus: false,
+        operationType: 'create',
+        modifiedFields: ['amountPaid', 'totalAmount', 'paymentMethod'],
       );
     }
 
@@ -469,7 +473,7 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
           isGoods ? sellUnit!.sellingPrice : _activeServicePrice!.amount,
       totalAmount: derivedExpected,
       amountPaid: _amountPaid,
-      arrears: 0, // 🔴 no longer stored truth
+      arrears: 0,
       baseUnit: isGoods ? batch!.baseUnit ?? '' : 'SERVICE',
       baseUnitType: isGoods
           ? (batch!.baseUnitType ?? StockUnitType.piece)
@@ -494,16 +498,28 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
           : _pmAccountNameCtrl.text.trim(),
       paymentDatetransacted: _paymentDate,
       provider: _provider,
-
-      // 🔥 NEW ENGINE FIELDS
       financialType: 'sale',
       createsObligation: true,
       settlesObligation: false,
       affectsStock: isGoods,
       parentTransactionCode: null,
-
       isDeleted: false,
       lastModified: DateTime.now(),
+      // ✅ SYNC FIELDS
+      syncStatus: false,
+      operationType: 'create',
+      modifiedFields: [
+        'studentId',
+        'projectCode',
+        'projectItemCode',
+        'batchCode',
+        'sellUnitCode',
+        'quantitySold',
+        'unitSellingPrice',
+        'totalAmount',
+        'amountPaid',
+        'paymentMethod',
+      ],
     );
   }
 
@@ -1218,7 +1234,30 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
       // -----------------------------------------
       // 1️⃣ Deduct Stock + Save Transactions
       // -----------------------------------------
+      // ✅ IMPORTANT: Create a COPY of each transaction to avoid key conflicts
+      final List<ProjectSaleTransaction> transactionsToSave = [];
+
       for (final tx in _cart) {
+        // ✅ Set sync fields before saving
+        tx.syncStatus = false;
+        tx.lastModified = DateTime.now();
+        tx.operationType = 'create';
+        tx.isDeleted = false;
+
+        if (tx.modifiedFields == null || tx.modifiedFields!.isEmpty) {
+          tx.modifiedFields = [
+            'studentId',
+            'projectCode',
+            'projectItemCode',
+            'batchCode',
+            'quantitySold',
+            'unitSellingPrice',
+            'totalAmount',
+            'amountPaid',
+            'paymentMethod',
+          ];
+        }
+
         if (tx.affectsStock && tx.batchCode.isNotEmpty) {
           final batch =
               batchBox.values.firstWhere((b) => b.batchCode == tx.batchCode);
@@ -1226,14 +1265,77 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
           batch.remainingBaseUnits =
               (batch.remainingBaseUnits ?? 0) - tx.totalBaseUnitsSold;
 
+          // ✅ Mark batch for sync
+          batch.syncStatus = false;
+          batch.lastModified = DateTime.now();
+          batch.operationType = 'update';
+          batch.modifiedFields ??= [];
+          if (!batch.modifiedFields!.contains('remainingBaseUnits')) {
+            batch.modifiedFields!.add('remainingBaseUnits');
+          }
           await batch.save();
         }
 
-        await txBox.add(tx);
+        // ✅ ADD: Create a new instance to avoid key conflicts
+        // Generate a new transaction code for the saved copy
+        final savedTx = ProjectSaleTransaction(
+          transactionCode: _uuid.v4(), // ✅ NEW unique code
+          studentId: tx.studentId,
+          projectCode: tx.projectCode,
+          projectItemCode: tx.projectItemCode,
+          batchCode: tx.batchCode,
+          sellUnitCode: tx.sellUnitCode,
+          sellUnitNameSnapshot: tx.sellUnitNameSnapshot,
+          quantitySold: tx.quantitySold,
+          unitSellingPrice: tx.unitSellingPrice,
+          totalAmount: tx.totalAmount,
+          baseUnitsPerSellUnit: tx.baseUnitsPerSellUnit,
+          totalBaseUnitsSold: tx.totalBaseUnitsSold,
+          baseUnit: tx.baseUnit,
+          baseUnitType: tx.baseUnitType,
+          transactionDate: tx.transactionDate,
+          paymentMethod: tx.paymentMethod,
+          reference: tx.reference,
+          amountPaid: tx.amountPaid,
+          arrears: tx.arrears,
+          paymentMethodCode: tx.paymentMethodCode,
+          methodType: tx.methodType,
+          amountPaidInPaymentMethod: tx.amountPaidInPaymentMethod,
+          currency: tx.currency,
+          provider: tx.provider,
+          referenceNumber: tx.referenceNumber,
+          phoneNumber: tx.phoneNumber,
+          accountNumber: tx.accountNumber,
+          accountName: tx.accountName,
+          paymentDatetransacted: tx.paymentDatetransacted,
+          isDeleted: tx.isDeleted,
+          deletedAt: tx.deletedAt,
+          restoredAt: tx.restoredAt,
+          deletedByUsers: tx.deletedByUsers,
+          restoredByUsers: tx.restoredByUsers,
+          isReversed: tx.isReversed,
+          lineTransactionCodes: tx.lineTransactionCodes,
+          financialType: tx.financialType,
+          parentTransactionCode: tx.parentTransactionCode,
+          affectsStock: tx.affectsStock,
+          createsObligation: tx.createsObligation,
+          settlesObligation: tx.settlesObligation,
+          syncStatus: false,
+          lastModified: DateTime.now(),
+          operationType: 'create',
+          modifiedFields: tx.modifiedFields,
+        );
+
+        transactionsToSave.add(savedTx);
+      }
+
+      // ✅ Save all transactions using put() instead of add()
+      for (final tx in transactionsToSave) {
+        await txBox.put(tx.transactionCode, tx);
       }
 
       // -----------------------------------------
-      // 2️⃣ Build Receipt Data
+      // 2️⃣ Build Receipt Data (existing code)
       // -----------------------------------------
       final loggedInUser = getLoggedInUser();
       final receiptNumber = const Uuid().v4();
@@ -1250,7 +1352,7 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
 
       final receiptLines = ReceiptBuilder.buildReceipt(
         schoolInfo: _school!,
-        transactions: _cart,
+        transactions: _cart, // Use original cart for receipt
         student: _student,
         receiptCode: receiptNumber,
         receiptDate: DateTime.now(),
@@ -1263,7 +1365,7 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
 
       final receiptBox = Hive.box<ReceiptSnapshot>('receipt_snapshots');
 
-// Calculate totals
+      // Calculate totals
       double totalExpected = _cart.fold(0, (sum, tx) => sum + tx.totalAmount);
       double totalPaid = _cart.fold(0, (sum, tx) => sum + tx.amountPaid);
       double change = received - totalPaid;
@@ -1271,26 +1373,39 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
       final snapshot = ReceiptSnapshot(
         studentName: "${_student?.name ?? ''} ${_student?.surname ?? ''}",
         studentClass: _student?.class_,
-        receiptCode: receiptNumber,
+        receiptCode: const Uuid().v4(),
         receiptDate: DateTime.now(),
-        cashier: loggedInUser.username,
+        cashier: getLoggedInUser().username,
         totalExpected: totalExpected,
         totalPaid: totalPaid,
         amountReceived: received,
         change: change,
         currency: _currency,
         receiptLinesJson: ReceiptBuilder.toJson(receiptLines),
+        syncStatus: false,
+        lastModified: DateTime.now(),
+        operationType: 'create',
+        modifiedFields: [
+          'studentName',
+          'studentClass',
+          'totalExpected',
+          'totalPaid',
+          'amountReceived',
+          'change'
+        ],
       );
 
       await receiptBox.add(snapshot);
 
+      // -----------------------------------------
+      // 3️⃣ Send SMS (existing code)
+      // -----------------------------------------
       bool shouldSendSms = false;
       if (_connected) {
         final printer = BluetoothPrintService();
         await printer.printReceipt(receiptLines);
         shouldSendSms = true;
       } else {
-        // Ask user if they want to save without printing
         final proceed = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
@@ -1312,13 +1427,11 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
           _snack('Transaction not saved');
           return;
         }
-
         shouldSendSms = true;
       }
 
       if (shouldSendSms) {
         final adminBox = Hive.box<User>('users');
-        // ✅ Collect both "admin" and "administration"
         final adminUsers = adminBox.values
             .where((term) =>
                 term.role.toLowerCase() == "admin" ||
@@ -1351,14 +1464,9 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
 
         for (final admin in adminUsers) {
           final phone = admin.phone?.trim();
-
           if (phone == null || phone.isEmpty) continue;
-
-          // prevent duplicates
-
           uniquePhones.add(phone);
-
-          sendSms(adminSms, phone); // no await
+          sendSms(adminSms, phone);
         }
 
         if (_student != null) {
@@ -1367,7 +1475,9 @@ class _ProjectPaymentScreenState extends State<ProjectPaymentScreen> {
             await _sendSmsNotification(parentSms, _student!.phoneNumber);
           }
         }
-      } // -----------------------------------------
+      }
+
+      // -----------------------------------------
       // 4️⃣ Clear Cart & Reset UI
       // -----------------------------------------
       setState(() {

@@ -1,0 +1,64 @@
+-- DROP TABLE IF EXISTS `project_sale_transactions`;
+CREATE TABLE `project_sale_transactions` (
+  -- Primary Key
+  `transaction_code` varchar(50) NOT NULL,
+  
+  -- Core Fields
+  `student_id` varchar(50) DEFAULT NULL,
+  `project_code` varchar(50) DEFAULT NULL,
+  `project_item_code` varchar(50) DEFAULT NULL,
+  `batch_code` varchar(50) DEFAULT NULL,
+  `sell_unit_code` varchar(50) DEFAULT NULL,
+  `sell_unit_name_snapshot` varchar(100) DEFAULT NULL,
+  `quantity_sold` int(11) DEFAULT NULL,
+  `unit_selling_price` decimal(15,2) DEFAULT NULL,
+  `total_amount` decimal(15,2) DEFAULT NULL,
+  `base_units_per_sell_unit` decimal(15,4) DEFAULT NULL,
+  `total_base_units_sold` decimal(15,4) DEFAULT NULL,
+  `base_unit` varchar(10) DEFAULT NULL,
+  `base_unit_type` varchar(20) DEFAULT NULL,
+  `transaction_date` datetime DEFAULT NULL,
+  `payment_method` varchar(50) DEFAULT NULL,
+  `reference` varchar(100) DEFAULT NULL,
+  `amount_paid` decimal(15,2) DEFAULT NULL,
+  `arrears` decimal(15,2) DEFAULT NULL,
+  
+  -- Payment Details
+  `payment_method_code` varchar(50) DEFAULT NULL,
+  `method_type` varchar(20) DEFAULT NULL,
+  `amount_paid_in_payment_method` decimal(15,2) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT NULL,
+  `provider` varchar(50) DEFAULT NULL,
+  `reference_number` varchar(100) DEFAULT NULL,
+  `phone_number` varchar(20) DEFAULT NULL,
+  `account_number` varchar(50) DEFAULT NULL,
+  `account_name` varchar(100) DEFAULT NULL,
+  `payment_date_transacted` datetime DEFAULT NULL,
+  
+  -- Soft Delete (JSON for Lists)
+  `is_deleted` tinyint(1) DEFAULT 0,
+  `deleted_at` json DEFAULT NULL, -- ✅ Changed to JSON for List support
+  `restored_at` json DEFAULT NULL, -- ✅ Changed to JSON for List support
+  `user_name_del` json DEFAULT NULL, -- ✅ Changed to JSON for List support
+  `user_name_rest` json DEFAULT NULL, -- ✅ Changed to JSON for List support
+  
+  -- Financial Logic
+  `is_reversed` tinyint(1) DEFAULT 0,
+  `line_transaction_codes` json DEFAULT NULL, -- ✅ Changed to JSON for List support
+  `financial_type` varchar(20) DEFAULT 'sale',
+  `parent_transaction_code` varchar(50) DEFAULT NULL,
+  `affects_stock` tinyint(1) DEFAULT 1,
+  `creates_obligation` tinyint(1) DEFAULT 0,
+  `settles_obligation` tinyint(1) DEFAULT 0,
+  
+  -- ✅ Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`transaction_code`),
+  KEY `idx_student_id` (`student_id`),
+  KEY `idx_project_code` (`project_code`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

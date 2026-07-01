@@ -1,0 +1,33 @@
+-- DROP TABLE IF EXISTS `receipt_snapshots`;
+CREATE TABLE `receipt_snapshots` (
+  -- Primary Key
+  `receipt_code` varchar(50) NOT NULL,
+  
+  -- Receipt Information
+  `receipt_date` datetime DEFAULT NULL,
+  `cashier` varchar(100) DEFAULT NULL,
+  `total_expected` decimal(15,2) DEFAULT NULL,
+  `total_paid` decimal(15,2) DEFAULT NULL,
+  `amount_received` decimal(15,2) DEFAULT NULL,
+  `change_amount` decimal(15,2) DEFAULT NULL,
+  `currency` varchar(10) DEFAULT NULL,
+  `is_reprint` tinyint(1) DEFAULT 0,
+  
+  -- Student Information
+  `student_name` varchar(255) DEFAULT NULL,
+  `student_class` varchar(50) DEFAULT NULL,
+  
+  -- JSON Data
+  `line_data` json DEFAULT NULL,
+  
+  -- ✅ Sync & Audit Fields
+  `sync_status` tinyint(1) DEFAULT 0,
+  `last_modified` datetime DEFAULT NULL,
+  `operation_type` varchar(20) DEFAULT NULL,
+  `modified_fields` json DEFAULT NULL, -- ✅ NEW FIELD
+  
+  PRIMARY KEY (`receipt_code`),
+  KEY `idx_receipt_date` (`receipt_date`),
+  KEY `idx_student_name` (`student_name`),
+  KEY `idx_sync_status` (`sync_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
