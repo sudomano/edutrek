@@ -142,6 +142,22 @@ class Asset extends HiveObject {
   String? option;
   @HiveField(44)
   List<String>? modifiedFields; // Tracks fields that were modified
+
+  // ✅ NEW: Deletion Fields
+  @HiveField(45)
+  bool? isDeleted; // Soft delete flag
+
+  @HiveField(46)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(47)
+  String? deletedBy; // Who deleted
+
+  @HiveField(48)
+  String? deleteReason; // Why deleted
+
+  @HiveField(49)
+  bool? deletedSyncStatus; // Track if deletion was synced
   // Constructor
   Asset({
     this.id,
@@ -189,7 +205,45 @@ class Asset extends HiveObject {
     this.hasCreditBalance,
     this.option,
     this.modifiedFields,
+    // ✅ New deletion fields
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   });
+
+  // ✅ Helper: Mark user as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Restore deleted user
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Check if user is deleted
+  bool get isUserDeleted => isDeleted ?? false;
 
   // CopyWith Method
   Asset copyWith({

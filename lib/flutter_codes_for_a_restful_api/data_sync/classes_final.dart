@@ -288,6 +288,24 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _createClassInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateClassesInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          try {
+            final response = await http.delete(
+              Uri.parse(
+                  'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php'
+                  '?classCode=${cls.classCode}'
+                  '&deletedBy=${cls.deletedBy ?? "system"}'),
+            );
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              cls.deletedSyncStatus = true;
+              cls.syncStatus = true;
+              cls.operationType = 'none';
+              await cls.save();
+              print('✅ Deletion synced for class: ${cls.classCode}');
+            }
+          } catch (e) {
+            print('Failed to sync deletion for class: ${cls.classCode}');
+          }
         }
       }
 
@@ -298,6 +316,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _createSchoolInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateSchoolInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // Handle deletion sync
+          try {
+            final response = await http.delete(
+              Uri.parse(
+                  'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php'
+                  '?schoolCode=${cls.schoolCode}'
+                  '&deletedBy=${cls.deletedBy ?? "system"}'),
+            );
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              cls.deletedSyncStatus = true;
+              cls.syncStatus = true;
+              cls.operationType = 'none';
+              await cls.save();
+              print('✅ Deletion synced for school: ${cls.schoolCode}');
+            }
+          } catch (e) {
+            print('❌ Failed to sync deletion for school: ${cls.schoolCode}');
+          }
         }
       }
 
@@ -308,6 +345,24 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _createTermsInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateTermsInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          try {
+            final response = await http.delete(
+              Uri.parse(
+                  'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php'
+                  '?termId=${cls.termId}'
+                  '&deletedBy=${cls.deletedBy ?? "system"}'),
+            );
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              cls.deletedSyncStatus = true;
+              cls.syncStatus = true;
+              cls.operationType = 'none';
+              await cls.save();
+              print('✅ Deletion synced for term: ${cls.termId}');
+            }
+          } catch (e) {
+            print('Failed to sync deletion for term: ${cls.termId}');
+          }
         }
       }
 
@@ -321,28 +376,37 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _updateWithdrawalsInMySQL(cls);
         }
       }
-      print('=== _syncStudents START ===');
-      print('Checking for unsynced students...');
 
       // Step 1: Push unsynced students to server
       List<Student> unsyncedStudents = _studentsBox!.values
           .where((student) => student.syncStatus == false)
           .toList();
 
-      print('Found ${unsyncedStudents.length} unsynced students');
-
       for (Student student in unsyncedStudents) {
-        print('Processing student: ${student.studentIdNumber}');
-        print('OperationType: ${student.operationType}');
-
         if (student.operationType == 'create') {
-          print('Creating student...');
           await _createStudentsInMySQL(student);
         } else if (student.operationType == 'update') {
-          print('Updating student...');
           await _updateStudentsInMySQL(student);
-        } else {
-          print('Unknown operationType: ${student.operationType}');
+        } else if (student.operationType == 'delete') {
+          try {
+            final response = await http.delete(
+              Uri.parse(
+                  'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php'
+                  '?studentIdNumber=${student.studentIdNumber}'
+                  '&deletedBy=${student.deletedBy ?? "system"}'),
+            );
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              student.deletedSyncStatus = true;
+              student.syncStatus = true;
+              student.operationType = 'none';
+              await student.save();
+              print(
+                  '✅ Deletion synced for student: ${student.studentIdNumber}');
+            }
+          } catch (e) {
+            print(
+                'Failed to sync deletion for student: ${student.studentIdNumber}');
+          }
         }
       }
 
@@ -353,6 +417,27 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           await _createUserInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateUserInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // ✅ Handle deletion sync
+          // The user is already marked deleted locally, just need to sync to server
+          // If server already has it deleted, this will be a no-op
+          try {
+            final response = await http.delete(
+              Uri.parse(
+                  'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php'
+                  '?userCode=${cls.userCode}'
+                  '&deletedBy=${cls.deletedBy ?? "system"}'),
+            );
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              cls.deletedSyncStatus = true;
+              cls.syncStatus = true;
+              cls.operationType = 'none';
+              await cls.save();
+              print('✅ Deletion synced for user: ${cls.userCode}');
+            }
+          } catch (e) {
+            print('❌ Failed to sync deletion for user: ${cls.userCode}');
+          }
         }
       }
 
@@ -705,6 +790,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'operationType': classObj.operationType,
       'syncStatus': classObj.syncStatus,
       'lastModified': classObj.lastModified?.toIso8601String(),
+      'isDeleted': classObj.isDeleted ?? false,
+      'deletedAt': classObj.deletedAt?.toIso8601String(),
+      'deletedBy': classObj.deletedBy,
+      'deleteReason': classObj.deleteReason,
+      'deletedSyncStatus': classObj.deletedSyncStatus ?? false,
     };
   }
 
@@ -722,23 +812,34 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'operationType': school.operationType,
       'syncStatus': school.syncStatus,
       'lastModified': school.lastModified?.toIso8601String(),
+      // ✅ Deletion fields
+      'isDeleted': school.isDeleted ?? false,
+      'deletedAt': school.deletedAt?.toIso8601String(),
+      'deletedBy': school.deletedBy,
+      'deleteReason': school.deleteReason,
+      'deletedSyncStatus': school.deletedSyncStatus ?? false,
     };
   }
 
-// Helper to convert Terms to JSON
+// Helper to convert Terms to JSON (including deletion fields)
   Map<String, dynamic> _termsToJson(Terms term) {
     return {
       'id': term.id,
       'termId': term.termId,
       'termName': term.termName,
-      'startDate':
-          term.startDate.toIso8601String(), // ✅ Full DateTime with time
-      'endDate': term.endDate?.toIso8601String(), // ✅ Full DateTime with time
+      'startDate': term.startDate.toIso8601String(),
+      'endDate': term.endDate?.toIso8601String(),
       'isActive': term.isActive,
       'status': term.status,
       'operationType': term.operationType,
       'syncStatus': term.syncStatus,
       'lastModified': term.lastModified?.toIso8601String(),
+      // ✅ Deletion fields
+      'isDeleted': term.isDeleted ?? false,
+      'deletedAt': term.deletedAt?.toIso8601String(),
+      'deletedBy': term.deletedBy,
+      'deleteReason': term.deleteReason,
+      'deletedSyncStatus': term.deletedSyncStatus ?? false,
     };
   }
 
@@ -809,6 +910,13 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'operationType': student.operationType,
       'syncStatus': student.syncStatus,
       'lastModified': student.lastModified?.toIso8601String(),
+
+      // ✅ Deletion fields
+      'isDeleted': student.isDeleted ?? false,
+      'deletedAt': student.deletedAt?.toIso8601String(),
+      'deletedBy': student.deletedBy,
+      'deleteReason': student.deleteReason,
+      'deletedSyncStatus': student.deletedSyncStatus ?? false,
     };
   }
 
@@ -831,6 +939,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'syncStatus': user.syncStatus,
       'lastModified': user.lastModified?.toIso8601String(),
       'createdAt': user.createdAt?.toIso8601String(),
+      'isDeleted': user.isDeleted ?? false,
+      'deletedAt': user.deletedAt?.toIso8601String(),
+      'deletedBy': user.deletedBy,
+      'deleteReason': user.deleteReason,
+      'deletedSyncStatus': user.deletedSyncStatus ?? false,
     };
   }
 
@@ -3098,6 +3211,104 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+  // ✅ SOFT DELETE User
+  Future<void> _softDeleteUser(User user, {String? reason}) async {
+    print('=== _softDeleteUser START ===');
+    print('User: ${user.userCode}');
+    print('Reason: $reason');
+
+    // ✅ Get current logged in user
+    final currentUser = getLoggedInUser();
+
+    // ✅ Mark user as deleted locally
+    user.markDeleted(
+      deletedBy: currentUser.username ?? 'system',
+      reason: reason,
+    );
+    await user.save();
+    print('✅ User marked as deleted locally');
+
+    // ✅ Send delete request to server
+    try {
+      final response = await http.delete(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php'
+            '?userCode=${user.userCode}'
+            '&deletedBy=${currentUser.username ?? "system"}'
+            '&reason=${Uri.encodeComponent(reason ?? "")}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final result = jsonDecode(response.body);
+        print('✅ Server soft delete confirmed: ${result['message']}');
+
+        // ✅ Mark deletion as synced
+        user.deletedSyncStatus = true;
+        user.syncStatus = true;
+        user.operationType = 'none';
+        await user.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('User ${user.username} deleted successfully')));
+      } else {
+        throw Exception(
+            'Failed to delete user. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error deleting user: $e');
+      // Keep syncStatus as false to retry later
+      await user.save();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error deleting user: $e')));
+    }
+
+    print('=== _softDeleteUser END ===');
+  }
+
+// ✅ RESTORE User
+  Future<void> _restoreUser(User user) async {
+    print('=== _restoreUser START ===');
+    print('User: ${user.userCode}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode({
+          'action': 'restore',
+          'userCode': user.userCode,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final result = jsonDecode(response.body);
+        print('✅ Server restore confirmed: ${result['message']}');
+
+        // ✅ Restore locally
+        user.restoreDeleted();
+        await user.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('User ${user.username} restored successfully')));
+      } else {
+        throw Exception(
+            'Failed to restore user. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error restoring user: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error restoring user: $e')));
+    }
+
+    print('=== _restoreUser END ===');
+  }
+
   Future<void> _updateUserInMySQL(User updatedUser) async {
     // Only send modified fields
     final Map<String, dynamic> modifiedFieldsJson = {};
@@ -3192,16 +3403,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //=================== students sync =========================
 // CREATE Student on server with debug
   Future<void> _createStudentsInMySQL(Student newStudent) async {
-    print('=== _createStudentsInMySQL START ===');
-    print('Student to create: ${newStudent.studentIdNumber}');
-    print('OperationType: ${newStudent.operationType}');
-    print('SyncStatus: ${newStudent.syncStatus}');
-
     final Map<String, dynamic> jsonData = _studentInfoToJson(newStudent);
 
     // Print the JSON string being sent
     final String jsonString = jsonEncode(jsonData);
-    print('JSON String to send: $jsonString');
 
     setState(() {
       _isSyncings = true;
@@ -3220,9 +3425,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonString,
       );
 
-      print('Response Status Code: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
             '✅ Student ${newStudent.studentIdNumber} created/updated successfully.');
@@ -3236,8 +3438,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             content: Text(
                 'Student ${newStudent.name} ${newStudent.surname} synced successfully')));
       } else {
-        print('❌ Failed to sync student. Status: ${response.statusCode}');
-        print('❌ Response: ${response.body}');
         throw Exception(
             'Failed to sync student. Status: ${response.statusCode}');
       }
@@ -3445,6 +3645,79 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         _isSyncings = false;
       });
       print('=== _updateStudentsInMySQL END ===');
+    }
+  }
+
+// ✅ SOFT DELETE Student
+  Future<void> _softDeleteStudent(Student student, {String? reason}) async {
+    print('=== _softDeleteStudent START ===');
+    print('Student: ${student.studentIdNumber}');
+
+    final currentUser = getLoggedInUser();
+
+    student.markDeleted(
+      deletedBy: currentUser?.username ?? 'system',
+      reason: reason,
+    );
+    await student.save();
+
+    try {
+      final response = await http.delete(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php'
+            '?studentIdNumber=${student.studentIdNumber}'
+            '&deletedBy=${Uri.encodeComponent(currentUser?.username ?? "system")}'
+            '&reason=${Uri.encodeComponent(reason ?? "")}'),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        student.deletedSyncStatus = true;
+        student.syncStatus = true;
+        student.operationType = 'none';
+        await student.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Student ${student.name} ${student.surname} deleted successfully')));
+      } else {
+        throw Exception(
+            'Failed to delete student. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error deleting student: $e');
+      await student.save();
+    }
+  }
+
+// ✅ RESTORE Student
+  Future<void> _restoreStudent(Student student) async {
+    print('=== _restoreStudent START ===');
+    print('Student: ${student.studentIdNumber}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'restore',
+          'studentIdNumber': student.studentIdNumber,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        student.restoreDeleted();
+        await student.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Student ${student.name} ${student.surname} restored successfully')));
+      } else {
+        throw Exception(
+            'Failed to restore student. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error restoring student: $e');
     }
   }
 
@@ -3670,6 +3943,77 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     }
   }
 
+// ✅ SOFT DELETE Term
+  Future<void> _softDeleteTerm(Terms term, {String? reason}) async {
+    print('=== _softDeleteTerm START ===');
+    print('Term: ${term.termId}');
+
+    final currentUser = getLoggedInUser();
+
+    term.markDeleted(
+      deletedBy: currentUser?.username ?? 'system',
+      reason: reason,
+    );
+    await term.save();
+
+    try {
+      final response = await http.delete(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php'
+            '?termId=${term.termId}'
+            '&deletedBy=${Uri.encodeComponent(currentUser?.username ?? "system")}'
+            '&reason=${Uri.encodeComponent(reason ?? "")}'),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        term.deletedSyncStatus = true;
+        term.syncStatus = true;
+        term.operationType = 'none';
+        await term.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Term ${term.termName} deleted successfully')));
+      } else {
+        throw Exception(
+            'Failed to delete term. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error deleting term: $e');
+      await term.save();
+    }
+  }
+
+// ✅ RESTORE Term
+  Future<void> _restoreTerm(Terms term) async {
+    print('=== _restoreTerm START ===');
+    print('Term: ${term.termId}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'restore',
+          'termId': term.termId,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        term.restoreDeleted();
+        await term.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Term ${term.termName} restored successfully')));
+      } else {
+        throw Exception(
+            'Failed to restore term. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error restoring term: $e');
+    }
+  }
+
 //============== classes sync ==============================
   // CREATE Class on server
   Future<void> _createClassInMySQL(Classes newClass) async {
@@ -3767,6 +4111,78 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       setState(() {
         _isSyncings = false;
       });
+    }
+  }
+
+// ✅ SOFT DELETE Class
+  Future<void> _softDeleteClass(Classes classObj, {String? reason}) async {
+    print('=== _softDeleteClass START ===');
+    print('Class: ${classObj.classCode}');
+
+    final currentUser = getLoggedInUser();
+
+    classObj.markDeleted(
+      deletedBy: currentUser?.username ?? 'system',
+      reason: reason,
+    );
+    await classObj.save();
+
+    try {
+      final response = await http.delete(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php'
+            '?classCode=${classObj.classCode}'
+            '&deletedBy=${Uri.encodeComponent(currentUser?.username ?? "system")}'
+            '&reason=${Uri.encodeComponent(reason ?? "")}'),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        classObj.deletedSyncStatus = true;
+        classObj.syncStatus = true;
+        classObj.operationType = 'none';
+        await classObj.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Class ${classObj.className} deleted successfully')));
+      } else {
+        throw Exception(
+            'Failed to delete class. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error deleting class: $e');
+      await classObj.save();
+    }
+  }
+
+// ✅ RESTORE Class
+  Future<void> _restoreClass(Classes classObj) async {
+    print('=== _restoreClass START ===');
+    print('Class: ${classObj.classCode}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'restore',
+          'classCode': classObj.classCode,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        classObj.restoreDeleted();
+        await classObj.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Class ${classObj.className} restored successfully')));
+      } else {
+        throw Exception(
+            'Failed to restore class. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error restoring class: $e');
     }
   }
 
@@ -3883,6 +4299,97 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       setState(() {
         _isSyncings = false;
       });
+    }
+  }
+
+// ✅ SOFT DELETE School
+  Future<void> _softDeleteSchool(School school, {String? reason}) async {
+    print('=== _softDeleteSchool START ===');
+    print('School: ${school.schoolCode}');
+
+    // Get current user
+    final currentUser = getLoggedInUser();
+
+    // Mark as deleted locally
+    school.markDeleted(
+      deletedBy: currentUser?.username ?? 'system',
+      reason: reason,
+    );
+    await school.save();
+    print('✅ School marked as deleted locally');
+
+    // Send delete request to server
+    try {
+      final response = await http.delete(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php'
+            '?schoolCode=${school.schoolCode}'
+            '&deletedBy=${Uri.encodeComponent(currentUser?.username ?? "system")}'
+            '&reason=${Uri.encodeComponent(reason ?? "")}'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final result = jsonDecode(response.body);
+        print('✅ Server soft delete confirmed: ${result['message']}');
+
+        school.deletedSyncStatus = true;
+        school.syncStatus = true;
+        school.operationType = 'none';
+        await school.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('School ${school.schoolName} deleted successfully')));
+      } else {
+        throw Exception(
+            'Failed to delete school. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error deleting school: $e');
+      await school.save();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error deleting school: $e')));
+    }
+  }
+
+// ✅ RESTORE School
+  Future<void> _restoreSchool(School school) async {
+    print('=== _restoreSchool START ===');
+    print('School: ${school.schoolCode}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+        body: jsonEncode({
+          'action': 'restore',
+          'schoolCode': school.schoolCode,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final result = jsonDecode(response.body);
+        print('✅ Server restore confirmed: ${result['message']}');
+
+        school.restoreDeleted();
+        await school.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('School ${school.schoolName} restored successfully')));
+      } else {
+        throw Exception(
+            'Failed to restore school. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error restoring school: $e');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error restoring school: $e')));
     }
   }
 
@@ -7207,10 +7714,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 //================================pull _fetchAndSyncClasses =======================================================================//
 
-  // PULL Classes from server
+  // PULL Classes from server (with deletion awareness)
   Future<void> _fetchAndSyncClasses() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/classes.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -7228,7 +7735,37 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var classData in classes) {
-          // ✅ Parse date from string to DateTime
+          // ✅ Parse isDeleted from server
+          bool isDeleted = false;
+          if (classData['isDeleted'] != null) {
+            if (classData['isDeleted'] is int) {
+              isDeleted = classData['isDeleted'] == 1;
+            } else if (classData['isDeleted'] is bool) {
+              isDeleted = classData['isDeleted'];
+            }
+          }
+
+          // ✅ Parse deletedSyncStatus
+          bool deletedSyncStatus = false;
+          if (classData['deletedSyncStatus'] != null) {
+            if (classData['deletedSyncStatus'] is int) {
+              deletedSyncStatus = classData['deletedSyncStatus'] == 1;
+            } else if (classData['deletedSyncStatus'] is bool) {
+              deletedSyncStatus = classData['deletedSyncStatus'];
+            }
+          }
+
+          // ✅ Parse deletedAt
+          DateTime? deletedAt;
+          if (classData['deletedAt'] != null) {
+            try {
+              deletedAt = DateTime.parse(classData['deletedAt']);
+            } catch (e) {
+              deletedAt = null;
+            }
+          }
+
+          // Parse existing fields
           DateTime parsedDate;
           if (classData['date'] != null) {
             try {
@@ -7240,7 +7777,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             parsedDate = DateTime.now();
           }
 
-          // ✅ Convert syncStatus from int to bool
           bool syncStatus = true;
           if (classData['syncStatus'] != null) {
             if (classData['syncStatus'] is int) {
@@ -7250,7 +7786,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             }
           }
 
-          // ✅ Parse terms from JSON to List<String>
           List<String> terms = [];
           if (classData['terms'] != null) {
             if (classData['terms'] is List) {
@@ -7269,7 +7804,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             }
           }
 
-          // ✅ Handle id mapping
           int? id;
           if (classData['id'] != null) {
             id = classData['id'] is int
@@ -7281,7 +7815,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 : int.tryParse(classData['fid'].toString());
           }
 
-          // ✅ Parse lastModified
           DateTime? lastModified;
           try {
             if (classData['lastModified'] != null) {
@@ -7302,6 +7835,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             operationType: 'none',
             lastModified: lastModified,
             modifiedFields: [],
+            // ✅ Deletion fields
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            deletedBy: classData['deletedBy'],
+            deleteReason: classData['deleteReason'],
+            deletedSyncStatus: deletedSyncStatus,
           );
 
           // Check if class exists in Hive
@@ -7310,7 +7849,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               .toList();
 
           if (existingClassList.isNotEmpty) {
-            // Update existing class
             var existingClass = existingClassList.first;
             existingClass
               ..id = fetchedClass.id
@@ -7319,6 +7857,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..date = fetchedClass.date
               ..termId = fetchedClass.termId
               ..terms = fetchedClass.terms
+              ..isDeleted = fetchedClass.isDeleted
+              ..deletedAt = fetchedClass.deletedAt
+              ..deletedBy = fetchedClass.deletedBy
+              ..deleteReason = fetchedClass.deleteReason
+              ..deletedSyncStatus = fetchedClass.deletedSyncStatus
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now();
@@ -7326,7 +7869,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             await existingClass.save();
             print('Class ${fetchedClass.classCode} updated in Hive.');
           } else {
-            // Create new class
             await _classesBox!.add(fetchedClass);
             print('Class ${fetchedClass.classCode} added to Hive.');
           }
@@ -7345,7 +7887,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-
 //================================pull _fetchAndSyncPurposes =======================================================================//
 
   //================================pull _fetchAndSyncPurposes =======================================================================//
@@ -7568,10 +8109,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
 //================================pull _fetchAndSyncSchools =======================================================================//
-// PULL Schools from server
+// ✅ UPDATED: Fetch and sync schools (with deletion awareness)
   Future<void> _fetchAndSyncSchools() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/school_info_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -7589,37 +8130,39 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var schoolData in schools) {
-          // ✅ Convert syncStatus from int to bool
-          bool syncStatus = true;
-          if (schoolData['syncStatus'] != null) {
-            if (schoolData['syncStatus'] is int) {
-              syncStatus = schoolData['syncStatus'] == 1;
-            } else if (schoolData['syncStatus'] is bool) {
-              syncStatus = schoolData['syncStatus'];
+          // ✅ Parse isDeleted from server
+          bool isDeleted = false;
+          if (schoolData['isDeleted'] != null) {
+            if (schoolData['isDeleted'] is int) {
+              isDeleted = schoolData['isDeleted'] == 1;
+            } else if (schoolData['isDeleted'] is bool) {
+              isDeleted = schoolData['isDeleted'];
             }
           }
 
-          // ✅ Handle id mapping
-          int? id;
-          if (schoolData['id'] != null) {
-            id = schoolData['id'] is int
-                ? schoolData['id']
-                : int.tryParse(schoolData['id'].toString());
-          } else if (schoolData['fid'] != null) {
-            id = schoolData['fid'] is int
-                ? schoolData['fid']
-                : int.tryParse(schoolData['fid'].toString());
+          // ✅ Parse deletedSyncStatus
+          bool deletedSyncStatus = false;
+          if (schoolData['deletedSyncStatus'] != null) {
+            if (schoolData['deletedSyncStatus'] is int) {
+              deletedSyncStatus = schoolData['deletedSyncStatus'] == 1;
+            } else if (schoolData['deletedSyncStatus'] is bool) {
+              deletedSyncStatus = schoolData['deletedSyncStatus'];
+            }
           }
 
-          // ✅ Parse lastModified
-          DateTime? lastModified;
-          try {
-            if (schoolData['lastModified'] != null) {
-              lastModified = DateTime.parse(schoolData['lastModified']);
+          // ✅ Parse deletedAt
+          DateTime? deletedAt;
+          if (schoolData['deletedAt'] != null) {
+            try {
+              deletedAt = DateTime.parse(schoolData['deletedAt']);
+            } catch (e) {
+              deletedAt = null;
             }
-          } catch (e) {
-            lastModified = DateTime.now();
           }
+
+          // Parse other fields...
+          int? id = schoolData['id'] ?? int.tryParse(schoolData['fid'] ?? '0');
+          bool syncStatus = schoolData['syncStatus'] == 1;
 
           School fetchedSchool = School(
             id: id,
@@ -7632,8 +8175,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             termId: schoolData['termId'],
             syncStatus: syncStatus,
             operationType: 'none',
-            lastModified: lastModified,
+            lastModified: DateTime.tryParse(schoolData['lastModified'] ?? ''),
             modifiedFields: [],
+            // ✅ Deletion fields
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            deletedBy: schoolData['deletedBy'],
+            deleteReason: schoolData['deleteReason'],
+            deletedSyncStatus: deletedSyncStatus,
           );
 
           // Check if school exists in Hive
@@ -7653,9 +8202,15 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..schoolEmail = fetchedSchool.schoolEmail
               ..schoolLogoPath = fetchedSchool.schoolLogoPath
               ..termId = fetchedSchool.termId
+              ..isDeleted = fetchedSchool.isDeleted
+              ..deletedAt = fetchedSchool.deletedAt
+              ..deletedBy = fetchedSchool.deletedBy
+              ..deleteReason = fetchedSchool.deleteReason
+              ..deletedSyncStatus = fetchedSchool.deletedSyncStatus
               ..syncStatus = true
               ..operationType = 'none'
-              ..lastModified = DateTime.now();
+              ..lastModified = DateTime.now()
+              ..modifiedFields = [];
 
             await existingSchool.save();
             print('School ${fetchedSchool.schoolCode} updated in Hive.');
@@ -7934,9 +8489,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
   // PULL Students from server
+  // PULL Students from server with deletion awareness
   Future<void> _fetchAndSyncStudents() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_information_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -7955,7 +8511,37 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
         for (var studentData in students) {
           try {
-            // ✅ Parse age from date string to DateTime
+            // ✅ Parse isDeleted from server
+            bool isDeleted = false;
+            if (studentData['isDeleted'] != null) {
+              if (studentData['isDeleted'] is int) {
+                isDeleted = studentData['isDeleted'] == 1;
+              } else if (studentData['isDeleted'] is bool) {
+                isDeleted = studentData['isDeleted'];
+              }
+            }
+
+            // ✅ Parse deletedSyncStatus
+            bool deletedSyncStatus = false;
+            if (studentData['deletedSyncStatus'] != null) {
+              if (studentData['deletedSyncStatus'] is int) {
+                deletedSyncStatus = studentData['deletedSyncStatus'] == 1;
+              } else if (studentData['deletedSyncStatus'] is bool) {
+                deletedSyncStatus = studentData['deletedSyncStatus'];
+              }
+            }
+
+            // ✅ Parse deletedAt
+            DateTime? deletedAt;
+            if (studentData['deletedAt'] != null) {
+              try {
+                deletedAt = DateTime.parse(studentData['deletedAt']);
+              } catch (e) {
+                deletedAt = null;
+              }
+            }
+
+            // Parse existing fields...
             DateTime age;
             if (studentData['age'] != null) {
               try {
@@ -7967,7 +8553,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               age = DateTime.now();
             }
 
-            // ✅ Convert isPresent from int to bool
             bool isPresent = true;
             if (studentData['isPresent'] != null) {
               if (studentData['isPresent'] is int) {
@@ -7977,7 +8562,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Convert syncStatus from int to bool
             bool syncStatus = true;
             if (studentData['syncStatus'] != null) {
               if (studentData['syncStatus'] is int) {
@@ -7987,7 +8571,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Convert isNewComer from int to bool
             bool isNewComer = false;
             if (studentData['isNewComer'] != null) {
               if (studentData['isNewComer'] is int) {
@@ -7997,7 +8580,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Handle id mapping
             int? id;
             if (studentData['id'] != null) {
               id = studentData['id'] is int
@@ -8009,16 +8591,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                   : int.tryParse(studentData['fid'].toString());
             }
 
-            // ✅ Parse date lists
             List<DateTime> presentDates =
                 _parseDateList(studentData['presentDates']);
             List<DateTime> absentDates =
                 _parseDateList(studentData['absentDates']);
-
-            // ✅ Parse terms
             List<String> terms = _decodeToList(studentData['terms']);
-
-            // ✅ Parse exceptions
             List<ExceptionalStudents>? exceptions;
             if (studentData['exceptions'] != null) {
               exceptions = _decodeExceptions(studentData['exceptions']);
@@ -8051,8 +8628,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               enrollmentStatus: studentData['enrollmentStatus'],
               emergencyContactName: studentData['emergencyContactName'],
               emergencyContactNumber: studentData['emergencyContactNumber'],
-              healthStauts: studentData[
-                  'healthStatus'], // ✅ Map from healthStatus to healthStauts
+              healthStauts: studentData['healthStatus'],
               healthDetailedInformation:
                   studentData['healthDetailedInformation'],
               terms: terms,
@@ -8070,6 +8646,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                   ? DateTime.tryParse(studentData['lastModified'])
                   : DateTime.now(),
               modifiedFields: [],
+              // ✅ Deletion fields
+              isDeleted: isDeleted,
+              deletedAt: deletedAt,
+              deletedBy: studentData['deletedBy'],
+              deleteReason: studentData['deleteReason'],
+              deletedSyncStatus: deletedSyncStatus,
             );
 
             // Check if student exists in Hive
@@ -8079,7 +8661,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 .toList();
 
             if (existingStudentsList.isNotEmpty) {
-              // Update existing student
               var existingStudent = existingStudentsList.first;
               existingStudent
                 ..id = fetchedStudent.id
@@ -8116,6 +8697,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..isNewComer = fetchedStudent.isNewComer
                 ..isNewComerFrom = fetchedStudent.isNewComerFrom
                 ..isNewComerUntil = fetchedStudent.isNewComerUntil
+                ..isDeleted = fetchedStudent.isDeleted
+                ..deletedAt = fetchedStudent.deletedAt
+                ..deletedBy = fetchedStudent.deletedBy
+                ..deleteReason = fetchedStudent.deleteReason
+                ..deletedSyncStatus = fetchedStudent.deletedSyncStatus
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
@@ -8124,7 +8710,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               print(
                   'Student ${fetchedStudent.studentIdNumber} updated in Hive.');
             } else {
-              // Create new student
               await _studentsBox!.add(fetchedStudent);
               print('Student ${fetchedStudent.studentIdNumber} added to Hive.');
             }
@@ -8786,7 +9371,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncTerms =======================================================================//
   Future<void> _fetchAndSyncTerms() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/terms_information_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -8797,17 +9382,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
-
-        List<dynamic> terms;
-        if (decoded is List) {
-          terms = decoded;
-        } else if (decoded is Map && decoded.containsKey('message')) {
-          print('Server message: ${decoded['message']}');
-          return;
-        } else {
-          print('Unexpected response format');
-          return;
-        }
+        List<dynamic> terms = decoded is List ? decoded : [];
 
         if (terms.isEmpty) {
           print('No terms found on server');
@@ -8815,140 +9390,90 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var termData in terms) {
-          try {
-            // ✅ Parse startDate with time
-            DateTime startDate;
-            if (termData['startDate'] != null) {
-              try {
-                if (termData['startDate'] is String) {
-                  startDate = DateTime.parse(termData['startDate']);
-                  print('Parsed startDate with time: $startDate');
-                } else {
-                  startDate = DateTime.now();
-                }
-              } catch (e) {
-                print('Error parsing startDate: $e');
-                startDate = DateTime.now();
-              }
-            } else {
-              startDate = DateTime.now();
+          // ✅ Parse deletion fields
+          bool isDeleted = false;
+          if (termData['isDeleted'] != null) {
+            isDeleted =
+                termData['isDeleted'] == 1 || termData['isDeleted'] == true;
+          }
+
+          bool deletedSyncStatus = false;
+          if (termData['deletedSyncStatus'] != null) {
+            deletedSyncStatus = termData['deletedSyncStatus'] == 1 ||
+                termData['deletedSyncStatus'] == true;
+          }
+
+          DateTime? deletedAt;
+          if (termData['deletedAt'] != null) {
+            try {
+              deletedAt = DateTime.parse(termData['deletedAt']);
+            } catch (e) {
+              deletedAt = null;
             }
+          }
 
-            // ✅ Parse endDate with time
-            DateTime? endDate;
-            if (termData['endDate'] != null) {
-              try {
-                if (termData['endDate'] is String) {
-                  endDate = DateTime.parse(termData['endDate']);
-                  print('Parsed endDate with time: $endDate');
-                }
-              } catch (e) {
-                print('Error parsing endDate: $e');
-                endDate = null;
-              }
-            }
+          // Parse other fields...
+          DateTime startDate =
+              DateTime.tryParse(termData['startDate'] ?? '') ?? DateTime.now();
+          DateTime? endDate = termData['endDate'] != null
+              ? DateTime.tryParse(termData['endDate'])
+              : null;
+          bool isActive =
+              termData['isActive'] == 1 || termData['isActive'] == true;
+          bool syncStatus =
+              termData['syncStatus'] == 1 || termData['syncStatus'] == true;
+          int? id = termData['id'] ?? int.tryParse(termData['fid'] ?? '0');
 
-            // ✅ Convert isActive from int to bool
-            bool isActive = true;
-            if (termData['isActive'] != null) {
-              if (termData['isActive'] is int) {
-                isActive = termData['isActive'] == 1;
-              } else if (termData['isActive'] is bool) {
-                isActive = termData['isActive'];
-              }
-            }
+          Terms fetchedTerm = Terms(
+            id: id ?? 0,
+            termId: termData['termId']?.toString() ?? '',
+            termName: termData['termName']?.toString() ?? '',
+            startDate: startDate,
+            endDate: endDate,
+            isActive: isActive,
+            status: termData['status']?.toString() ??
+                (isActive ? 'Opened' : 'Closed'),
+            syncStatus: syncStatus,
+            operationType: 'none',
+            lastModified: DateTime.tryParse(termData['lastModified'] ?? ''),
+            modifiedFields: [],
+            // ✅ Deletion fields
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            deletedBy: termData['deletedBy'],
+            deleteReason: termData['deleteReason'],
+            deletedSyncStatus: deletedSyncStatus,
+          );
 
-            // ✅ Convert syncStatus from int to bool
-            bool syncStatus = true;
-            if (termData['syncStatus'] != null) {
-              if (termData['syncStatus'] is int) {
-                syncStatus = termData['syncStatus'] == 1;
-              } else if (termData['syncStatus'] is bool) {
-                syncStatus = termData['syncStatus'];
-              }
-            }
+          // Check if term exists in Hive
+          var existingTermList = _termsBox!.values
+              .where((term) => term.termId == fetchedTerm.termId)
+              .toList();
 
-            // ✅ Handle id mapping
-            int? id;
-            if (termData['id'] != null) {
-              if (termData['id'] is int) {
-                id = termData['id'];
-              } else if (termData['id'] is String) {
-                id = int.tryParse(termData['id']);
-              }
-            }
-            if (id == null && termData['fid'] != null) {
-              if (termData['fid'] is int) {
-                id = termData['fid'];
-              } else if (termData['fid'] is String) {
-                id = int.tryParse(termData['fid']);
-              }
-            }
+          if (existingTermList.isNotEmpty) {
+            var existingTerm = existingTermList.first;
+            existingTerm
+              ..id = fetchedTerm.id
+              ..termId = fetchedTerm.termId
+              ..termName = fetchedTerm.termName
+              ..startDate = fetchedTerm.startDate
+              ..endDate = fetchedTerm.endDate
+              ..isActive = fetchedTerm.isActive
+              ..status = fetchedTerm.status
+              ..isDeleted = fetchedTerm.isDeleted
+              ..deletedAt = fetchedTerm.deletedAt
+              ..deletedBy = fetchedTerm.deletedBy
+              ..deleteReason = fetchedTerm.deleteReason
+              ..deletedSyncStatus = fetchedTerm.deletedSyncStatus
+              ..syncStatus = true
+              ..operationType = 'none'
+              ..lastModified = DateTime.now();
 
-            // ✅ Determine status if not provided
-            String status = termData['status']?.toString() ??
-                (isActive ? 'Opened' : 'Closed');
-
-            // ✅ Parse lastModified
-            DateTime? lastModified;
-            if (termData['lastModified'] != null) {
-              try {
-                if (termData['lastModified'] is String) {
-                  lastModified = DateTime.parse(termData['lastModified']);
-                }
-              } catch (e) {
-                lastModified = DateTime.now();
-              }
-            }
-
-            Terms fetchedTerm = Terms(
-              id: id ?? 0,
-              termId: termData['termId']?.toString() ?? '',
-              termName: termData['termName']?.toString() ?? '',
-              startDate: startDate,
-              endDate: endDate,
-              isActive: isActive,
-              status: status,
-              syncStatus: syncStatus,
-              operationType: 'none',
-              lastModified: lastModified,
-              modifiedFields: [],
-            );
-
-            // Check if term exists in Hive
-            var existingTermList = _termsBox!.values
-                .where((term) => term.termId == fetchedTerm.termId)
-                .toList();
-
-            Terms? existingTerm =
-                existingTermList.isNotEmpty ? existingTermList.first : null;
-
-            if (existingTerm != null) {
-              // ✅ Update existing term
-              existingTerm
-                ..id = fetchedTerm.id
-                ..termId = fetchedTerm.termId
-                ..termName = fetchedTerm.termName
-                ..startDate = fetchedTerm.startDate
-                ..endDate = fetchedTerm.endDate
-                ..isActive = fetchedTerm.isActive
-                ..status = fetchedTerm.status
-                ..syncStatus = true
-                ..operationType = 'none'
-                ..lastModified = DateTime.now();
-
-              await existingTerm.save();
-              print('Term ${fetchedTerm.termId} updated in Hive.');
-            } else {
-              // ✅ Create new term
-              await _termsBox!.add(fetchedTerm);
-              print('Term ${fetchedTerm.termId} added to Hive.');
-            }
-          } catch (error, stack) {
-            print('❌ Error processing term:');
-            print('Data: ${termData.toString()}');
-            print('Error: $error');
-            print('Stack: $stack');
+            await existingTerm.save();
+            print('Term ${fetchedTerm.termId} updated in Hive.');
+          } else {
+            await _termsBox!.add(fetchedTerm);
+            print('Term ${fetchedTerm.termId} added to Hive.');
           }
         }
 
@@ -8968,11 +9493,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-//================================pull _fetchAndSyncUsers =======================================================================//
 
+//================================pull _fetchAndSyncUsers =======================================================================//
   Future<void> _fetchAndSyncUsers() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/user_information_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -8990,29 +9515,50 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var userData in users) {
-          // Parse security fields from JSON string to List<String>
-          List<String> securityQuestions = [];
-          List<String> securityAnswers = [];
-          List<String> assignedClasses = [];
-
-          try {
-            securityQuestions = _decodeToList(userData['securityQuestions']);
-            securityAnswers = _decodeToList(userData['securityAnswers']);
-            assignedClasses = _decodeToList(userData['assignedClasses']);
-          } catch (e) {
-            print('Error parsing JSON fields for user: $e');
+          // ✅ Parse isDeleted from server
+          bool isDeleted = false;
+          if (userData['isDeleted'] != null) {
+            if (userData['isDeleted'] is int) {
+              isDeleted = userData['isDeleted'] == 1;
+            } else if (userData['isDeleted'] is bool) {
+              isDeleted = userData['isDeleted'];
+            }
           }
 
-          // ✅ FIX: Convert isActive from int to bool
+          // ✅ Parse deletedSyncStatus
+          bool deletedSyncStatus = false;
+          if (userData['deletedSyncStatus'] != null) {
+            if (userData['deletedSyncStatus'] is int) {
+              deletedSyncStatus = userData['deletedSyncStatus'] == 1;
+            } else if (userData['deletedSyncStatus'] is bool) {
+              deletedSyncStatus = userData['deletedSyncStatus'];
+            }
+          }
+
+          // ✅ Parse deletedAt
+          DateTime? deletedAt;
+          if (userData['deletedAt'] != null) {
+            try {
+              deletedAt = DateTime.parse(userData['deletedAt']);
+            } catch (e) {
+              deletedAt = null;
+            }
+          }
+
+          // Parse other fields...
+          List<String> securityQuestions =
+              _decodeToList(userData['securityQuestions']);
+          List<String> securityAnswers =
+              _decodeToList(userData['securityAnswers']);
+          List<String> assignedClasses =
+              _decodeToList(userData['assignedClasses']);
+
           bool isActive = true;
           if (userData['isActive'] != null) {
             if (userData['isActive'] is int) {
               isActive = userData['isActive'] == 1;
             } else if (userData['isActive'] is bool) {
               isActive = userData['isActive'];
-            } else if (userData['isActive'] is String) {
-              isActive = userData['isActive'] == '1' ||
-                  userData['isActive'].toLowerCase() == 'true';
             }
           }
 
@@ -9038,6 +9584,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 : null,
             isLogged: false,
             modifiedFields: [],
+            // ✅ Deletion fields
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            deletedBy: userData['deletedBy'],
+            deleteReason: userData['deleteReason'],
+            deletedSyncStatus: deletedSyncStatus,
           );
 
           // Check if user exists in Hive
@@ -9046,7 +9598,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               .toList();
 
           if (existingUsers.isNotEmpty) {
-            // Update existing user
+            // ✅ Update existing user (including deletion state)
             var existingUser = existingUsers.first;
             existingUser
               ..id = fetchedUser.id
@@ -9061,6 +9613,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..securityAnswers = fetchedUser.securityAnswers
               ..assignedClasses = fetchedUser.assignedClasses
               ..termId = fetchedUser.termId
+              ..isDeleted = fetchedUser.isDeleted
+              ..deletedAt = fetchedUser.deletedAt
+              ..deletedBy = fetchedUser.deletedBy
+              ..deleteReason = fetchedUser.deleteReason
+              ..deletedSyncStatus = fetchedUser.deletedSyncStatus
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now();
@@ -9068,7 +9625,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             await existingUser.save();
             print('User ${fetchedUser.userCode} updated in Hive.');
           } else {
-            // Create new user
+            // ✅ Create new user (including if it's deleted)
             await _usersBox!.add(fetchedUser);
             print('User ${fetchedUser.userCode} added to Hive.');
           }
@@ -9090,7 +9647,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       });
     }
   }
-
 // PULL Withdrawals from server
   //================================pull _fetchAndSyncWithdrawals =======================================================================//
 

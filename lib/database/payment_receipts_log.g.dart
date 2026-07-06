@@ -34,13 +34,18 @@ class PaymentLogAdapter extends TypeAdapter<PaymentLog> {
       operationType: fields[12] as String?,
       logId: fields[13] as String?,
       modifiedFields: (fields[14] as List?)?.cast<String>(),
+      isDeleted: fields[15] as bool?,
+      deletedAt: fields[16] as DateTime?,
+      deletedBy: fields[17] as String?,
+      deleteReason: fields[18] as String?,
+      deletedSyncStatus: fields[19] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PaymentLog obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.receiptNumber)
       ..writeByte(1)
@@ -70,7 +75,17 @@ class PaymentLogAdapter extends TypeAdapter<PaymentLog> {
       ..writeByte(13)
       ..write(obj.logId)
       ..writeByte(14)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(15)
+      ..write(obj.isDeleted)
+      ..writeByte(16)
+      ..write(obj.deletedAt)
+      ..writeByte(17)
+      ..write(obj.deletedBy)
+      ..writeByte(18)
+      ..write(obj.deleteReason)
+      ..writeByte(19)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

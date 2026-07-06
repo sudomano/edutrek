@@ -7,7 +7,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:zitf_system/database/school_info.dart';
 import 'package:zitf_system/global%20files/global_term_id.dart';
 import 'package:zitf_system/reusable_codes/centered_forms/centered_form.dart';
-import 'package:path/path.dart' as path; // For handling file paths
+import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zitf_system/main.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class UpdateSchoolScreen extends StatefulWidget {
   final int index;
@@ -26,17 +30,41 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
   final _schoolEmailController = TextEditingController();
 
   late School currentSchool;
-  String? _schoolLogoPath; // To store the selected image path
+  String? _schoolLogoPath;
+  bool _isSubmitting = false;
+  DeviceRole? _role;
+  String? _hostIp;
 
   @override
   void initState() {
     super.initState();
-    final Box<School> box = Hive.box<School>('school');
+    _loadPrefs();
+    _loadSchool();
+  }
 
-    // Load the current school from the Hive box
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _role = stringToDeviceRole(prefs.getString('device_role') ?? '');
+      _hostIp = prefs.getString('host_ip');
+    });
+  }
+
+  DeviceRole? stringToDeviceRole(String role) {
+    switch (role) {
+      case 'client':
+        return DeviceRole.client;
+      case 'host':
+        return DeviceRole.host;
+      default:
+        return null;
+    }
+  }
+
+  void _loadSchool() {
+    final Box<School> box = Hive.box<School>('school');
     currentSchool = box.getAt(widget.index)!;
 
-    // Populate the text fields with the current school information
     _schoolNameController.text = currentSchool.schoolName ?? '';
     _schoolAddressController.text = currentSchool.schoolAddress ?? '';
     _schoolPhoneNumberController.text = currentSchool.schoolPhoneNumber ?? '';
@@ -46,46 +74,184 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CenteredFormContainer(
-      title: 'Update School Info',
-      child: Form(
-        key: _formKey,
-        child: ListView(
-          children: [
-            _buildTextField('School Name', _schoolNameController),
-            const SizedBox(height: 20),
-            _buildTextField('School Address', _schoolAddressController),
-            const SizedBox(height: 20),
-            _buildTextField(
-                'School Phone Number', _schoolPhoneNumberController),
-            const SizedBox(height: 20),
-            _buildTextField('School Email', _schoolEmailController),
-            const SizedBox(height: 20),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _pickImage, // Button to pick the logo image
-              child: const Text('Pick School Logo'),
-            ),
-            const SizedBox(height: 16),
-            if (_schoolLogoPath != null)
-              Text(
-                'Logo Selected: ${path.basename(_schoolLogoPath!)}',
-                style: const TextStyle(color: Colors.green),
+    final isHost = _role == DeviceRole.host;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Update School Info'),
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+        foregroundColor: Colors.white,
+        elevation: 4.0,
+        actions: [
+          // ✅ Show deletion status if school is deleted
+          if (currentSchool.isDeleted ?? false)
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
               ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _updateSchool,
-              style: ElevatedButton.styleFrom(
-                foregroundColor: const Color.fromARGB(255, 15, 15, 15),
-                backgroundColor: Color.fromARGB(255, 251, 252, 254),
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+              child: const Text(
+                'DELETED',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
-              child: const Text('Update'),
             ),
-          ],
+        ],
+      ),
+      body: CenteredFormContainer(
+        title: 'Update School Info',
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              // ✅ Status indicator
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: (currentSchool.isDeleted ?? false)
+                      ? Colors.red.shade50
+                      : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (currentSchool.isDeleted ?? false)
+                        ? Colors.red.shade300
+                        : Colors.green.shade300,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      (currentSchool.isDeleted ?? false)
+                          ? Icons.delete_outline
+                          : Icons.check_circle,
+                      color: (currentSchool.isDeleted ?? false)
+                          ? Colors.red
+                          : Colors.green,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        (currentSchool.isDeleted ?? false)
+                            ? '⚠️ This school is deleted. Update to restore it.'
+                            : '✅ School is active',
+                        style: TextStyle(
+                          color: (currentSchool.isDeleted ?? false)
+                              ? Colors.red.shade700
+                              : Colors.green.shade700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              _buildTextField('School Name', _schoolNameController),
+              const SizedBox(height: 20),
+              _buildTextField('School Address', _schoolAddressController),
+              const SizedBox(height: 20),
+              _buildTextField(
+                  'School Phone Number', _schoolPhoneNumberController),
+              const SizedBox(height: 20),
+              _buildTextField('School Email', _schoolEmailController),
+              const SizedBox(height: 20),
+
+              // Logo picker
+              ElevatedButton.icon(
+                onPressed: _pickImage,
+                icon: const Icon(Icons.image),
+                label: const Text('Pick School Logo'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade200,
+                  foregroundColor: Colors.black87,
+                ),
+              ),
+              if (_schoolLogoPath != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle,
+                          color: Colors.green, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Logo: ${path.basename(_schoolLogoPath!)}',
+                          style: const TextStyle(color: Colors.green),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+
+              // ✅ Update button with loading state
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _updateSchool,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Update School',
+                          style: TextStyle(fontSize: 16)),
+                ),
+              ),
+
+              // ✅ Restore button for deleted schools
+              if (currentSchool.isDeleted ?? false)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isSubmitting ? null : _restoreSchool,
+                      icon: const Icon(Icons.restore, color: Colors.green),
+                      label: const Text(
+                        'Restore This School',
+                        style: TextStyle(color: Colors.green),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.green),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -93,29 +259,25 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
 
   Future<void> _pickImage() async {
     try {
-      // Open file picker to select an image
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.image,
       );
 
       if (result != null) {
         String filePath = result.files.single.path!;
-
-        // Get the appropriate directory for saving the file
         Directory appDirectory = await _getAppDirectory();
         String fileName = path.basename(filePath);
         String newFilePath = path.join(appDirectory.path, fileName);
 
-        // Copy the file to the app directory
         File pickedFile = File(filePath);
         await pickedFile.copy(newFilePath);
 
         setState(() {
-          _schoolLogoPath = newFilePath; // Save the new file path
+          _schoolLogoPath = newFilePath;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logo Image Selected!')),
+          const SnackBar(content: Text('✅ Logo Image Selected!')),
         );
       }
     } catch (e) {
@@ -126,7 +288,6 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
   }
 
   Future<Directory> _getAppDirectory() async {
-    // Platform-specific logic to get the appropriate app directory
     if (Platform.isAndroid) {
       return await getExternalStorageDirectory() ??
           await getApplicationDocumentsDirectory();
@@ -144,6 +305,9 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
         labelText: label,
         filled: true,
         fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -154,66 +318,64 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
     );
   }
 
-  void _updateSchool() async {
-    if (_formKey.currentState!.validate()) {
-      final box = Hive.box<School>('school');
+  Future<void> _updateSchool() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      // Get the updated values from the text fields
-      final schoolName = _schoolNameController.text.toLowerCase();
-      final schoolAddress = _schoolAddressController.text.toLowerCase();
-      final schoolPhoneNumber = _schoolPhoneNumberController.text.toLowerCase();
-      final schoolEmail = _schoolEmailController.text.toLowerCase();
+    setState(() => _isSubmitting = true);
+
+    try {
+      final box = Hive.box<School>('school');
+      final schoolName = _schoolNameController.text.trim().toLowerCase();
+      final schoolAddress = _schoolAddressController.text.trim().toLowerCase();
+      final schoolPhoneNumber =
+          _schoolPhoneNumberController.text.trim().toLowerCase();
+      final schoolEmail = _schoolEmailController.text.trim().toLowerCase();
       final schoolCode = currentSchool.schoolCode;
 
-      // Check if a school with the same name and term already exists
+      // Check if a school with the same name already exists (excluding current)
       final existingSchool = box.values.firstWhere(
-        (s) => s.schoolName!.toLowerCase() == schoolName,
-        orElse: () => School(
-          schoolName: '',
-          lastModified: DateTime(1970),
-        ),
+        (s) =>
+            s.schoolName?.toLowerCase() == schoolName &&
+            s.id != currentSchool.id &&
+            !(s.isDeleted ?? false),
+        orElse: () => School(schoolName: '', lastModified: DateTime(1970)),
       );
 
-      // Ensure the user isn't updating to a name that already exists
-      if (existingSchool.schoolName!.isNotEmpty &&
-          existingSchool.schoolName!.toLowerCase() !=
-              currentSchool.schoolName!.toLowerCase()) {
+      if (existingSchool.schoolName?.isNotEmpty == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('School with this name already exists')),
         );
+        setState(() => _isSubmitting = false);
         return;
       }
-      int? newId = existingSchool.id;
-      // Track modified fields
-      // Track modified fields
+
+      // ✅ Track modified fields
       List<String> modifiedFields = currentSchool.modifiedFields ?? [];
 
-// Append new modifications without overwriting
-      if (currentSchool.schoolName!.toLowerCase() != schoolName) {
-        if (!modifiedFields.contains('schoolName')) {
-          modifiedFields.add('schoolName');
-        }
+      if (currentSchool.schoolName?.toLowerCase() != schoolName &&
+          !modifiedFields.contains('schoolName')) {
+        modifiedFields.add('schoolName');
+      }
+      if (currentSchool.schoolAddress?.toLowerCase() != schoolAddress &&
+          !modifiedFields.contains('schoolAddress')) {
+        modifiedFields.add('schoolAddress');
+      }
+      if (currentSchool.schoolPhoneNumber?.toLowerCase() != schoolPhoneNumber &&
+          !modifiedFields.contains('schoolPhoneNumber')) {
+        modifiedFields.add('schoolPhoneNumber');
+      }
+      if (currentSchool.schoolEmail?.toLowerCase() != schoolEmail &&
+          !modifiedFields.contains('schoolEmail')) {
+        modifiedFields.add('schoolEmail');
+      }
+      if (currentSchool.schoolLogoPath != _schoolLogoPath &&
+          !modifiedFields.contains('schoolLogoPath')) {
+        modifiedFields.add('schoolLogoPath');
       }
 
-      if (currentSchool.schoolAddress?.toLowerCase() != schoolAddress) {
-        if (!modifiedFields.contains('schoolAddress')) {
-          modifiedFields.add('schoolAddress');
-        }
-      }
+      // ✅ If school was deleted, restore it on update
+      final isDeleted = currentSchool.isDeleted ?? false;
 
-      if (currentSchool.schoolPhoneNumber?.toLowerCase() != schoolPhoneNumber) {
-        if (!modifiedFields.contains('schoolPhoneNumber')) {
-          modifiedFields.add('schoolPhoneNumber');
-        }
-      }
-
-      if (currentSchool.schoolEmail?.toLowerCase() != schoolEmail) {
-        if (!modifiedFields.contains('schoolEmail')) {
-          modifiedFields.add('schoolEmail');
-        }
-      }
-
-      // Create the updated school object using copyWith to preserve unchanged fields
       final updatedSchool = currentSchool.copyWith(
         schoolName: schoolName.toUpperCase(),
         schoolCode: schoolCode,
@@ -224,19 +386,110 @@ class _UpdateSchoolScreenState extends State<UpdateSchoolScreen> {
         schoolEmail: schoolEmail,
         lastModified: DateTime.now(),
         operationType: 'update',
-        id: newId,
-        schoolLogoPath: _schoolLogoPath, // Include the updated logo path
+        schoolLogoPath: _schoolLogoPath,
         modifiedFields: modifiedFields,
+        // ✅ If was deleted, restore on update
+        isDeleted: false,
+        deletedSyncStatus: false,
       );
 
-      // Update the school in Hive at the specific index
+      // Update locally
       box.putAt(widget.index, updatedSchool);
 
+      // ✅ Send update to server if client
+      if (_role == DeviceRole.client && _hostIp != null) {
+        await _sendUpdateToServer(updatedSchool);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('School Updated Successfully')),
+        SnackBar(
+          content: Text(isDeleted
+              ? '✅ School restored and updated successfully'
+              : '✅ School Updated Successfully'),
+        ),
       );
 
-      Navigator.pop(context);
+      Navigator.pop(context, true);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating school: $e')),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _sendUpdateToServer(School school) async {
+    if (_hostIp == null) return;
+
+    try {
+      final schoolJson = {
+        'schoolCode': school.schoolCode,
+        'schoolName': school.schoolName,
+        'schoolAddress': school.schoolAddress,
+        'schoolPhoneNumber': school.schoolPhoneNumber,
+        'schoolEmail': school.schoolEmail,
+        'schoolLogoPath': school.schoolLogoPath,
+        'termId': school.termId,
+        'operationType': 'update',
+        'syncStatus': 0,
+        'lastModified': DateTime.now().toIso8601String(),
+        'isDeleted': school.isDeleted ?? false,
+        'deletedSyncStatus': school.deletedSyncStatus ?? false,
+        'modifiedFields': school.modifiedFields,
+      };
+
+      final response = await http.put(
+        Uri.parse('http://$_hostIp:8080/api/school'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(schoolJson),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        school.syncStatus = true;
+        school.operationType = 'none';
+        await school.save();
+      }
+    } catch (e) {
+      print('Error sending update to server: $e');
+    }
+  }
+
+  // ✅ Restore school
+  Future<void> _restoreSchool() async {
+    setState(() => _isSubmitting = true);
+
+    try {
+      currentSchool.restoreDeleted();
+      await currentSchool.save();
+
+      if (_role == DeviceRole.client && _hostIp != null) {
+        final response = await http.post(
+          Uri.parse('http://$_hostIp:8080/api/school'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'action': 'restore',
+            'schoolCode': currentSchool.schoolCode,
+          }),
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          currentSchool.syncStatus = true;
+          currentSchool.deletedSyncStatus = true;
+          await currentSchool.save();
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ School restored successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error restoring school: $e')),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
     }
   }
 

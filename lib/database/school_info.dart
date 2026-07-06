@@ -40,6 +40,22 @@ class School extends HiveObject {
   @HiveField(11)
   List<String>? modifiedFields; // Tracks fields that were modified
 
+  // ✅ NEW: Deletion Fields
+  @HiveField(12)
+  bool? isDeleted; // Soft delete flag
+
+  @HiveField(13)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(14)
+  String? deletedBy; // Who deleted
+
+  @HiveField(15)
+  String? deleteReason; // Why deleted
+
+  @HiveField(16)
+  bool? deletedSyncStatus; // Track if deletion was synced
+
   School({
     this.schoolName,
     this.schoolAddress,
@@ -51,10 +67,49 @@ class School extends HiveObject {
     this.operationType,
     this.id,
     this.schoolLogoPath,
-    this.schoolCode, // Include the new field in the constructor
+    this.schoolCode,
     this.modifiedFields,
+    // ✅ New deletion fields
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   });
 
+  // ✅ Helper: Mark as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Restore deleted
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Check if deleted
+  bool get isUserDeleted => isDeleted ?? false;
+
+  // ✅ FIX: Updated copyWith to include all deletion fields
   School copyWith({
     String? schoolName,
     String? schoolAddress,
@@ -68,6 +123,12 @@ class School extends HiveObject {
     String? schoolLogoPath,
     String? schoolCode,
     List<String>? modifiedFields,
+    // ✅ New deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return School(
       schoolName: schoolName ?? this.schoolName,
@@ -79,10 +140,15 @@ class School extends HiveObject {
       lastModified: lastModified ?? this.lastModified,
       operationType: operationType ?? this.operationType,
       id: id ?? this.id,
-      schoolLogoPath:
-          schoolLogoPath ?? this.schoolLogoPath, // Copy the new field
+      schoolLogoPath: schoolLogoPath ?? this.schoolLogoPath,
       schoolCode: schoolCode ?? this.schoolCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      // ✅ Include deletion fields in copyWith
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 }

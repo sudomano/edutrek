@@ -29,13 +29,18 @@ class SchoolAdapter extends TypeAdapter<School> {
       schoolLogoPath: fields[9] as String?,
       schoolCode: fields[10] as String?,
       modifiedFields: (fields[11] as List?)?.cast<String>(),
+      isDeleted: fields[12] as bool?,
+      deletedAt: fields[13] as DateTime?,
+      deletedBy: fields[14] as String?,
+      deleteReason: fields[15] as String?,
+      deletedSyncStatus: fields[16] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, School obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.schoolName)
       ..writeByte(1)
@@ -59,7 +64,17 @@ class SchoolAdapter extends TypeAdapter<School> {
       ..writeByte(10)
       ..write(obj.schoolCode)
       ..writeByte(11)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(12)
+      ..write(obj.isDeleted)
+      ..writeByte(13)
+      ..write(obj.deletedAt)
+      ..writeByte(14)
+      ..write(obj.deletedBy)
+      ..writeByte(15)
+      ..write(obj.deleteReason)
+      ..writeByte(16)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

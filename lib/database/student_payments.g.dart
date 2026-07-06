@@ -42,13 +42,18 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       bankAccountNumber: fields[22] == null ? '' : fields[22] as String,
       bankAccountName: fields[23] == null ? '' : fields[23] as String,
       changeGiven: fields[24] == null ? 0.0 : fields[24] as double,
+      isDeleted: fields[25] as bool?,
+      deletedAt: fields[26] as DateTime?,
+      deletedBy: fields[27] as String?,
+      deleteReason: fields[28] as String?,
+      deletedSyncStatus: fields[29] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, StudentPayment obj) {
     writer
-      ..writeByte(25)
+      ..writeByte(30)
       ..writeByte(0)
       ..write(obj.studentName)
       ..writeByte(1)
@@ -98,7 +103,17 @@ class StudentPaymentAdapter extends TypeAdapter<StudentPayment> {
       ..writeByte(23)
       ..write(obj.bankAccountName)
       ..writeByte(24)
-      ..write(obj.changeGiven);
+      ..write(obj.changeGiven)
+      ..writeByte(25)
+      ..write(obj.isDeleted)
+      ..writeByte(26)
+      ..write(obj.deletedAt)
+      ..writeByte(27)
+      ..write(obj.deletedBy)
+      ..writeByte(28)
+      ..write(obj.deleteReason)
+      ..writeByte(29)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

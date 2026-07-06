@@ -34,6 +34,22 @@ class Classes extends HiveObject {
   @HiveField(9)
   List<String>? terms;
 
+  // ✅ NEW: Deletion Fields
+  @HiveField(10)
+  bool? isDeleted; // Soft delete flag
+
+  @HiveField(11)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(12)
+  String? deletedBy; // Who deleted
+
+  @HiveField(13)
+  String? deleteReason; // Why deleted
+
+  @HiveField(14)
+  bool? deletedSyncStatus; // Track if deletion was synced
+
   Classes({
     required this.id,
     required this.date,
@@ -45,7 +61,44 @@ class Classes extends HiveObject {
     this.classCode,
     this.modifiedFields,
     List<String>? terms,
+    // ✅ New deletion fields
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   }) : terms = terms ?? [];
+  // ✅ Helper: Mark user as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Restore deleted user
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Check if user is deleted
+  bool get isUserDeleted => isDeleted ?? false;
 
   Classes copyWith({
     int? id,
@@ -58,6 +111,12 @@ class Classes extends HiveObject {
     String? classCode,
     List<String>? modifiedFields,
     List<String>? terms,
+    // ✅ Deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return Classes(
       id: id ?? this.id,
@@ -70,6 +129,12 @@ class Classes extends HiveObject {
       classCode: classCode ?? this.classCode,
       modifiedFields: modifiedFields ?? this.modifiedFields,
       terms: terms ?? this.terms,
+      // ✅ Include deletion fields
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 }

@@ -41,13 +41,18 @@ class TeachersAdapter extends TypeAdapter<Teachers> {
       id: fields[20] as int?,
       modifiedFields: (fields[22] as List?)?.cast<String>(),
       terms: (fields[23] as List?)?.cast<String>(),
+      isDeleted: fields[24] as bool?,
+      deletedAt: fields[25] as DateTime?,
+      deletedBy: fields[26] as String?,
+      deleteReason: fields[27] as String?,
+      deletedSyncStatus: fields[28] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Teachers obj) {
     writer
-      ..writeByte(24)
+      ..writeByte(29)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -95,7 +100,17 @@ class TeachersAdapter extends TypeAdapter<Teachers> {
       ..writeByte(22)
       ..write(obj.modifiedFields)
       ..writeByte(23)
-      ..write(obj.terms);
+      ..write(obj.terms)
+      ..writeByte(24)
+      ..write(obj.isDeleted)
+      ..writeByte(25)
+      ..write(obj.deletedAt)
+      ..writeByte(26)
+      ..write(obj.deletedBy)
+      ..writeByte(27)
+      ..write(obj.deleteReason)
+      ..writeByte(28)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

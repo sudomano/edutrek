@@ -25,6 +25,7 @@ import 'package:zitf_system/reusable_codes/serializers/students_serializer.dart'
 import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
 import 'package:zitf_system/student_management/create_students/multi_class_selection.dart';
 import 'package:zitf_system/student_payments/view_all_paid_students.dart';
+import 'package:http/http.dart' as http;
 
 class ViewStudentsScreenfilter extends StatefulWidget {
   final String? selectedClassName;
@@ -160,7 +161,8 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     }
 
     try {
-      final url = Uri.parse('http://$_hostIp:8080/api/students/all');
+      final url = Uri.parse(
+          'http://$_hostIp:8080/api/students/all?include_deleted=true');
       final httpClient = HttpClient();
       final request = await httpClient.getUrl(url);
       final response = await request.close();

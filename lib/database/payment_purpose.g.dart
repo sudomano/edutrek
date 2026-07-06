@@ -29,13 +29,18 @@ class PaymentPurposeAdapter extends TypeAdapter<PaymentPurpose> {
       modifiedFields: (fields[9] as List?)?.cast<String>(),
       exceptions: (fields[10] as List?)?.cast<ExceptionalStudents>(),
       forNewcomersOnly: fields[11] as bool?,
+      isDeleted: fields[12] as bool?,
+      deletedAt: fields[13] as DateTime?,
+      deletedBy: fields[14] as String?,
+      deleteReason: fields[15] as String?,
+      deletedSyncStatus: fields[16] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PaymentPurpose obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -59,7 +64,17 @@ class PaymentPurposeAdapter extends TypeAdapter<PaymentPurpose> {
       ..writeByte(10)
       ..write(obj.exceptions)
       ..writeByte(11)
-      ..write(obj.forNewcomersOnly);
+      ..write(obj.forNewcomersOnly)
+      ..writeByte(12)
+      ..write(obj.isDeleted)
+      ..writeByte(13)
+      ..write(obj.deletedAt)
+      ..writeByte(14)
+      ..write(obj.deletedBy)
+      ..writeByte(15)
+      ..write(obj.deleteReason)
+      ..writeByte(16)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

@@ -58,7 +58,21 @@ class User extends HiveObject {
 
   @HiveField(17)
   DateTime? createdAt; // When the account was created
+// ✅ NEW: Deletion Fields
+  @HiveField(18)
+  bool? isDeleted; // Soft delete flag
 
+  @HiveField(19)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(20)
+  String? deletedBy; // Who deleted
+
+  @HiveField(21)
+  String? deleteReason; // Why deleted
+
+  @HiveField(22)
+  bool? deletedSyncStatus; // Track if deletion was synced
   User({
     required this.username,
     required this.password,
@@ -78,8 +92,43 @@ class User extends HiveObject {
     this.assignedClasses, // ✅ New field
     this.isActive = true, // ✅ New field with default
     this.createdAt, // ✅ New field
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   });
+// ✅ Helper: Mark user as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
 
+  // ✅ Helper: Restore deleted user
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+// ✅ Helper: Check if user is deleted
+  bool get isUserDeleted => isDeleted ?? false;
   User copyWith({
     String? username,
     String? password,

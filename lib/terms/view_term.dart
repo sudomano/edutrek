@@ -7,14 +7,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
-import 'package:printing/printing.dart'; // For PDF preview
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zitf_system/lan_sync_services/sync_service.dart';
 import 'package:zitf_system/main.dart';
 import 'package:zitf_system/pdf_global_codes/pdf_preview_util.dart';
+import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/serializers/term_serializer.dart';
-import '../database/terms.dart'; // Import the Terms model
-import 'package:path/path.dart' as path; // To handle file name extensions
+import '../database/terms.dart';
+import 'package:path/path.dart' as path;
+import 'package:http/http.dart' as http;
 
 class ViewTermsScreen extends StatefulWidget {
   const ViewTermsScreen({super.key});
@@ -25,8 +27,14 @@ class ViewTermsScreen extends StatefulWidget {
 
 class _ViewTermsScreenState extends State<ViewTermsScreen> {
   Future<List<Terms>> _termsFuture = Future.value([]);
+  List<Terms> _allTerms = [];
+  List<Terms> _activeTerms = [];
+  List<Terms> _deletedTerms = [];
+  bool _showDeleted = false;
+  bool _isLoading = false;
 
   DeviceRole? _role;
+  String? _hostIp;
 
   @override
   void initState() {
@@ -35,10 +43,23 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
   }
 
   Future<void> _initialize() async {
+    setState(() => _isLoading = true);
     _role = await getDeviceRole();
+    final prefs = await SharedPreferences.getInstance();
+    _hostIp = prefs.getString('host_ip');
+
+    await _loadTerms();
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadTerms() async {
+    final terms = await _fetchTermsFromLocalStorage();
+    _allTerms = terms;
+    _activeTerms = terms.where((t) => !(t.isDeleted ?? false)).toList();
+    _deletedTerms = terms.where((t) => t.isDeleted ?? false).toList();
 
     setState(() {
-      _termsFuture = _fetchTermsFromLocalStorage();
+      _termsFuture = Future.value(terms);
     });
   }
 
@@ -57,7 +78,181 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
     }
   }
 
-  // Manual sync (optional - for force refresh)
+  // ✅ SOFT DELETE Term
+  Future<void> _softDeleteTerm(Terms term, {String? reason}) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final currentUser = await getLoggedInUser();
+
+      term.markDeleted(
+        deletedBy: currentUser?.username ?? 'system',
+        reason: reason,
+      );
+      await term.save();
+
+      if (_role == DeviceRole.client && _hostIp != null) {
+        try {
+          final response = await http.delete(
+            Uri.parse('http://$_hostIp:8080/api/terms'
+                '?termId=${term.termId}'
+                '&deletedBy=${Uri.encodeComponent(currentUser?.username ?? "system")}'
+                '&reason=${Uri.encodeComponent(reason ?? "")}'),
+          );
+
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            term.deletedSyncStatus = true;
+            term.syncStatus = true;
+            term.operationType = 'none';
+            await term.save();
+          }
+        } catch (e) {
+          print('Error syncing deletion to server: $e');
+        }
+      }
+
+      await _loadTerms();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Term ${term.termName} deleted successfully')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error deleting term: $e')));
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ RESTORE Term
+  Future<void> _restoreTerm(Terms term) async {
+    setState(() => _isLoading = true);
+
+    try {
+      term.restoreDeleted();
+      await term.save();
+
+      if (_role == DeviceRole.client && _hostIp != null) {
+        try {
+          final response = await http.post(
+            Uri.parse('http://$_hostIp:8080/api/terms'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'action': 'restore',
+              'termId': term.termId,
+            }),
+          );
+
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            term.syncStatus = true;
+            term.deletedSyncStatus = true;
+            term.operationType = 'none';
+            await term.save();
+          }
+        } catch (e) {
+          print('Error syncing restore to server: $e');
+        }
+      }
+
+      await _loadTerms();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Term ${term.termName} restored successfully')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error restoring term: $e')));
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ PERMANENTLY DELETE Term
+  Future<void> _permanentlyDeleteTerm(Terms term) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('⚠️ Permanently Delete Term'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+                'Are you sure you want to permanently delete "${term.termName}"?'),
+            const SizedBox(height: 8),
+            const Text(
+              'This action cannot be undone!',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete Forever'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      try {
+        await term.delete();
+        await _loadTerms();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Term ${term.termName} permanently deleted')));
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error permanently deleting term: $e')));
+      } finally {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // ✅ Show delete confirmation dialog
+  void _showDeleteConfirmation(Terms term) {
+    String? reason;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Term'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Are you sure you want to delete "${term.termName}"?'),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Reason for deletion (optional)',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => reason = value,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _softDeleteTerm(term, reason: reason);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _manualSyncTerms() async {
     if (_role != DeviceRole.client) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -74,18 +269,13 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
         throw Exception('Host IP not configured');
       }
 
-      setState(() {
-        _termsFuture = Future.value([]); // Show loading
-      });
+      setState(() => _isLoading = true);
 
       final syncService = SyncService();
       final synced = await syncService.syncTermsOnly(hostIp);
 
       if (synced) {
-        setState(() {
-          _termsFuture = _fetchTermsFromLocalStorage();
-        });
-
+        await _loadTerms();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Terms refreshed successfully'),
@@ -96,25 +286,30 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
         throw Exception('Sync failed');
       }
     } catch (e) {
-      setState(() {
-        _termsFuture = _fetchTermsFromLocalStorage(); // Revert to cached
-      });
-
+      await _loadTerms();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('⚠️ Failed to refresh: $e'),
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  // Function to generate the PDF
   Future<Uint8List> generateTermsPDF(List<Terms> terms) async {
     final pdf = pw.Document();
 
-    final headers = ['Term Name', 'Started On', 'Ended On', 'Status'];
+    final headers = [
+      'Term Name',
+      'Started On',
+      'Ended On',
+      'Status',
+      'Deleted'
+    ];
     final data = terms.map((term) {
+      final isDeleted = term.isDeleted ?? false;
       return [
         term.termName,
         term.startDate.toLocal().toString(),
@@ -122,26 +317,24 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
             ? term.endDate!.toLocal().toString()
             : 'Term Still Active',
         term.status,
+        isDeleted ? 'DELETED' : 'ACTIVE',
       ];
     }).toList();
 
-    // Create a PDF page
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.all(32), // Add margins for layout
+        margin: pw.EdgeInsets.all(32),
         build: (pw.Context context) {
           return [
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // Title of the page
                 pw.Text('School Terms Information',
                     style: pw.TextStyle(fontSize: 24)),
                 pw.SizedBox(height: 20),
               ],
             ),
-            // The table should now automatically split across multiple pages
             pw.Table.fromTextArray(
               headers: headers,
               data: data,
@@ -154,10 +347,11 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
                   const pw.BoxDecoration(color: PdfColors.grey300),
               border: pw.TableBorder.all(color: PdfColors.black),
               columnWidths: {
-                0: pw.FlexColumnWidth(), // Class Name column
-                1: pw.FlexColumnWidth(), // Created On column
-                2: pw.FlexColumnWidth(), // Current Term column
-                3: pw.FlexColumnWidth(), // Current Term column
+                0: pw.FlexColumnWidth(),
+                1: pw.FlexColumnWidth(),
+                2: pw.FlexColumnWidth(),
+                3: pw.FlexColumnWidth(),
+                4: pw.FlexColumnWidth(),
               },
             ),
           ];
@@ -168,55 +362,36 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
     return pdf.save();
   }
 
-  // Function to save the PDF file
   Future<void> savePDFToFile(
       BuildContext context, Uint8List pdfBytes, String fileName) async {
     try {
-      // Request storage permission
       if (await Permission.storage.request().isGranted) {
-        // Get external storage directory
-        Directory? directory = await getExternalStorageDirectory();
+        final downloadDir = Directory('/storage/emulated/0/Download');
 
-        if (directory != null) {
-          // Define the path to the Download folder
-          final downloadDir = Directory('/storage/emulated/0/Download');
-
-          // Create the directory if it doesn't exist
-          if (!await downloadDir.exists()) {
-            await downloadDir.create(recursive: true);
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Download directory created.")));
-          }
-
-          // Define the initial file path
-          String filePath = path.join(downloadDir.path, '$fileName.pdf');
-          int fileIndex = 1;
-
-          // Check if a file with the same name exists and add an index if necessary
-          while (await File(filePath).exists()) {
-            filePath = path.join(downloadDir.path, '$fileName-$fileIndex.pdf');
-            fileIndex++;
-          }
-
-          // Save the PDF file
-          final file = File(filePath);
-          await file.writeAsBytes(pdfBytes);
-
-          // Show success notification
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
-        } else {
-          // Show error notification
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text("Error: External storage directory not found.")));
+        if (!await downloadDir.exists()) {
+          await downloadDir.create(recursive: true);
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Download directory created.")));
         }
+
+        String filePath = path.join(downloadDir.path, '$fileName.pdf');
+        int fileIndex = 1;
+
+        while (await File(filePath).exists()) {
+          filePath = path.join(downloadDir.path, '$fileName-$fileIndex.pdf');
+          fileIndex++;
+        }
+
+        final file = File(filePath);
+        await file.writeAsBytes(pdfBytes);
+
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("PDF saved to $filePath")));
       } else {
-        // Show permission denied notification
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Permission denied for storage access.")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Permission denied for storage access.")));
       }
     } catch (e) {
-      // Show error notification
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text("Error saving PDF: $e")));
     }
@@ -224,139 +399,319 @@ class _ViewTermsScreenState extends State<ViewTermsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayList = _showDeleted ? _deletedTerms : _activeTerms;
+
     return Scaffold(
       appBar: AppBar(
         title: const Center(
-            child: Text(
-          'View Terms',
-          style: TextStyle(
-            fontSize: 14.0, // Adjust font size
-            fontWeight: FontWeight.normal, // Font weight
-            color: Colors.white, // Title color
-            letterSpacing: 1.2, // Slight letter spacing for elegance
+          child: Text(
+            'View Terms',
+            style: TextStyle(
+              fontSize: 14.0,
+              fontWeight: FontWeight.normal,
+              color: Colors.white,
+              letterSpacing: 1.2,
+            ),
           ),
-        )),
-        backgroundColor:
-            const Color.fromARGB(255, 38, 140, 191), // AppBar background color
-        elevation: 4.0, // Subtle shadow
+        ),
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+        elevation: 4.0,
         actions: [
+          // ✅ Toggle deleted terms
+          if (_deletedTerms.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                _showDeleted ? Icons.visibility : Icons.visibility_off,
+                color: _showDeleted ? Colors.orange : Colors.white,
+              ),
+              onPressed: () => setState(() => _showDeleted = !_showDeleted),
+              tooltip: _showDeleted ? 'Hide Deleted' : 'Show Deleted',
+            ),
+          // ✅ Deleted count badge
+          if (_deletedTerms.isNotEmpty && !_showDeleted)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_deletedTerms.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _manualSyncTerms,
             tooltip: 'Refresh terms from host',
           ),
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
             onPressed: () async {
-              // Generate the PDF
               final terms = await _termsFuture;
               Uint8List pdfBytes = await generateTermsPDF(terms);
-
-              // Show the PDF preview and confirm if the user wants to save it
               bool confirmSave =
                   await PDFPreviewUtil.showPDFPreview(context, pdfBytes);
-
               if (confirmSave) {
-                // Save the PDF after confirmation
                 await savePDFToFile(context, pdfBytes, 'terms_report');
               }
             },
           ),
         ],
       ),
-      body: Container(
-        padding: const EdgeInsets.all(16.0),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color.fromARGB(255, 244, 243, 244),
-              Color.fromARGB(255, 253, 252, 252),
-            ], // Gradient background colors
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: FutureBuilder<List<Terms>>(
-          future: _termsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
-            } else if (snapshot.hasData) {
-              final List<Terms> terms = snapshot.data!;
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxWidth = constraints.maxWidth;
-                  final fontSize = maxWidth < 600
-                      ? 12.0
-                      : 14.0; // Adjust font size based on device width
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Container(
+              padding: const EdgeInsets.all(16.0),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color.fromARGB(255, 244, 243, 244),
+                    Color.fromARGB(255, 253, 252, 252),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: FutureBuilder<List<Terms>>(
+                future: _termsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  } else if (snapshot.hasData) {
+                    final List<Terms> allTerms = snapshot.data!;
 
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: Center(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          headingRowHeight: 40,
-                          dataRowHeight: 60,
-                          columns: [
-                            DataColumn(
-                                label: Text('Id',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('Term Name',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('Started On',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('Ended On',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('Status',
-                                    style: TextStyle(fontSize: fontSize))),
-                            DataColumn(
-                                label: Text('mods',
-                                    style: TextStyle(fontSize: fontSize))),
-                          ],
-                          rows: terms.map((term) {
-                            return DataRow(cells: [
-                              DataCell(Text(
-                                  term.id != null ? term.id.toString() : 'null',
-                                  style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(term.termName,
-                                  style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(term.startDate.toLocal().toString(),
-                                  style: TextStyle(fontSize: fontSize))),
-                              DataCell(
-                                Text(
-                                  term.endDate != null
-                                      ? term.endDate!.toLocal().toString()
-                                      : 'Term Still Active',
-                                  style: TextStyle(fontSize: fontSize),
-                                ),
-                              ),
-                              DataCell(Text(term.status,
-                                  style: TextStyle(fontSize: fontSize))),
-                              DataCell(Text(term.modifiedFields.toString(),
-                                  style: TextStyle(fontSize: fontSize))),
-                            ]);
-                          }).toList(),
+                    if (displayList.isEmpty) {
+                      return Center(
+                        child: Text(
+                          _showDeleted ? 'No deleted terms' : 'No terms found',
+                          style: const TextStyle(color: Colors.grey),
                         ),
-                      ),
-                    ),
-                  );
+                      );
+                    }
+
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxWidth = constraints.maxWidth;
+                        final fontSize = maxWidth < 600 ? 12.0 : 14.0;
+
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: Center(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                headingRowHeight: 40,
+                                dataRowHeight: 60,
+                                columns: [
+                                  DataColumn(
+                                      label: Text('Id',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('Term Name',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('Started On',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('Ended On',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('Status',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('State',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                  DataColumn(
+                                      label: Text('Actions',
+                                          style:
+                                              TextStyle(fontSize: fontSize))),
+                                ],
+                                rows: displayList.map((term) {
+                                  final isDeleted = term.isDeleted ?? false;
+
+                                  return DataRow(
+                                    color: isDeleted
+                                        ? WidgetStateProperty.all(
+                                            Colors.grey.shade100)
+                                        : null,
+                                    cells: [
+                                      DataCell(Text(
+                                        term.id != null
+                                            ? term.id.toString()
+                                            : 'null',
+                                        style: TextStyle(
+                                          fontSize: fontSize,
+                                          decoration: isDeleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          color: isDeleted ? Colors.grey : null,
+                                        ),
+                                      )),
+                                      DataCell(Text(
+                                        term.termName,
+                                        style: TextStyle(
+                                          fontSize: fontSize,
+                                          decoration: isDeleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          color: isDeleted ? Colors.grey : null,
+                                        ),
+                                      )),
+                                      DataCell(Text(
+                                        term.startDate.toLocal().toString(),
+                                        style: TextStyle(
+                                          fontSize: fontSize,
+                                          decoration: isDeleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          color: isDeleted ? Colors.grey : null,
+                                        ),
+                                      )),
+                                      DataCell(Text(
+                                        term.endDate != null
+                                            ? term.endDate!.toLocal().toString()
+                                            : 'Active',
+                                        style: TextStyle(
+                                          fontSize: fontSize,
+                                          decoration: isDeleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          color: isDeleted ? Colors.grey : null,
+                                        ),
+                                      )),
+                                      DataCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isDeleted
+                                                ? Colors.red.shade100
+                                                : term.status == 'Opened'
+                                                    ? Colors.green.shade100
+                                                    : Colors.orange.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            isDeleted ? 'DELETED' : term.status,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDeleted
+                                                  ? Colors.red.shade700
+                                                  : term.status == 'Opened'
+                                                      ? Colors.green.shade700
+                                                      : Colors.orange.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isDeleted
+                                                ? Colors.grey.shade200
+                                                : term.isActive
+                                                    ? Colors.blue.shade100
+                                                    : Colors.grey.shade200,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            isDeleted
+                                                ? 'DELETED'
+                                                : term.isActive
+                                                    ? 'Active'
+                                                    : 'Inactive',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDeleted
+                                                  ? Colors.grey.shade700
+                                                  : term.isActive
+                                                      ? Colors.blue.shade700
+                                                      : Colors.grey.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (isDeleted) ...[
+                                              // ✅ Restore button
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.restore,
+                                                  color: Colors.green,
+                                                  size: 20,
+                                                ),
+                                                onPressed: () =>
+                                                    _restoreTerm(term),
+                                                tooltip: 'Restore',
+                                              ),
+                                              // ✅ Permanent delete
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.delete_forever,
+                                                  color: Colors.red,
+                                                  size: 20,
+                                                ),
+                                                onPressed: () =>
+                                                    _permanentlyDeleteTerm(
+                                                        term),
+                                                tooltip: 'Delete Forever',
+                                              ),
+                                            ] else ...[
+                                              // ✅ Delete button
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.delete,
+                                                  color: Colors.red,
+                                                  size: 20,
+                                                ),
+                                                onPressed: () =>
+                                                    _showDeleteConfirmation(
+                                                        term),
+                                                tooltip: 'Delete',
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  } else {
+                    return const Center(
+                      child: Text('No terms found.'),
+                    );
+                  }
                 },
-              );
-            } else {
-              return const Center(
-                child: Text('No terms found.'),
-              );
-            }
-          },
-        ),
-      ),
+              ),
+            ),
     );
   }
 }

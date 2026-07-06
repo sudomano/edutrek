@@ -23,13 +23,18 @@ class DomainRecordAdapter extends TypeAdapter<DomainRecord> {
       operationType: fields[3] as String?,
       lastModified: fields[4] as DateTime?,
       modifiedFields: (fields[5] as List?)?.cast<String>(),
+      isDeleted: fields[6] as bool?,
+      deletedAt: fields[7] as DateTime?,
+      deletedBy: fields[8] as String?,
+      deleteReason: fields[9] as String?,
+      deletedSyncStatus: fields[10] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DomainRecord obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.domainName)
       ..writeByte(1)
@@ -41,7 +46,17 @@ class DomainRecordAdapter extends TypeAdapter<DomainRecord> {
       ..writeByte(4)
       ..write(obj.lastModified)
       ..writeByte(5)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(6)
+      ..write(obj.isDeleted)
+      ..writeByte(7)
+      ..write(obj.deletedAt)
+      ..writeByte(8)
+      ..write(obj.deletedBy)
+      ..writeByte(9)
+      ..write(obj.deleteReason)
+      ..writeByte(10)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

@@ -75,6 +75,22 @@ class Teachers extends HiveObject {
   @HiveField(23)
   List<String>? terms;
 
+  // ✅ NEW: Deletion Fields
+  @HiveField(24)
+  bool? isDeleted; // Soft delete flag
+
+  @HiveField(25)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(26)
+  String? deletedBy; // Who deleted
+
+  @HiveField(27)
+  String? deleteReason; // Why deleted
+
+  @HiveField(28)
+  bool? deletedSyncStatus; // Track if deletion was synced
+
   Teachers({
     required this.name,
     required this.surname,
@@ -100,7 +116,45 @@ class Teachers extends HiveObject {
     this.id,
     this.modifiedFields,
     List<String>? terms,
+    // ✅ New deletion fields
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   }) : terms = terms ?? [];
+
+  // ✅ Helper: Mark user as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Restore deleted user
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Check if user is deleted
+  bool get isUserDeleted => isDeleted ?? false;
 
   Teachers copyWith({
     String? name,

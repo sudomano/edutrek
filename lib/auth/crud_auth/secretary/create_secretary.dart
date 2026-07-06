@@ -24,8 +24,6 @@ class _CreateSecretaryAccountScreenState
   final _securityAnswers = List<String>.generate(3, (index) => "");
   bool _isPasswordVisible = false;
 
-  // ✅ Remove unused userBox from here - we'll open it when needed
-
   final List<String> _roles = [
     'sub-admin',
     'secretary',
@@ -35,7 +33,7 @@ class _CreateSecretaryAccountScreenState
   ];
   String _selectedRole = 'secretary';
 
-  // ✅ New: Class selection for teachers
+  // ✅ Class selection for teachers
   List<String> _availableClasses = [];
   List<String> _selectedClasses = [];
   bool _isLoadingClasses = false;
@@ -56,7 +54,6 @@ class _CreateSecretaryAccountScreenState
       _roleReady = true;
     });
 
-    // Load classes if the user is on a host device
     if (_role == DeviceRole.host) {
       await _loadClasses();
     }
@@ -84,8 +81,12 @@ class _CreateSecretaryAccountScreenState
 
   Future<int> getNextId() async {
     final box = await Hive.openBox<User>('users');
-    if (box.isEmpty) return 1;
-    int currentMaxId = box.values
+    // ✅ Only count active users (not deleted)
+    final activeUsers =
+        box.values.where((u) => !(u.isDeleted ?? false)).toList();
+    if (activeUsers.isEmpty) return 1;
+
+    int currentMaxId = activeUsers
         .map((e) => e.id ?? 0)
         .reduce((curr, next) => curr > next ? curr : next);
     return currentMaxId + 1;
@@ -114,7 +115,6 @@ class _CreateSecretaryAccountScreenState
   }
 
   Future<void> _createSecretaryAccount() async {
-    // ✅ Validate that teachers have at least one class assigned
     if (_selectedRole.toLowerCase() == 'teacher' && _selectedClasses.isEmpty) {
       _showDialog('Please assign at least one class to the teacher.');
       return;
@@ -124,7 +124,7 @@ class _CreateSecretaryAccountScreenState
       try {
         var userBox = await Hive.openBox<User>('users');
 
-        // Check if a user with the same email already exists
+        // ✅ Check if user exists (including deleted - we don't want duplicate emails even if deleted)
         bool userExists = userBox.values.any((user) =>
             user.email?.trim().toLowerCase() ==
             _emailController.text.trim().toLowerCase());
@@ -176,6 +176,9 @@ class _CreateSecretaryAccountScreenState
               : null,
           isActive: true,
           createdAt: DateTime.now(),
+          // ✅ Deletion fields - new users are not deleted
+          isDeleted: false,
+          deletedSyncStatus: true,
         );
 
         await userBox.add(newUser);
@@ -202,7 +205,6 @@ class _CreateSecretaryAccountScreenState
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Check if user is on host device
     final bool isHost = _role == DeviceRole.host;
 
     return Scaffold(
@@ -210,6 +212,14 @@ class _CreateSecretaryAccountScreenState
         title: const Text('Add User'),
         backgroundColor: const Color.fromARGB(255, 38, 140, 191),
         elevation: 4.0,
+        actions: [
+          // ✅ View deleted users button
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.white),
+            tooltip: 'View Deleted Users',
+            onPressed: () => _showDeletedUsersDialog(),
+          ),
+        ],
       ),
       body: Center(
         child: Container(
@@ -228,7 +238,7 @@ class _CreateSecretaryAccountScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ✅ Host indicator
+                      // ✅ Host indicator with deletion status
                       Container(
                         padding: const EdgeInsets.symmetric(
                             vertical: 8, horizontal: 12),
@@ -263,10 +273,39 @@ class _CreateSecretaryAccountScreenState
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
+                            const Spacer(),
+                            // ✅ Deleted users count
+                            FutureBuilder<int>(
+                              future: _getDeletedUsersCount(),
+                              builder: (context, snapshot) {
+                                final count = snapshot.data ?? 0;
+                                if (count == 0) return const SizedBox();
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$count deleted',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 20),
+
+                      // ... (rest of the form fields remain the same)
 
                       // Username
                       TextFormField(
@@ -374,7 +413,6 @@ class _CreateSecretaryAccountScreenState
                         onChanged: (value) {
                           setState(() {
                             _selectedRole = value!;
-                            // Clear class selection if role is not teacher
                             if (_selectedRole.toLowerCase() != 'teacher') {
                               _selectedClasses = [];
                             }
@@ -446,7 +484,6 @@ class _CreateSecretaryAccountScreenState
                         ),
                         const SizedBox(height: 8),
 
-                        // Class list
                         if (_isLoadingClasses)
                           const Center(
                             child: Padding(
@@ -493,21 +530,11 @@ class _CreateSecretaryAccountScreenState
                             ),
                           ),
                         const SizedBox(height: 8),
-
-                        // Validation message
-                        if (_selectedClasses.isEmpty)
-                          const Text(
-                            '⚠️ Please assign at least one class to the teacher',
-                            style: TextStyle(
-                              color: Colors.orange,
-                              fontSize: 12,
-                            ),
-                          ),
-                        const Divider(),
-                        const SizedBox(height: 16),
                       ],
 
-                      // Create Account Button
+                      const SizedBox(height: 16),
+
+                      // ✅ Create Account Button
                       ElevatedButton(
                         onPressed: isHost ? _createSecretaryAccount : null,
                         style: ElevatedButton.styleFrom(
@@ -536,11 +563,213 @@ class _CreateSecretaryAccountScreenState
     );
   }
 
+  // ✅ Helper to get deleted users count
+  Future<int> _getDeletedUsersCount() async {
+    try {
+      final userBox = await Hive.openBox<User>('users');
+      return userBox.values.where((u) => u.isDeleted ?? false).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // ✅ Show deleted users dialog
+  void _showDeletedUsersDialog() async {
+    final userBox = await Hive.openBox<User>('users');
+    final deletedUsers =
+        userBox.values.where((u) => u.isDeleted ?? false).toList();
+
+    if (deletedUsers.isEmpty) {
+      _showDialog('No deleted users found.');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.delete_outline, color: Colors.red),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Deleted Users (${deletedUsers.length})',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    icon: const Icon(Icons.close),
+                    label: const Text('Close'),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            // List
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: deletedUsers.length,
+                itemBuilder: (context, index) {
+                  final user = deletedUsers[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.grey,
+                        child: Text(
+                          user.username[0].toUpperCase(),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                      title: Text(
+                        user.username,
+                        style: const TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${user.role} • ${user.phone}'),
+                          if (user.deletedAt != null)
+                            Text(
+                              'Deleted: ${user.deletedAt!.toString().substring(0, 16)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // ✅ Restore button
+                          IconButton(
+                            icon: const Icon(
+                              Icons.restore,
+                              color: Colors.green,
+                            ),
+                            onPressed: () => _restoreUser(user),
+                            tooltip: 'Restore User',
+                          ),
+                          // ✅ Permanent delete button
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_forever,
+                              color: Colors.red,
+                            ),
+                            onPressed: () => _permanentlyDeleteUser(user),
+                            tooltip: 'Permanently Delete',
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ Restore deleted user
+  Future<void> _restoreUser(User user) async {
+    try {
+      user.restoreDeleted();
+      await user.save();
+
+      // Send restore to server if client
+      final role = await getDeviceRole();
+      if (role == DeviceRole.client) {
+        // ... send restore request to server
+      }
+
+      setState(() {});
+      Navigator.pop(context); // Close bottom sheet
+      _showDialog('User ${user.username} restored successfully');
+    } catch (e) {
+      _showDialog('Error restoring user: $e');
+    }
+  }
+
+  // ✅ Permanently delete user
+  Future<void> _permanentlyDeleteUser(User user) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('⚠️ Permanently Delete User'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+                'Are you sure you want to permanently delete "${user.username}"?'),
+            const SizedBox(height: 8),
+            const Text(
+              'This action cannot be undone!',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete Forever'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await user.delete();
+        setState(() {});
+        Navigator.pop(context); // Close bottom sheet
+        _showDialog('User ${user.username} permanently deleted');
+      } catch (e) {
+        _showDialog('Error permanently deleting user: $e');
+      }
+    }
+  }
+
   Future<void> _showDialog(String message) async {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("🧾 User Creation Feedback"),
+        title: const Text("User Management"),
         content: Text(message),
         actions: [
           TextButton(

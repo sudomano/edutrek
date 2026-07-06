@@ -3335,6 +3335,7 @@ class StudentsArrearsStatementScreenState
     List<String> terms, // Add this parameter
   ) {
     // Format the terms list for display
+    final bool isAdmin = _isAdminUser();
 
     final sortedTerms = _sortTermsChronologically(terms);
 
@@ -3363,7 +3364,7 @@ class StudentsArrearsStatementScreenState
           children: [
             pw.Text('Total Students: $totalStudents'),
             pw.SizedBox(width: 20),
-            if (!_isTeacher()) ...[
+            if (isAdmin) ...[
               pw.Text('Total Arrears: \$${totalArrears.toStringAsFixed(2)}'),
             ],
           ],
@@ -3489,10 +3490,19 @@ class StudentsArrearsStatementScreenState
     );
   }
 
+  bool _isAdminUser() {
+    final loggedInUser = getLoggedInUser();
+    if (loggedInUser == null) return false;
+
+    final role = loggedInUser.role?.toLowerCase() ?? '';
+    return role == 'admin' || role == 'administration';
+  }
+
 // Build summary stats widget
   pw.Widget _buildSummaryStats(
       int totalStudents, int clearedCount, double totalArrears) {
     final withArrears = totalStudents - clearedCount;
+    final bool isAdmin = _isAdminUser(); // Define isAdmin here
 
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
@@ -3541,28 +3551,30 @@ class StudentsArrearsStatementScreenState
             ],
           ),
         ),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.blue100,
-            borderRadius: pw.BorderRadius.circular(8),
+        // CONDITIONAL: Only show Total Arrears if user is admin
+        if (isAdmin)
+          pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.blue100,
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Column(
+              children: [
+                pw.Text(
+                  'Total Arrears',
+                  style: pw.TextStyle(fontSize: 12, color: PdfColors.blue700),
+                ),
+                pw.Text(
+                  '\$${totalArrears.toStringAsFixed(2)}',
+                  style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.blue700),
+                ),
+              ],
+            ),
           ),
-          child: pw.Column(
-            children: [
-              pw.Text(
-                'Total Arrears',
-                style: pw.TextStyle(fontSize: 12, color: PdfColors.blue700),
-              ),
-              pw.Text(
-                '\$${totalArrears.toStringAsFixed(2)}',
-                style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.blue700),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }

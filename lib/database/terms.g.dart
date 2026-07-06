@@ -28,13 +28,18 @@ class TermsAdapter extends TypeAdapter<Terms> {
       operationType: fields[8] as String?,
       id: fields[9] as int?,
       modifiedFields: (fields[10] as List?)?.cast<String>(),
+      isDeleted: fields[11] as bool?,
+      deletedAt: fields[12] as DateTime?,
+      deletedBy: fields[13] as String?,
+      deleteReason: fields[14] as String?,
+      deletedSyncStatus: fields[15] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Terms obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.termId)
       ..writeByte(1)
@@ -56,7 +61,17 @@ class TermsAdapter extends TypeAdapter<Terms> {
       ..writeByte(9)
       ..write(obj.id)
       ..writeByte(10)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(11)
+      ..write(obj.isDeleted)
+      ..writeByte(12)
+      ..write(obj.deletedAt)
+      ..writeByte(13)
+      ..write(obj.deletedBy)
+      ..writeByte(14)
+      ..write(obj.deleteReason)
+      ..writeByte(15)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

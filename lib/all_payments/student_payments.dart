@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart'; // Custom fonts
 import 'package:zitf_system/admin/home_screen.dart';
+import 'package:zitf_system/main.dart';
 import 'package:zitf_system/reusable_codes/custom_app_bar.dart';
 import 'package:zitf_system/reusable_codes/custom_drawers/custom_drawer_admin.dart';
-
 import 'package:zitf_system/reusable_codes/custom_drawers/retrieve_logged_user_helper.dart';
 import 'package:zitf_system/reusable_codes/footer/footer.dart';
 import 'package:zitf_system/reusable_codes/school_logo/school_logo.dart';
@@ -23,6 +23,20 @@ class MakePayment extends StatefulWidget {
 
 class _MyPageState extends State<MakePayment> {
   int _selectedIndex = 0;
+  DeviceRole? _deviceRole;
+
+  @override
+  void initState() {
+    super.initState();
+    _getDeviceRole();
+  }
+
+  Future<void> _getDeviceRole() async {
+    final role = await getDeviceRole();
+    setState(() {
+      _deviceRole = role;
+    });
+  }
 
   void _handleItemTapped(int index) {
     setState(() {
@@ -36,12 +50,32 @@ class _MyPageState extends State<MakePayment> {
     final loggedInUser = getLoggedInUser();
     final role = loggedInUser.role;
     final user = loggedInUser.username;
+
+    // User role checks
     final admin = loggedInUser?.role.toLowerCase() == 'admin';
     final secretary = loggedInUser?.role.toLowerCase() == 'secretary';
     final teacher = loggedInUser?.role.toLowerCase() == 'teacher';
     final accountant = loggedInUser?.role.toLowerCase() == 'accountant';
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
     final administration = loggedInUser.role.toLowerCase() == 'administration';
+
+    // CONDITIONAL: Check if device is client - if so, hide view/update/delete
+    final isClient = _deviceRole == DeviceRole.client;
+    final isHost = _deviceRole == DeviceRole.host;
+
+    // Determine what permissions to show based on role AND device type
+    final bool canCreatePayments =
+        (admin || administration || secretary || subadmin) && !isClient;
+    final bool canViewPayments =
+        (admin || administration || secretary || subadmin) && !isClient;
+    final bool canReprintReceipts = (admin || administration) && !isClient;
+    final bool canUpdatePayments = (admin || administration) && !isClient;
+    final bool canDeletePayments = admin && !isClient;
+
+    // Special case: If device is client, only show limited functionality
+    // For clients, we might want to show only view if they have permission
+    final bool showLimitedView =
+        isClient && (admin || administration || secretary || subadmin);
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Payments'),
@@ -83,13 +117,13 @@ class _MyPageState extends State<MakePayment> {
                           decoration: BoxDecoration(
                             color: isLargeScreen
                                 ? const Color.fromRGBO(255, 255, 255, 1)
-                                : null, // Set white background for large screens
+                                : null,
                             gradient: isLargeScreen
                                 ? const LinearGradient(
                                     colors: [
                                       Color.fromRGBO(255, 255, 255, 1),
                                       Color.fromARGB(255, 255, 255, 255)
-                                    ], // Gradient colors for small screens
+                                    ],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   )
@@ -97,7 +131,7 @@ class _MyPageState extends State<MakePayment> {
                                     colors: [
                                       Color.fromRGBO(255, 255, 255, 1),
                                       Color.fromARGB(255, 255, 255, 255)
-                                    ], // Gradient colors for small screens
+                                    ],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -111,6 +145,50 @@ class _MyPageState extends State<MakePayment> {
                                 children: [
                                   buildFutureSchoolsWidget(
                                       isLargeScreen: isLargeScreen),
+
+                                  // If device is client, show a message about limited access
+                                  if (isClient && !isHost)
+                                    Padding(
+                                      padding: const EdgeInsets.all(16.0),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange[50],
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                              color: Colors.orange[300]!),
+                                        ),
+                                        child: const Column(
+                                          children: [
+                                            Icon(
+                                              Icons.info_outline,
+                                              color: Colors.orange,
+                                              size: 32,
+                                            ),
+                                            SizedBox(height: 8),
+                                            Text(
+                                              'Client Mode - Limited Access',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.orange,
+                                              ),
+                                            ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                              'You are connected as a client. Some features may be restricted.',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+
                                   isLargeScreen
                                       ? GridView.count(
                                           crossAxisCount: crossAxisCount,
@@ -120,22 +198,17 @@ class _MyPageState extends State<MakePayment> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
-
-                                              // Elevated cards with icons
+                                            // CONDITIONAL: Show payment creation - only if not client
+                                            if (canCreatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'New Student Payment',
                                                 target: MakePaymentScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+
+                                            // CONDITIONAL: Show view payments - only if not client
+                                            if (canViewPayments)
                                               const ElevatedCard(
                                                 icon: Icons.list,
                                                 text: 'View Student Payments',
@@ -143,21 +216,27 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || administration)
+
+                                            // CONDITIONAL: Show reprint receipts - only if not client
+                                            if (canReprintReceipts)
                                               const ElevatedCard(
                                                 icon: Icons.print,
                                                 text: 'Re-Print Receipts',
                                                 target: ReceiptHistoryPage(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin || administration)
+
+                                            // CONDITIONAL: Show update payments - only if not client
+                                            if (canUpdatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.update,
                                                 text: 'Update Student Payments',
                                                 target: UpdatePaymentScreen(),
                                                 isLargeScreen: true,
                                               ),
-                                            if (admin)
+
+                                            // CONDITIONAL: Show delete payments - only if not client
+                                            if (canDeletePayments)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
@@ -165,26 +244,32 @@ class _MyPageState extends State<MakePayment> {
                                                     DeletePaidStudentBySurname(),
                                                 isLargeScreen: true,
                                               ),
+
+                                            // CONDITIONAL: If client and has view permission, show limited view
+                                            if (showLimitedView)
+                                              const ElevatedCard(
+                                                icon: Icons.visibility,
+                                                text:
+                                                    'View Payments (Read Only)',
+                                                target:
+                                                    ViewAllStudentPayments(),
+                                                isLargeScreen: true,
+                                              ),
                                           ],
                                         )
                                       : Column(
                                           children: [
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
-
-                                              // Elevated cards with icons
+                                            // CONDITIONAL: Show payment creation - only if not client
+                                            if (canCreatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
                                                 text: 'New Student Payment',
                                                 target: MakePaymentScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin ||
-                                                administration ||
-                                                secretary ||
-                                                subadmin)
+
+                                            // CONDITIONAL: Show view payments - only if not client
+                                            if (canViewPayments)
                                               const ElevatedCard(
                                                 icon: Icons.list,
                                                 text: 'View Student Payments',
@@ -192,21 +277,27 @@ class _MyPageState extends State<MakePayment> {
                                                     ViewAllStudentPayments(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || administration)
+
+                                            // CONDITIONAL: Show reprint receipts - only if not client
+                                            if (canReprintReceipts)
                                               const ElevatedCard(
                                                 icon: Icons.print,
-                                                text: ' Re-Print Receipts',
+                                                text: 'Re-Print Receipts',
                                                 target: ReceiptHistoryPage(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin || administration)
+
+                                            // CONDITIONAL: Show update payments - only if not client
+                                            if (canUpdatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.update,
                                                 text: 'Update Student Payments',
                                                 target: UpdatePaymentScreen(),
                                                 isLargeScreen: false,
                                               ),
-                                            if (admin)
+
+                                            // CONDITIONAL: Show delete payments - only if not client
+                                            if (canDeletePayments)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
@@ -214,6 +305,19 @@ class _MyPageState extends State<MakePayment> {
                                                     DeletePaidStudentBySurname(),
                                                 isLargeScreen: false,
                                               ),
+
+                                            // CONDITIONAL: If client and has view permission, show limited view
+                                            if (showLimitedView)
+                                              const ElevatedCard(
+                                                icon: Icons.visibility,
+                                                text:
+                                                    'View Payments (Read Only)',
+                                                target:
+                                                    ViewAllStudentPayments(),
+                                                isLargeScreen: false,
+                                              ),
+
+                                            // Home button - always shown
                                             if (admin ||
                                                 administration ||
                                                 secretary ||

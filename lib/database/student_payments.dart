@@ -78,6 +78,22 @@ class StudentPayment extends HiveObject {
   @HiveField(24, defaultValue: 0.0)
   double changeGiven;
 
+  // ✅ NEW: Deletion Fields
+  @HiveField(25)
+  bool? isDeleted; // Soft delete flag
+
+  @HiveField(26)
+  DateTime? deletedAt; // When deleted
+
+  @HiveField(27)
+  String? deletedBy; // Who deleted
+
+  @HiveField(28)
+  String? deleteReason; // Why deleted
+
+  @HiveField(29)
+  bool? deletedSyncStatus; // Track if deletion was synced
+
   StudentPayment({
     required this.studentName,
     required this.studentSurname,
@@ -104,7 +120,45 @@ class StudentPayment extends HiveObject {
     this.bankAccountNumber = '',
     this.bankAccountName = '',
     this.changeGiven = 0.0,
+    // ✅ New deletion fields
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
+    this.deleteReason,
+    this.deletedSyncStatus = false,
   });
+
+  // ✅ Helper: Mark user as deleted
+  void markDeleted({
+    required String deletedBy,
+    String? reason,
+  }) {
+    isDeleted = true;
+    deletedAt = DateTime.now();
+    this.deletedBy = deletedBy;
+    deleteReason = reason;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'delete';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Restore deleted user
+  void restoreDeleted() {
+    isDeleted = false;
+    deletedAt = null;
+    deletedBy = null;
+    deleteReason = null;
+    syncStatus = false;
+    deletedSyncStatus = false;
+    operationType = 'update';
+    lastModified = DateTime.now();
+    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+  }
+
+  // ✅ Helper: Check if user is deleted
+  bool get isUserDeleted => isDeleted ?? false;
 
   StudentPayment copyWith({
     String? studentName,

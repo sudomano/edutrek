@@ -62,13 +62,18 @@ class AssetAdapter extends TypeAdapter<Asset> {
       hasCreditBalance: fields[42] as bool?,
       option: fields[43] as String?,
       modifiedFields: (fields[44] as List?)?.cast<String>(),
+      isDeleted: fields[45] as bool?,
+      deletedAt: fields[46] as DateTime?,
+      deletedBy: fields[47] as String?,
+      deleteReason: fields[48] as String?,
+      deletedSyncStatus: fields[49] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Asset obj) {
     writer
-      ..writeByte(45)
+      ..writeByte(50)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -158,7 +163,17 @@ class AssetAdapter extends TypeAdapter<Asset> {
       ..writeByte(43)
       ..write(obj.option)
       ..writeByte(44)
-      ..write(obj.modifiedFields);
+      ..write(obj.modifiedFields)
+      ..writeByte(45)
+      ..write(obj.isDeleted)
+      ..writeByte(46)
+      ..write(obj.deletedAt)
+      ..writeByte(47)
+      ..write(obj.deletedBy)
+      ..writeByte(48)
+      ..write(obj.deleteReason)
+      ..writeByte(49)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

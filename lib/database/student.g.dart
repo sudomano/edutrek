@@ -53,13 +53,18 @@ class StudentAdapter extends TypeAdapter<Student> {
       isNewComerFrom: fields[36] as DateTime?,
       isNewComerUntil: fields[37] as DateTime?,
       terms: (fields[33] as List?)?.cast<String>(),
+      isDeleted: fields[38] as bool?,
+      deletedAt: fields[39] as DateTime?,
+      deletedBy: fields[40] as String?,
+      deleteReason: fields[41] as String?,
+      deletedSyncStatus: fields[42] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Student obj) {
     writer
-      ..writeByte(36)
+      ..writeByte(41)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -131,7 +136,17 @@ class StudentAdapter extends TypeAdapter<Student> {
       ..writeByte(36)
       ..write(obj.isNewComerFrom)
       ..writeByte(37)
-      ..write(obj.isNewComerUntil);
+      ..write(obj.isNewComerUntil)
+      ..writeByte(38)
+      ..write(obj.isDeleted)
+      ..writeByte(39)
+      ..write(obj.deletedAt)
+      ..writeByte(40)
+      ..write(obj.deletedBy)
+      ..writeByte(41)
+      ..write(obj.deleteReason)
+      ..writeByte(42)
+      ..write(obj.deletedSyncStatus);
   }
 
   @override

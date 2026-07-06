@@ -18,6 +18,8 @@ import 'package:zitf_system/server/routes/class_factory.dart';
 import 'package:zitf_system/server/routes/exceptions_factory.dart';
 import 'package:zitf_system/server/routes/terms_factory.dart';
 import 'package:zitf_system/student_management/add_student_from_client.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class AddStudentScreen extends StatefulWidget {
   const AddStudentScreen({super.key});
@@ -139,8 +141,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final box =
             await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
 
-        // Get all exceptions
-        final allExceptions = box.values.toList();
+        // ✅ Only load active (non-deleted) exceptions
+        final allExceptions =
+            box.values.where((e) => !(e.isDeleted ?? false)).toList();
         debugPrint('📊 Total exceptions in box: ${allExceptions.length}');
 
         // Filter by term and status
@@ -153,11 +156,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         debugPrint(
             '📊 Exceptions after status filter: ${filteredExceptions.length}');
 
-        // ✅ CORRECTED: Apply admin filter - EXCLUDE priority exceptions for non-admin
+        // ✅ Apply admin filter - EXCLUDE priority exceptions for non-admin
         final finalExceptions = filteredExceptions.where((e) {
           // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
           if (!isAdmin) {
-            return e.priorityFlag != 1; // ✅ This should be != 1, not == 0
+            return e.priorityFlag != 1;
           }
           // Admin sees everything
           return true;
@@ -182,14 +185,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             await ExceptionalStudentApiService.fetchActiveExceptions(
                 globalTermId!);
 
-        debugPrint('📊 Received ${exceptions.length} exceptions from server');
+        // ✅ Only use active (non-deleted) exceptions
+        final activeExceptions =
+            exceptions.where((e) => !(e.isDeleted ?? false)).toList();
 
-        // ✅ CORRECTED: Apply admin filter - EXCLUDE priority exceptions for non-admin
-        final filteredExceptions = exceptions.where((e) {
+        debugPrint(
+            '📊 Received ${activeExceptions.length} exceptions from server');
+
+        // ✅ Apply admin filter - EXCLUDE priority exceptions for non-admin
+        final filteredExceptions = activeExceptions.where((e) {
           // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
           if (!isAdmin) {
-            final priority = e.priorityFlag ?? 0; // Handle null
-
+            final priority = e.priorityFlag ?? 0;
             return priority != 1;
           }
           // Admin sees everything
@@ -202,7 +209,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
         debugPrint('📊 Final exceptions loaded: ${_allExceptions.length}');
         debugPrint(
-            '📊 Priority exceptions hidden for non-admin: ${exceptions.length - filteredExceptions.length}');
+            '📊 Priority exceptions hidden for non-admin: ${activeExceptions.length - filteredExceptions.length}');
       } catch (e) {
         debugPrint('❌ Error loading exceptions from server: $e');
         setState(() => _allExceptions = []);
@@ -221,7 +228,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     if (_role == DeviceRole.host) {
       final termsBox = await Hive.openBox<Terms>('terms');
-      final terms = termsBox.values.toList();
+      // ✅ Only load active (non-deleted) terms
+      final terms =
+          termsBox.values.where((t) => !(t.isDeleted ?? false)).toList();
       final sorted = sortTermsByStatusAndStartDate(terms);
 
       setState(() {
@@ -236,7 +245,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     } else {
       try {
         final terms = await TermApiService.fetchTerms();
-        final sorted = sortTermsByStatusAndStartDate(terms);
+        // ✅ Only load active (non-deleted) terms
+        final activeTerms =
+            terms.where((t) => !(t.isDeleted ?? false)).toList();
+        final sorted = sortTermsByStatusAndStartDate(activeTerms);
 
         setState(() {
           _availableTerms = sorted;
@@ -267,9 +279,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (_role == DeviceRole.host) {
       // HOST → Hive
       final box = await Hive.openBox<Classes>('classes');
+      // ✅ Only load active (non-deleted) classes
       setState(() {
         _classes = box.values
-            .where((c) => c.terms!.contains(globalTermId))
+            .where((c) =>
+                !(c.isDeleted ?? false) && c.terms!.contains(globalTermId))
             .map((c) => c.className)
             .toList();
       });
@@ -313,354 +327,433 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CenteredFormContainer(
-      title: 'Add Student',
-      child: Form(
-        key: _formKey,
-        child: ListView(
-          children: [
-            // Add this near the top of your form
-            FutureBuilder<bool>(
-              future: _isAdminUser(),
-              builder: (context, snapshot) {
-                final isAdmin = snapshot.data ?? false;
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: isAdmin ? Colors.green.shade50 : Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isAdmin
-                          ? Colors.green.shade300
-                          : Colors.grey.shade300,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isAdmin ? Icons.verified : Icons.person,
-                        color: isAdmin ? Colors.green : Colors.grey,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isAdmin
-                            ? '🔑 Administrator Access - All exceptions visible'
-                            : '👤 Standard Access - Priority exceptions hidden',
-                        style: TextStyle(
-                          color: isAdmin
-                              ? Colors.green.shade700
-                              : Colors.grey.shade700,
-                          fontSize: 14,
-                          fontWeight:
-                              isAdmin ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+    final isHost = _role == DeviceRole.host;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add Student'),
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+        foregroundColor: Colors.white,
+        elevation: 4.0,
+        actions: [
+          // ✅ Role indicator
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isHost ? Colors.green : Colors.orange,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 20),
-            const SizedBox(height: 20),
-            CheckboxListTile(
-              title: const Text("Is Newcomer?"),
-              value: _isNewComer ?? false,
-              onChanged: (value) {
-                setState(() {
-                  _isNewComer = value;
-                  if (value == true) {
-                    Terms? currentTerm;
-
-                    final termsBox = Hive.box<Terms>('terms');
-                    final terms = termsBox.values
-                        .where((term) => term.termId == globalTermId);
-                    if (terms.isNotEmpty) {
-                      currentTerm = terms.first;
-                    }
-
-                    final now = DateTime.now();
-                    final termEnd = currentTerm?.endDate;
-                    final DateTime defaultUntilDate =
-                        (termEnd != null && termEnd.isAfter(now))
-                            ? termEnd
-                            : now.add(const Duration(days: 30));
-
-                    setState(() {
-                      _isNewComerFrom = now;
-                      _isNewComerUntil = defaultUntilDate;
-                    });
-                  } else {
-                    setState(() {
-                      _isNewComerFrom = null;
-                      _isNewComerUntil = null;
-                    });
-                  }
-                });
-              },
+            child: Text(
+              isHost ? 'HOST' : 'CLIENT',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
             ),
-
-            if (_isNewComer == true) ...[
-              _buildDateField('Newcomer From', _isNewComerFrom, (date) {
-                // Optional: allow the user to override the default
-                setState(() {
-                  _isNewComerFrom = date;
-                });
-              }),
-              _buildDateField('Newcomer Until', _isNewComerUntil, (date) {
-                if (date != null && date.isAfter(DateTime.now())) {
-                  setState(() {
-                    _isNewComerUntil = date;
-                  });
-                } else {
-                  _showDialog('Newcomer Until must be in the future');
-                }
-              }),
-            ],
-
-            CheckboxListTile(
-              title: const Text("Is Exceptional?"),
-              value: _isExceptional ?? false,
-              onChanged: (value) {
-                setState(() {
-                  _isExceptional = value;
-                  if (value == false) {
-                    _selectedExceptions = []; // ✅ Reset selected exceptions
-                  }
-                });
-              },
-            ),
-
-            // In the build method, update this section:
-            if (_isExceptional == true) ...[
-              const Center(
-                  child: Text('Exceptional Info',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold))),
+          ),
+        ],
+      ),
+      body: CenteredFormContainer(
+        title: 'Add Student',
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              // ✅ Admin status indicator
               FutureBuilder<bool>(
                 future: _isAdminUser(),
                 builder: (context, snapshot) {
                   final isAdmin = snapshot.data ?? false;
-
-                  // ✅ CORRECTED: Filter exceptions based on admin status
-                  final filteredExceptions = _allExceptions.where((e) {
-                    // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
-                    if (!isAdmin) {
-                      return e.priorityFlag != 1; // ✅ CORRECTED
-                    }
-                    return true; // Admin sees everything
-                  }).toList();
-
-                  if (filteredExceptions.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(
-                            isAdmin ? Icons.warning_amber : Icons.lock,
-                            color: isAdmin ? Colors.orange : Colors.grey,
-                            size: 40,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            isAdmin
-                                ? 'No exceptions available. Create some first.'
-                                : 'No exceptions available for your account level.\nPriority exceptions are restricted to Administrators.',
-                            style: TextStyle(
-                              color: isAdmin
-                                  ? Colors.orange
-                                  : Colors.grey.shade600,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return MultiSelectDialogField<ExceptionalStudents>(
-                    items: filteredExceptions
-                        .map((e) => MultiSelectItem<ExceptionalStudents>(
-                            e,
-                            isAdmin && e.priorityFlag == 1
-                                ? '🔴 ${e.exceptionName} (Priority)'
-                                : '${e.exceptionName}'))
-                        .toList(),
-                    title: Text(isAdmin
-                        ? "Select Exception(s) - Admin View"
-                        : "Select Exception(s) - Standard View"),
-                    selectedColor: Colors.blue,
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(5),
+                      color:
+                          isAdmin ? Colors.green.shade50 : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.grey.shade400,
-                        width: 1,
+                        color: isAdmin
+                            ? Colors.green.shade300
+                            : Colors.grey.shade300,
                       ),
                     ),
-                    buttonText: Text(
-                      isAdmin
-                          ? "Select Exception(s) (${filteredExceptions.length} available)"
-                          : "Select Exception(s) (${filteredExceptions.length} available)",
-                      style: const TextStyle(fontSize: 16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isAdmin ? Icons.verified : Icons.person,
+                          color: isAdmin ? Colors.green : Colors.grey,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isAdmin
+                              ? '🔑 Administrator Access - All exceptions visible'
+                              : '👤 Standard Access - Priority exceptions hidden',
+                          style: TextStyle(
+                            color: isAdmin
+                                ? Colors.green.shade700
+                                : Colors.grey.shade700,
+                            fontSize: 14,
+                            fontWeight:
+                                isAdmin ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ],
                     ),
-                    onConfirm: (values) {
-                      setState(() {
-                        _selectedExceptions =
-                            List<ExceptionalStudents>.from(values);
-                      });
-                    },
-                    initialValue: _selectedExceptions,
                   );
                 },
               ),
-            ],
-            const Center(
-              child: Text('Student Class',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildDropdownField('Class (required)', _selectedClass, _classes,
-                (value) {
-              setState(() {
-                _selectedClass = value;
-              });
-            }),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            // --- New: Term Selection Section ---
-            const Center(
-              child: Text('Select Terms (optional)',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildTermSelection(),
-            const SizedBox(height: 20),
-
-            const Center(
-              child: Text('Student Details',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-
-            _buildTextField('Name (required)', _nameController),
-            _buildTextField('Surname (required)', _surnameController),
-
-            _buildDropdownField(
-                'Gender (required)', _selectedGender, ['Male', 'Female'],
-                (value) {
-              setState(() {
-                _selectedGender = value;
-              });
-            }),
-            _buildDateField('Date of Birth (required)', _selectedDateOfBirth,
-                (date) {
-              setState(() {
-                _selectedDateOfBirth = date;
-              });
-            }),
-            _buildTextFieldd('Nationality', _nationalityController),
-            _buildTextFieldd('District', _districtController),
-            _buildTextFieldd('National ID Number', _nationalIdNumberController),
-            // _buildTextField(
-            //     'Student Registration Number', _studentIdNumberController),
-            TextFormField(
-              controller: _studentIdNumberController,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Student Registration Number (required)',
-                filled: true,
-                fillColor: const Color.fromARGB(255, 194, 191, 191)
-                    .withOpacity(0.3), // Transparent background
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none, // No border
+              // ✅ Host/Client indicator
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: isHost ? Colors.green.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color:
+                        isHost ? Colors.green.shade300 : Colors.orange.shade300,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isHost ? Icons.check_circle : Icons.info_outline,
+                      color: isHost ? Colors.green : Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        isHost
+                            ? '🔑 Host Mode - Student will be saved locally'
+                            : 'ℹ️ Client Mode - Student will be sent to host',
+                        style: TextStyle(
+                          color: isHost
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter Student Registration Number';
-                }
-                return null;
-              },
-            ),
-            _buildTextField(
-                'Physical Address  (required)', _physicalAddressController),
-            // Guardian  Section
-            const SizedBox(height: 20),
-            const Center(
-              child: Text('Parent Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildTextField('Parent Name (required)', _parentNameController),
-            _buildTextField('Parent Phone Number (required)', _phoneController,
-                inputType: TextInputType.phone),
+              const SizedBox(height: 20),
 
-            // New Fields Section
-            const SizedBox(height: 20),
-            const Center(
-              child: Text('Religious Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildTextFieldd('Religion', _religionController),
-            _buildTextFieldd('Denomination', _denominationController),
+              CheckboxListTile(
+                title: const Text("Is Newcomer?"),
+                value: _isNewComer ?? false,
+                onChanged: (value) {
+                  setState(() {
+                    _isNewComer = value;
+                    if (value == true) {
+                      Terms? currentTerm;
 
-            const SizedBox(height: 20),
-            const Center(
-              child: Text('Enrollment Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildTextFieldd('Former School', _formerSchoolController),
-            _buildTextFieldd('Former School Results',
-                _previousSchoolPerformanceResultsController),
+                      final termsBox = Hive.box<Terms>('terms');
+                      final terms = termsBox.values.where((term) =>
+                          term.termId == globalTermId &&
+                          !(term.isDeleted ?? false));
+                      if (terms.isNotEmpty) {
+                        currentTerm = terms.first;
+                      }
 
-            // Emergency Contact Section
-            const SizedBox(height: 20),
-            const Center(
-              child: Text('Emergency Contact',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildTextFieldd(
-                'Emergency Contact Name', _emergencyContactNameController),
-            _buildTextFieldd(
-                'Emergency Contact Number', _emergencyContactNumberController),
-            // health Contact Section
-            const SizedBox(height: 20),
-            const Center(
-              child: Text('Health Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            _buildDropdownField('Select Option (Required)', _selectedValue,
-                ['No Ailment', ' Has Ailment'], (value) {}),
+                      final now = DateTime.now();
+                      final termEnd = currentTerm?.endDate;
+                      final DateTime defaultUntilDate =
+                          (termEnd != null && termEnd.isAfter(now))
+                              ? termEnd
+                              : now.add(const Duration(days: 30));
 
-            _buildTextFieldd('Illness Information', _illnessInfoController),
-            const SizedBox(height: 20),
-
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _validateAndSubmit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 227, 233, 241),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                      setState(() {
+                        _isNewComerFrom = now;
+                        _isNewComerUntil = defaultUntilDate;
+                      });
+                    } else {
+                      setState(() {
+                        _isNewComerFrom = null;
+                        _isNewComerUntil = null;
+                      });
+                    }
+                  });
+                },
               ),
-              child: const Text(
-                'Add Student',
-                style: TextStyle(fontSize: 18),
+
+              if (_isNewComer == true) ...[
+                _buildDateField('Newcomer From', _isNewComerFrom, (date) {
+                  setState(() {
+                    _isNewComerFrom = date;
+                  });
+                }),
+                _buildDateField('Newcomer Until', _isNewComerUntil, (date) {
+                  if (date != null && date.isAfter(DateTime.now())) {
+                    setState(() {
+                      _isNewComerUntil = date;
+                    });
+                  } else {
+                    _showDialog('Newcomer Until must be in the future');
+                  }
+                }),
+              ],
+
+              CheckboxListTile(
+                title: const Text("Is Exceptional?"),
+                value: _isExceptional ?? false,
+                onChanged: (value) {
+                  setState(() {
+                    _isExceptional = value;
+                    if (value == false) {
+                      _selectedExceptions = [];
+                    }
+                  });
+                },
               ),
-            ),
-          ],
+
+              if (_isExceptional == true) ...[
+                const Center(
+                    child: Text('Exceptional Info',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold))),
+                FutureBuilder<bool>(
+                  future: _isAdminUser(),
+                  builder: (context, snapshot) {
+                    final isAdmin = snapshot.data ?? false;
+
+                    // ✅ Filter exceptions based on admin status and deletion
+                    final filteredExceptions = _allExceptions.where((e) {
+                      // ✅ Skip deleted exceptions
+                      if (e.isDeleted ?? false) return false;
+
+                      // If NOT admin, EXCLUDE priority exceptions (priorityFlag == 1)
+                      if (!isAdmin) {
+                        return e.priorityFlag != 1;
+                      }
+                      return true;
+                    }).toList();
+
+                    if (filteredExceptions.isEmpty) {
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              isAdmin ? Icons.warning_amber : Icons.lock,
+                              color: isAdmin ? Colors.orange : Colors.grey,
+                              size: 40,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isAdmin
+                                  ? 'No exceptions available. Create some first.'
+                                  : 'No exceptions available for your account level.\nPriority exceptions are restricted to Administrators.',
+                              style: TextStyle(
+                                color: isAdmin
+                                    ? Colors.orange
+                                    : Colors.grey.shade600,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return MultiSelectDialogField<ExceptionalStudents>(
+                      items: filteredExceptions
+                          .map((e) => MultiSelectItem<ExceptionalStudents>(
+                              e,
+                              isAdmin && e.priorityFlag == 1
+                                  ? '🔴 ${e.exceptionName} (Priority)'
+                                  : '${e.exceptionName}'))
+                          .toList(),
+                      title: Text(isAdmin
+                          ? "Select Exception(s) - Admin View"
+                          : "Select Exception(s) - Standard View"),
+                      selectedColor: Colors.blue,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: Colors.grey.shade400,
+                          width: 1,
+                        ),
+                      ),
+                      buttonText: Text(
+                        isAdmin
+                            ? "Select Exception(s) (${filteredExceptions.length} available)"
+                            : "Select Exception(s) (${filteredExceptions.length} available)",
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      onConfirm: (values) {
+                        setState(() {
+                          _selectedExceptions =
+                              List<ExceptionalStudents>.from(values);
+                        });
+                      },
+                      initialValue: _selectedExceptions,
+                    );
+                  },
+                ),
+              ],
+
+              const Center(
+                child: Text('Student Class',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildDropdownField('Class (required)', _selectedClass, _classes,
+                  (value) {
+                setState(() {
+                  _selectedClass = value;
+                });
+              }),
+              const SizedBox(height: 20),
+
+              const Center(
+                child: Text('Select Terms (optional)',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTermSelection(),
+              const SizedBox(height: 20),
+
+              const Center(
+                child: Text('Student Details',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+
+              _buildTextField('Name (required)', _nameController),
+              _buildTextField('Surname (required)', _surnameController),
+
+              _buildDropdownField(
+                  'Gender (required)', _selectedGender, ['Male', 'Female'],
+                  (value) {
+                setState(() {
+                  _selectedGender = value;
+                });
+              }),
+              _buildDateField('Date of Birth (required)', _selectedDateOfBirth,
+                  (date) {
+                setState(() {
+                  _selectedDateOfBirth = date;
+                });
+              }),
+              _buildTextFieldd('Nationality', _nationalityController),
+              _buildTextFieldd('District', _districtController),
+              _buildTextFieldd(
+                  'National ID Number', _nationalIdNumberController),
+              TextFormField(
+                controller: _studentIdNumberController,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: 'Student Registration Number (required)',
+                  filled: true,
+                  fillColor:
+                      const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter Student Registration Number';
+                  }
+                  return null;
+                },
+              ),
+              _buildTextField(
+                  'Physical Address  (required)', _physicalAddressController),
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Parent Information',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTextField('Parent Name (required)', _parentNameController),
+              _buildTextField(
+                  'Parent Phone Number (required)', _phoneController,
+                  inputType: TextInputType.phone),
+
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Religious Information',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTextFieldd('Religion', _religionController),
+              _buildTextFieldd('Denomination', _denominationController),
+
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Enrollment Information',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTextFieldd('Former School', _formerSchoolController),
+              _buildTextFieldd('Former School Results',
+                  _previousSchoolPerformanceResultsController),
+
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Emergency Contact',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildTextFieldd(
+                  'Emergency Contact Name', _emergencyContactNameController),
+              _buildTextFieldd('Emergency Contact Number',
+                  _emergencyContactNumberController),
+              const SizedBox(height: 20),
+              const Center(
+                child: Text('Health Information',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildDropdownField('Select Option (Required)', _selectedValue,
+                  ['No Ailment', ' Has Ailment'], (value) {}),
+
+              _buildTextFieldd('Illness Information', _illnessInfoController),
+              const SizedBox(height: 20),
+
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _validateAndSubmit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color.fromARGB(255, 227, 233, 241),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'Add Student',
+                  style: TextStyle(fontSize: 18),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildTermSelection() {
-    return _availableTerms.isEmpty
+    // ✅ Only show active (non-deleted) terms
+    final activeTerms =
+        _availableTerms.where((t) => !(t.isDeleted ?? false)).toList();
+
+    return activeTerms.isEmpty
         ? const Text('No terms available')
         : Column(
-            children: _availableTerms.map((term) {
+            children: activeTerms.map((term) {
               final isExpired = term.endDate != null &&
                   term.endDate!.isBefore(DateTime.now());
 
@@ -723,18 +816,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: const Color.fromARGB(255, 194, 191, 191)
-              .withOpacity(0.3), // Transparent background
+          fillColor: const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none, // No border
+            borderSide: BorderSide.none,
           ),
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {
-            return 'Please enter $label'; // Form validation
+            return 'Please enter $label';
           }
-
           return null;
         },
       ),
@@ -752,11 +843,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: const Color.fromARGB(255, 194, 191, 191)
-              .withOpacity(0.3), // Transparent background
+          fillColor: const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none, // No border
+            borderSide: BorderSide.none,
           ),
         ),
       ),
@@ -773,11 +863,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: const Color.fromARGB(255, 194, 191, 191)
-              .withOpacity(0.3), // Transparent background
+          fillColor: const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none, // No border
+            borderSide: BorderSide.none,
           ),
         ),
       ),
@@ -793,11 +882,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: const Color.fromARGB(255, 194, 191, 191)
-              .withOpacity(0.3), // Transparent background
+          fillColor: const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide.none, // No border
+            borderSide: BorderSide.none,
           ),
         ),
         items: items.map((item) {
@@ -837,11 +925,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           decoration: InputDecoration(
             labelText: label,
             filled: true,
-            fillColor: const Color.fromARGB(255, 194, 191, 191)
-                .withOpacity(0.3), // Transparent background
+            fillColor:
+                const Color.fromARGB(255, 194, 191, 191).withOpacity(0.3),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none, // No border
+              borderSide: BorderSide.none,
             ),
           ),
           child: Text(
@@ -857,16 +945,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   bool _isValidPhoneNumber(String value) {
-    // Implement your phone number validation logic here
     final phoneRegExp = RegExp(r'^[0-9]{10,14}$');
     return phoneRegExp.hasMatch(value);
   }
 
   Future<int> getNextId() async {
     final box = await Hive.openBox<Student>('students');
-    if (box.isEmpty) return 1; // Start with ID 1 if no records exist
+    // ✅ Only count active (non-deleted) students
+    final activeStudents =
+        box.values.where((s) => !(s.isDeleted ?? false)).toList();
+    if (activeStudents.isEmpty) return 1;
 
-    int currentMaxId = box.values
+    int currentMaxId = activeStudents
         .map((e) => e.id ?? 0)
         .reduce((curr, next) => curr > next ? curr : next);
     return currentMaxId + 1;
@@ -878,11 +968,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final surname = _surnameController.text.toLowerCase();
     final className = _selectedClass?.toLowerCase() ?? '';
     final box = await Hive.openBox<Student>('students');
-    // Check if a student with the same details already exists
-    final existingStudents = box.values.any((student) =>
-        student.name.toLowerCase() == name &&
-        student.surname.toLowerCase() == surname &&
-        student.class_.toLowerCase() == className);
+    // ✅ Only check active (non-deleted) students
+    final existingStudents = box.values
+        .where((s) => !(s.isDeleted ?? false))
+        .any((student) =>
+            student.name.toLowerCase() == name &&
+            student.surname.toLowerCase() == surname &&
+            student.class_.toLowerCase() == className);
 
     if (existingStudents) {
       debugPrint(
@@ -905,7 +997,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     bool proceed = await showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Missing Registration Number'),
@@ -916,7 +1008,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             TextButton(
               onPressed: () {
                 debugPrint("User selected: No");
-                Navigator.of(context).pop(false); // Return "false"
+                Navigator.of(context).pop(false);
               },
               child: const Text(
                 'No',
@@ -926,7 +1018,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             TextButton(
               onPressed: () {
                 debugPrint("User selected: Yes");
-                Navigator.of(context).pop(true); // Return "true"
+                Navigator.of(context).pop(true);
               },
               child: const Text(
                 'Yes',
@@ -953,7 +1045,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     bool proceed = await showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('SAME USER INFOMATION WAS FOUND'),
@@ -964,7 +1056,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             TextButton(
               onPressed: () {
                 debugPrint("User selected: No");
-                Navigator.of(context).pop(false); // Return "false"
+                Navigator.of(context).pop(false);
               },
               child: const Text(
                 'No',
@@ -974,7 +1066,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             TextButton(
               onPressed: () {
                 debugPrint("User selected: Yes");
-                Navigator.of(context).pop(true); // Return "true"
+                Navigator.of(context).pop(true);
               },
               child: const Text(
                 'Yes',
@@ -1044,22 +1136,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         if (_role == DeviceRole.host) {
           final box = await Hive.openBox<Student>('students');
 
-          // Check if a student with the same details already exists
-          final existingStudents = box.values.where((student) =>
-              student.name.toLowerCase() == name &&
-              student.surname.toLowerCase() == surname &&
-              student.class_.toLowerCase() == className &&
-              student.gender.toLowerCase() == gender);
+          // ✅ Only check active (non-deleted) students
+          final existingStudents = box.values
+              .where((s) => !(s.isDeleted ?? false))
+              .where((student) =>
+                  student.name.toLowerCase() == name &&
+                  student.surname.toLowerCase() == surname &&
+                  student.class_.toLowerCase() == className &&
+                  student.gender.toLowerCase() == gender);
 
           // Check for student ID duplication
-          final duplicateId = box.values.any((student) =>
-              student.studentIdNumber?.toLowerCase() == studentIdNumber);
+          final duplicateId = box.values
+              .where((s) => !(s.isDeleted ?? false))
+              .any((student) =>
+                  student.studentIdNumber?.toLowerCase() == studentIdNumber);
 
-          final duplicateDetails = box.values.any((student) =>
-              student.name.toLowerCase() == name &&
-              student.surname.toLowerCase() == surname &&
-              student.class_.toLowerCase() == className &&
-              student.gender.toLowerCase() == gender);
+          final duplicateDetails = box.values
+              .where((s) => !(s.isDeleted ?? false))
+              .any((student) =>
+                  student.name.toLowerCase() == name &&
+                  student.surname.toLowerCase() == surname &&
+                  student.class_.toLowerCase() == className &&
+                  student.gender.toLowerCase() == gender);
 
           if (_physicalAddressController.text.isEmpty) {
             _showDialog('Physical Address is Required');
@@ -1091,38 +1189,36 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
         int newId = await getNextId();
 
-        List<String> modifiedFields = [];
-        modifiedFields.add('id');
-        modifiedFields.add('name');
-        modifiedFields.add('surname');
-        modifiedFields.add('regNumber');
-        modifiedFields.add('class_');
-        modifiedFields.add('gender');
-
-        modifiedFields.add('age');
-        modifiedFields.add('phoneNumber');
-        modifiedFields.add('paymentStatus');
-        modifiedFields.add('termId');
-        modifiedFields.add('physicalAddress');
-        modifiedFields.add('formerSchool');
-
-        modifiedFields.add('religion');
-        modifiedFields.add('denomination');
-        modifiedFields.add('studentIdNumber');
-        modifiedFields.add('nationalIdNumber');
-        modifiedFields.add('nationality');
-        modifiedFields.add('district');
-
-        modifiedFields.add('previousSchoolPerformanceResults');
-        modifiedFields.add('emergencyContactName');
-        modifiedFields.add('emergencyContactNumber');
-        modifiedFields.add('healthStauts');
-        modifiedFields.add('healthDetailedInformation');
-        modifiedFields.add('terms');
-        modifiedFields.add('isNewComer');
-        modifiedFields.add('isNewComerFrom');
-        modifiedFields.add('isNewComerUntil');
-        modifiedFields.add('exceptions');
+        List<String> modifiedFields = [
+          'id',
+          'name',
+          'surname',
+          'regNumber',
+          'class_',
+          'gender',
+          'age',
+          'phoneNumber',
+          'paymentStatus',
+          'termId',
+          'physicalAddress',
+          'formerSchool',
+          'religion',
+          'denomination',
+          'studentIdNumber',
+          'nationalIdNumber',
+          'nationality',
+          'district',
+          'previousSchoolPerformanceResults',
+          'emergencyContactName',
+          'emergencyContactNumber',
+          'healthStauts',
+          'healthDetailedInformation',
+          'terms',
+          'isNewComer',
+          'isNewComerFrom',
+          'isNewComerUntil',
+          'exceptions'
+        ];
 
         List<ExceptionalStudents>? exceptions =
             _selectedExceptions.isNotEmpty ? _selectedExceptions : null;
@@ -1131,12 +1227,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final List<String> termsToSave =
             _selectedTerms.isNotEmpty ? _selectedTerms : [globalTermId!];
 
-        // Save a student record for each term.
+        // ✅ Create new student with deletion fields
         final newStudent = Student(
           exceptions: exceptions,
-          id: _role == DeviceRole.host
-              ? newId
-              : null, // ⭐ FIX: Client gets NULL id
+          id: _role == DeviceRole.host ? newId : null,
           name: name,
           surname: surname,
           regNumber: _regNumberController.text,
@@ -1146,9 +1240,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           phoneNumber: _phoneController.text,
           paymentStatus: _parentNameController.text,
           termId: globalTermId,
-          syncStatus: _role == DeviceRole.host
-              ? true
-              : false, // ⭐ FIX: Host = synced, Client = pending
+          syncStatus: _role == DeviceRole.host ? true : false,
           lastModified: DateTime.now(),
           operationType: 'create',
           physicalAddress: _physicalAddressController.text.isEmpty
@@ -1194,6 +1286,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           isNewComer: _isNewComer ?? false,
           isNewComerFrom: _isNewComerFrom,
           isNewComerUntil: _isNewComerUntil,
+          // ✅ Deletion fields - new student is not deleted
+          isDeleted: false,
+          deletedSyncStatus: true,
         );
 
         // ⭐ FIX: HOST saves locally, CLIENT only syncs to host
@@ -1223,7 +1318,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               debugPrint('⚠️ Host accepted request but returned no data');
             }
           } catch (e) {
-            // ⭐ CLIENT: On failure, show error - DO NOT save locally
             _showDialog('❌ Failed to sync student.\n'
                 'Host may be unreachable or offline.\n'
                 'Please check your network connection and try again.\n\n'

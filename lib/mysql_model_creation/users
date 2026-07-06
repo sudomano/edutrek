@@ -38,3 +38,15 @@ CREATE TABLE `user` (
   KEY `idx_role` (`role`),
   KEY `idx_syncStatus` (`syncStatus`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ✅ Add deletion columns to user table
+ALTER TABLE `user` 
+ADD COLUMN `is_deleted` TINYINT(1) DEFAULT 0,
+ADD COLUMN `deleted_at` DATETIME DEFAULT NULL,
+ADD COLUMN `deleted_by` VARCHAR(100) DEFAULT NULL,
+ADD COLUMN `delete_reason` VARCHAR(255) DEFAULT NULL,
+ADD COLUMN `deleted_sync_status` TINYINT(1) DEFAULT 0;
+
+-- ✅ Add indexes for better performance
+ALTER TABLE `user` 
+ADD INDEX `idx_is_deleted` (`is_deleted`),
+ADD INDEX `idx_deleted_sync_status` (`deleted_sync_status`);
