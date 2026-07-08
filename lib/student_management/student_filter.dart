@@ -138,9 +138,11 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
   Future<List<Student>> _fetchStudentsFromHive() async {
     final box = await Hive.openBox<Student>('students');
-    final students = box.values.where((s) => s.termId != null).toList();
+    // ✅ FILTER OUT DELETED STUDENTS
+    final students = box.values
+        .where((s) => s.termId != null && !(s.isDeleted ?? false))
+        .toList();
     students.sort((a, b) => a.surname.compareTo(b.surname));
-
     return students;
   }
 
@@ -171,8 +173,10 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         final jsonString = await response.transform(utf8.decoder).join();
         final jsonList = jsonDecode(jsonString) as List;
 
+        // After receiving data from server, filter out deleted
         _cachedServerStudents = jsonList
             .map((json) => studentsFromJson(Map<String, dynamic>.from(json)))
+            .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER AFTER FETCH
             .toList();
 
         return _cachedServerStudents!;
@@ -220,8 +224,11 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         final studentBox = await Hive.openBox<Student>('students');
         final termBox = await Hive.openBox<Terms>('terms');
 
-        allStudents = studentBox.values.toList();
-        allTerms = termBox.values.toList();
+        // ✅ FILTER OUT DELETED STUDENTS
+        allStudents =
+            studentBox.values.where((s) => !(s.isDeleted ?? false)).toList();
+        allTerms =
+            termBox.values.where((t) => !(t.isDeleted ?? false)).toList();
       } else {
         if (_isHostIpMissing) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -336,9 +343,11 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
 
       // Apply term filter first (this is the most restrictive)
       List<Student> filtered = allStudents
-          .where((s) => s.terms != null && s.terms!.contains(_selectedTermId))
+          .where((s) =>
+              s.terms != null &&
+              s.terms!.contains(_selectedTermId) &&
+              !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
           .toList();
-
       // Apply other filters only if there are results (early exit optimization)
       if (filtered.isEmpty) {
         setState(() {
@@ -598,28 +607,26 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     }
   }
 
-// Helper method to get all students for current term
   // Helper method to get all students for current term
   List<Student> _getAllStudentsForCurrentTerm() {
-    // If we have filtered students, use them
     if (_filteredStudents.isNotEmpty) {
       return _filteredStudents;
     }
 
-    // If we have cached filtered students, use them
     if (_cachedFilteredStudents != null &&
         _cachedFilteredStudents!.isNotEmpty) {
       return _cachedFilteredStudents!;
     }
 
-    // If we have cached server students, return a subset for the current term
     if (_cachedServerStudents != null && _cachedServerStudents!.isNotEmpty) {
       return _cachedServerStudents!
-          .where((s) => s.terms != null && s.terms!.contains(_selectedTermId))
+          .where((s) =>
+              s.terms != null &&
+              s.terms!.contains(_selectedTermId) &&
+              !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
           .toList();
     }
 
-    // Return empty list
     return [];
   }
 
@@ -1309,7 +1316,9 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
     try {
       if (_role == DeviceRole.host) {
         final studentBox = await Hive.openBox<Student>('students');
-        final allStudents = studentBox.values.toList();
+        final allStudents = studentBox.values
+            .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+            .toList();
 
         final termStudents = allStudents
             .where((s) => s.terms?.contains(_selectedTermId) ?? false)
@@ -1322,7 +1331,9 @@ class _ViewStudentsScreenStatefilter extends State<ViewStudentsScreenfilter> {
         _classes.sort();
       } else {
         // Client mode
-        final serverStudents = _cachedServerStudents ?? [];
+        final serverStudents = (_cachedServerStudents ?? [])
+            .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+            .toList();
 
         final termStudents = serverStudents
             .where((s) => s.terms?.contains(_selectedTermId) ?? false)

@@ -90,6 +90,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   final Set<PaymentLog> _selectedReceiptsForAction = {};
   bool _isDeleting = false;
   bool _isUpdating = false;
+  bool _showDeleted = false; // ✅ Toggle to show deleted receipts
 
   Future<void> _loadPreferences() async {
     _prefs = await SharedPreferences.getInstance();
@@ -129,8 +130,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     }
   }
 
-  /// Print to Windows printer
-
   @override
   void initState() {
     super.initState();
@@ -138,8 +137,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     _loadSavedPrinter();
     _initData();
     if (_isWindows) {
-      _loadWindowsPrinters(); // Load printers first
-      _loadPreferences(); // Then load saved printer preference
+      _loadWindowsPrinters();
+      _loadPreferences();
     }
     WidgetsBinding.instance.addObserver(this);
 
@@ -160,22 +159,18 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       bluetoothHelper.verifyConnection();
     });
 
-    // Listen to Bluetooth state
     bluetoothHelper.bluetoothPrint.state.listen((state) {
       bluetoothState = state;
-
       setState(() {
         _connecting = state == 1;
         _printing = state == 4;
       });
     });
 
-    // Listen for scanning
     bluetoothHelper.bluetoothPrint.isScanning.listen((scanning) {
       setState(() => _scanning = scanning);
     });
 
-    // Listen for discovered devices
     bluetoothHelper.bluetoothPrint.scanResults.listen((results) {
       setState(() => _scanResults = results);
     });
@@ -235,7 +230,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   }
 
   // Connect Windows printer
-// Connect Windows printer
   Future<void> _connectWindowsPrinter() async {
     if (_selectedWindowsPrinter == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -263,7 +257,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           _isTestingConnection = false;
         });
 
-        // ✅ SAVE THE LAST USED PRINTER
         await _prefs?.setString(
             'last_windows_printer', _selectedWindowsPrinter!);
         setState(() {
@@ -292,12 +285,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       AutomatedSmsHelpers.resumeDraftSequence();
-      // 🆕 Reconnect Windows printer when app resumes
       if (_isWindows &&
           _lastUsedPrinter != null &&
           !_connected &&
           !_isTestingConnection) {
-        _loadWindowsPrinters(); // Reload printers and reconnect
+        _loadWindowsPrinters();
       }
     }
   }
@@ -307,7 +299,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     _role = await getDeviceRole();
 
     if (_role == DeviceRole.host) {
-      print(DeviceRole.host); // <-- semicolon added
+      print(DeviceRole.host);
       return true;
     } else {
       return false;
@@ -321,8 +313,9 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       final prefs = await SharedPreferences.getInstance();
       final hostIp = prefs.getString('host_ip') ?? "192.168.8.2";
 
+      // ✅ Include deleted parameter for sync purposes
       final uri = Uri.parse(
-          "http://$hostIp:8080/api/receipt_logs?search=$_searchQuery");
+          "http://$hostIp:8080/api/receipt_logs?search=$_searchQuery&include_deleted=true");
 
       final res = await http.get(uri);
 
@@ -351,7 +344,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
     if (savedAddress == null) return;
 
-    // auto reconnect attempt
     _attemptAutoReconnect(savedAddress);
   }
 
@@ -366,7 +358,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         timeout: const Duration(seconds: 4),
       );
 
-      // WAIT for stream to update → get latest list
       final devices = await bluetoothHelper.bluetoothPrint.scanResults
           .timeout(const Duration(seconds: 5))
           .firstWhere((list) => list.isNotEmpty, orElse: () => []);
@@ -398,11 +389,17 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     }
   }
 
+  // ✅ Get filtered logs with deletion filter
   List<PaymentLog> get _filteredLogs {
     final hostLogs = _logBox.values.toList();
     final remoteLogs = List<PaymentLog>.from(_remoteLogs);
 
     List<PaymentLog> logs = hostLogs.isNotEmpty ? hostLogs : remoteLogs;
+
+    // ✅ Filter out deleted logs if not showing deleted
+    if (!_showDeleted) {
+      logs = logs.where((log) => !(log.isDeleted ?? false)).toList();
+    }
 
     // SORT (avoid null crash)
     logs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
@@ -450,7 +447,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     if (filterFromDate != null) {
       logs = logs.where((log) {
         final dt = DateTime.tryParse(log.dateTime);
-        if (dt == null) return false; // ignore bad dates
+        if (dt == null) return false;
         return dt.isAfter(filterFromDate!);
       }).toList();
     }
@@ -474,14 +471,27 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Simple single delete confirmation
+  // ✅ SOFT DELETE single receipt
   void _confirmDelete(PaymentLog log) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Delete Receipt"),
-        content: Text(
-            "Are you sure you want to delete receipt #${log.receiptNumber} for ${log.studentName}?"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Soft delete receipt #${log.receiptNumber} for ${log.studentName}?",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "This will mark it as deleted and sync to host.",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -489,8 +499,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
-              await _executeDelete(log);
+              Navigator.pop(context);
+              await _executeSoftDelete(log);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text("Delete"),
@@ -500,21 +510,42 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Execute single delete
-  Future<void> _executeDelete(PaymentLog log) async {
-    try {
-      await log.delete();
+  // ✅ Execute soft delete
+  Future<void> _executeSoftDelete(PaymentLog log) async {
+    setState(() => _isDeleting = true);
 
-      // Show success message
+    try {
+      // ✅ Mark as soft deleted with sync flags
+      log.markDeleted(
+        deletedBy: 'User: ${log.studentName}',
+        reason: 'Soft deleted from ReceiptHistoryPage',
+      );
+      log.syncStatus = false;
+      log.deletedSyncStatus = false;
+      log.operationType = 'delete';
+      log.lastModified = DateTime.now();
+      log.modifiedFields = [
+        'isDeleted',
+        'deletedAt',
+        'deletedBy',
+        'deleteReason',
+        'deletedSyncStatus',
+        'syncStatus',
+        'operationType',
+        'lastModified'
+      ];
+
+      await log.save();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("✅ Receipt #${log.receiptNumber} deleted successfully"),
+          content:
+              Text("✅ Receipt #${log.receiptNumber} soft-deleted successfully"),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
       );
 
-      // Refresh the list
       await _refreshData();
       setState(() {});
     } catch (e) {
@@ -524,6 +555,78 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      setState(() => _isDeleting = false);
+    }
+  }
+
+  // ✅ Restore soft-deleted receipt
+  Future<void> _restoreReceipt(PaymentLog log) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Confirm Restore"),
+        content: Text(
+          'Restore receipt #${log.receiptNumber} for ${log.studentName}?\n\n'
+          'This will mark it as active again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(_, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.green),
+            child: const Text("Restore"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isDeleting = true);
+
+    try {
+      log.restoreDeleted();
+      log.syncStatus = false;
+      log.deletedSyncStatus = false;
+      log.operationType = 'update';
+      log.lastModified = DateTime.now();
+      log.modifiedFields = [
+        'isDeleted',
+        'deletedAt',
+        'deletedBy',
+        'deleteReason',
+        'deletedSyncStatus',
+        'syncStatus',
+        'operationType',
+        'lastModified'
+      ];
+
+      await log.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text("✅ Receipt #${log.receiptNumber} restored successfully"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      await _refreshData();
+      setState(() {});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Error restoring receipt: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isDeleting = false);
     }
   }
 
@@ -532,7 +635,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     if (receipts.isEmpty) return;
 
     try {
-      // Show progress
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -548,19 +650,15 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         ),
       );
 
-      // Build a combined receipt text
       String combinedText = await _buildCombinedReceiptText(receipts);
 
-      // Close progress dialog
       Navigator.pop(context);
 
-      // Show sharing options
       await Share.share(
         combinedText,
         subject: 'Receipts #${receipts.map((r) => r.receiptNumber).join(', ')}',
       );
 
-      // Clear selections after sharing
       setState(() {
         _selectedReceiptsForAction.clear();
         _isMultiSelectMode = false;
@@ -575,7 +673,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         ),
       );
     } catch (e) {
-      Navigator.pop(context); // Close progress dialog if open
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("❌ Error sharing receipts: $e"),
@@ -588,8 +686,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   /// Build combined receipt text for sharing
   Future<String> _buildCombinedReceiptText(List<PaymentLog> receipts) async {
     final StringBuffer buffer = StringBuffer();
-
-    // Get school name
     final schoolName = await _getSchoolName();
 
     buffer.writeln('=' * 50);
@@ -614,7 +710,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       buffer.writeln('');
       buffer.writeln('--- Details ---');
 
-      // Add receipt lines
       for (final line in log.receiptLines) {
         final content = line['content']?.toString() ?? '';
         if (content.trim().isNotEmpty) {
@@ -622,7 +717,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         }
       }
 
-      // Add total amount
       final totalAmount = _extractTotalAmountFromReceipt(log);
       if (totalAmount.isNotEmpty) {
         buffer.writeln('');
@@ -660,27 +754,22 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         ),
       );
 
-      // Generate PDF
       final pdfBytes = await _generateReceiptsPDF(receipts);
 
-      // Save to temporary file
       final directory = await getTemporaryDirectory();
       final filePath =
           '${directory.path}/receipts_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final file = File(filePath);
       await file.writeAsBytes(pdfBytes);
 
-      // Close progress dialog
       Navigator.pop(context);
 
-      // Share the PDF
       await Share.shareXFiles(
         [XFile(filePath)],
         text: 'Receipts #${receipts.map((r) => r.receiptNumber).join(', ')}',
         subject: 'Receipts PDF',
       );
 
-      // Clean up temp file after sharing
       try {
         await file.delete();
       } catch (_) {}
@@ -788,13 +877,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
     return pdf.save();
   }
+
   // ----------------------------
   // UI BUILD
   // ----------------------------
 
-  // ----------------------------
-// POP-UP RECEIPT PREVIEW
-// ----------------------------
   void _showReceiptPreview(PaymentLog log) {
     showDialog(
       context: context,
@@ -809,7 +896,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -827,13 +913,9 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                   ],
                 ),
                 const Divider(),
-
-                // Student info
                 Text("${log.studentName} • ${log.className}"),
                 Text("Date: ${log.dateTime}"),
                 const SizedBox(height: 12),
-
-                // Receipt lines
                 Expanded(
                   child: ListView.builder(
                     itemCount: log.receiptLines.length,
@@ -866,10 +948,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                     },
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
-                // Close button
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text("Close"),
@@ -888,6 +967,19 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       appBar: AppBar(
         title: const Text("Receipt History"),
         actions: [
+          // ✅ Toggle to show deleted receipts
+          IconButton(
+            icon: Icon(
+              _showDeleted ? Icons.visibility : Icons.visibility_off,
+              color: _showDeleted ? Colors.amber : Colors.white,
+            ),
+            onPressed: () {
+              setState(() {
+                _showDeleted = !_showDeleted;
+              });
+            },
+            tooltip: _showDeleted ? 'Hide Deleted' : 'Show Deleted',
+          ),
           IconButton(
             tooltip: 'Reprint Statistics',
             icon: const Icon(Icons.analytics),
@@ -900,12 +992,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               onPressed: () =>
                   _printSelectedReceipts(_filteredLogsWithReprints),
             ),
-          if (_selectedIndexes.isNotEmpty)
-            IconButton(
-              tooltip: 'Print queue',
-              icon: const Icon(Icons.print),
-              onPressed: () => _printSelectedReceipts(_filteredLogs),
-            )
         ],
       ),
       body: SingleChildScrollView(
@@ -915,26 +1001,17 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _buildPrinterPanel(),
-
               const SizedBox(height: 12),
-
-              // Centered Search Bar
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
                 child: _buildSearchBar(),
               ),
-
               const SizedBox(height: 8),
-
-              // Centered Filter Panel
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
                 child: _buildFilterPanel(),
               ),
-
               const SizedBox(height: 12),
-
-              // Receipts in a tall box that can scroll inside main scroll view
               ConstrainedBox(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.65,
@@ -983,7 +1060,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         ),
         onChanged: (value) => setState(() {
           _searchQuery = value;
-          _currentBatchEnd = _batchSize; // ✅ Reset batch when filter changes
+          _currentBatchEnd = _batchSize;
         }),
       ),
     );
@@ -1027,36 +1104,31 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                         .titleMedium!
                         .copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
-
-                // --- TEXT INPUTS ---
                 _buildFilterInput("Student Name", (v) {
                   setState(() {
                     filterStudent = v;
-                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                    _currentBatchEnd = _batchSize;
                   });
                 }),
                 _buildFilterInput("Class Name", (v) {
                   setState(() {
                     filterClass = v;
-                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                    _currentBatchEnd = _batchSize;
                   });
                 }),
                 _buildFilterInput("Receipt Number", (v) {
                   setState(() {
                     filterReceiptNumber = v;
-                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                    _currentBatchEnd = _batchSize;
                   });
                 }),
                 _buildFilterInput("Text inside Receipt Lines", (v) {
                   setState(() {
                     filterLineContent = v;
-                    _currentBatchEnd = _batchSize; // ✅ Reset batch
+                    _currentBatchEnd = _batchSize;
                   });
                 }),
-
                 const SizedBox(height: 10),
-
-                // --- DATE RANGE ---
                 Row(
                   children: [
                     Expanded(
@@ -1075,7 +1147,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                           );
                           if (pick != null) {
                             setState(() => filterFromDate = pick);
-                            _currentBatchEnd = _batchSize; // ✅ Reset batch
+                            _currentBatchEnd = _batchSize;
                           }
                         },
                       ),
@@ -1103,9 +1175,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 14),
-
                 Center(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.refresh),
@@ -1129,9 +1199,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Add this method to find duplicate receipts (reprints)
   List<List<PaymentLog>> findDuplicateReceipts(List<PaymentLog> logs) {
-    // Group receipts by receipt number
     final Map<String, List<PaymentLog>> receiptsByNumber = {};
 
     for (var log in logs) {
@@ -1142,19 +1210,16 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       receiptsByNumber[receiptNum]!.add(log);
     }
 
-    // Filter to only those with more than one occurrence (reprints)
     final duplicates =
         receiptsByNumber.values.where((list) => list.length > 1).toList();
 
     return duplicates;
   }
 
-// Add this to your _ReceiptHistoryPageState class
   bool _showReprintsOnly = false;
   String _reprintFilterStatus =
       "All Receipts"; // "All Receipts", "Reprints Only", "Original Only"
 
-// Add this method to get filtered logs with reprint detection
   List<PaymentLog> get _filteredLogsWithReprints {
     final allFiltered = _filteredLogs;
 
@@ -1162,7 +1227,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       return allFiltered;
     }
 
-    // Find all receipt numbers that have duplicates
     final duplicatesMap = <String, List<PaymentLog>>{};
     for (var log in allFiltered) {
       final receiptNum = log.receiptNumber.toString();
@@ -1175,23 +1239,18 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         .toSet();
 
     if (_reprintFilterStatus == "Reprints Only") {
-      // Show only receipts that are duplicates (but not the first one)
       final result = <PaymentLog>[];
       for (var receiptNum in duplicateReceiptNumbers) {
         final receipts = duplicatesMap[receiptNum]!;
-        // Sort by date/time to identify original vs reprints
         receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-        // Add all except the first one (original)
         result.addAll(receipts.sublist(1));
       }
       return result;
     } else if (_reprintFilterStatus == "Original Only") {
-      // Show only original receipts (first occurrence) that have reprints
       final result = <PaymentLog>[];
       for (var receiptNum in duplicateReceiptNumbers) {
         final receipts = duplicatesMap[receiptNum]!;
         receipts.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-        // Add only the first one (original)
         result.add(receipts.first);
       }
       return result;
@@ -1286,7 +1345,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     setState(() => _isUpdating = true);
 
     try {
-      // Show progress dialog
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -1307,7 +1365,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
       for (var receipt in receipts) {
         try {
-          // Create a copy with updated timestamp to mark as modified
+          // ✅ Preserve deletion status when editing
           final updatedReceipt = PaymentLog(
             receiptNumber: receipt.receiptNumber,
             studentName: receipt.studentName,
@@ -1316,12 +1374,17 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             receiptLines: List<Map<String, dynamic>>.from(receipt.receiptLines),
             parentName: receipt.parentName,
             parentPhone: receipt.parentPhone,
-            isReprint: true, // Mark as reprint when edited
+            isReprint: true,
             originalReceiptNumber: (receipt.originalReceiptNumber?.toString() ??
                 receipt.receiptNumber.toString()),
+            // ✅ Preserve deletion status
+            isDeleted: receipt.isDeleted ?? false,
+            deletedAt: receipt.deletedAt,
+            deletedBy: receipt.deletedBy,
+            deleteReason: receipt.deleteReason,
+            deletedSyncStatus: receipt.deletedSyncStatus ?? false,
           );
 
-          // Delete old and save new
           await receipt.delete();
           await _logBox.add(updatedReceipt);
           successCount++;
@@ -1331,17 +1394,14 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         }
       }
 
-      // Close progress dialog
       Navigator.pop(context);
 
-      // Show result
       _showResultDialog(
         "Edit Complete",
         "✅ Successfully updated: $successCount\n❌ Failed: $failCount",
         Icons.edit,
       );
 
-      // Refresh the list
       setState(() {
         _selectedReceiptsForAction.clear();
         _isMultiSelectMode = false;
@@ -1350,7 +1410,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
       await _refreshData();
     } catch (e) {
-      Navigator.pop(context); // Close progress dialog if open
+      Navigator.pop(context);
       _showErrorDialog("Error updating receipts: $e");
     } finally {
       setState(() => _isUpdating = false);
@@ -1384,6 +1444,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
       for (var receipt in receipts) {
         try {
+          // ✅ Preserve deletion status when marking as reprint
           final updatedReceipt = PaymentLog(
             receiptNumber: receipt.receiptNumber,
             studentName: receipt.studentName,
@@ -1396,6 +1457,12 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             originalReceiptNumber: (receipt.originalReceiptNumber?.toString() ??
                 receipt.receiptNumber.toString()),
             reprintCount: (receipt.reprintCount ?? 0) + 1,
+            // ✅ Preserve deletion status
+            isDeleted: receipt.isDeleted ?? false,
+            deletedAt: receipt.deletedAt,
+            deletedBy: receipt.deletedBy,
+            deleteReason: receipt.deleteReason,
+            deletedSyncStatus: receipt.deletedSyncStatus ?? false,
           );
 
           await receipt.delete();
@@ -1429,15 +1496,15 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     }
   }
 
-// Simplified bulk delete confirmation
+  // ✅ Bulk delete with soft delete
   Future<void> _confirmBulkDelete(List<PaymentLog> receipts) async {
     if (receipts.isEmpty) return;
 
     final bool isSingle = receipts.length == 1;
     final String title = isSingle ? "Delete Receipt" : "Delete Receipts";
     final String content = isSingle
-        ? "Are you sure you want to delete receipt #${receipts.first.receiptNumber}?"
-        : "Are you sure you want to delete ${receipts.length} receipts?";
+        ? "Soft delete receipt #${receipts.first.receiptNumber}?"
+        : "Soft delete ${receipts.length} receipts?";
 
     showDialog(
       context: context,
@@ -1451,8 +1518,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
-              await _executeBulkDelete(receipts);
+              Navigator.pop(context);
+              await _executeBulkSoftDelete(receipts);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text("Delete"),
@@ -1462,8 +1529,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Execute bulk delete
-  Future<void> _executeBulkDelete(List<PaymentLog> receipts) async {
+  // ✅ Execute bulk soft delete
+  Future<void> _executeBulkSoftDelete(List<PaymentLog> receipts) async {
     setState(() => _isDeleting = true);
 
     int successCount = 0;
@@ -1471,7 +1538,25 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
     for (var receipt in receipts) {
       try {
-        await receipt.delete();
+        receipt.markDeleted(
+          deletedBy: 'User: ${receipt.studentName}',
+          reason: 'Bulk soft deleted from ReceiptHistoryPage',
+        );
+        receipt.syncStatus = false;
+        receipt.deletedSyncStatus = false;
+        receipt.operationType = 'delete';
+        receipt.lastModified = DateTime.now();
+        receipt.modifiedFields = [
+          'isDeleted',
+          'deletedAt',
+          'deletedBy',
+          'deleteReason',
+          'deletedSyncStatus',
+          'syncStatus',
+          'operationType',
+          'lastModified'
+        ];
+        await receipt.save();
         successCount++;
       } catch (e) {
         print("Error deleting receipt ${receipt.receiptNumber}: $e");
@@ -1488,11 +1573,10 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
     await _refreshData();
 
-    // Show result
     if (failCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("✅ Successfully deleted $successCount receipt(s)"),
+          content: Text("✅ Successfully soft-deleted $successCount receipt(s)"),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
@@ -1509,7 +1593,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
   }
 
   /// Keep only original receipts, delete all reprints
-  // Simplified keep only originals
   Future<void> _keepOnlyOriginals(List<PaymentLog> receipts) async {
     final allReceipts = _filteredLogs;
     final duplicates = findDuplicateReceipts(allReceipts);
@@ -1549,7 +1632,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              await _executeBulkDelete(reprintsToDelete);
+              await _executeBulkSoftDelete(reprintsToDelete);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.orange),
             child: const Text("Delete Reprints"),
@@ -1631,7 +1714,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Add this UI widget for reprint filter
   Widget _buildReprintFilter() {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -1719,14 +1801,13 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
   }
 
-// Add a method to show reprint statistics
   void _showReprintStatistics() {
     final allReceipts = _filteredLogs;
     final duplicates = findDuplicateReceipts(allReceipts);
 
     int totalReprints = 0;
     for (var group in duplicates) {
-      totalReprints += group.length - 1; // Subtract original
+      totalReprints += group.length - 1;
     }
 
     showDialog(
@@ -1816,14 +1897,16 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
         final host = snapshot.data!;
 
-        // 1. GET SOURCE LIST
         List<PaymentLog> logs =
             host ? _logBox.values.toList() : List.from(_remoteLogs);
 
-        // 2. SORT newest → oldest
+        // ✅ Filter out deleted logs if not showing deleted
+        if (!_showDeleted) {
+          logs = logs.where((log) => !(log.isDeleted ?? false)).toList();
+        }
+
         logs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
 
-        // 3. APPLY FILTERS
         final filtered = logs.where((r) {
           final s = _searchQuery.toLowerCase();
 
@@ -1868,7 +1951,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               matchesDate;
         }).toList();
 
-        // Apply reprint filter
         List<PaymentLog> finalFiltered;
         if (_reprintFilterStatus == "All Receipts") {
           finalFiltered = filtered;
@@ -1907,7 +1989,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           return const Center(child: Text("No receipts found"));
         }
 
-        // Use Flexible and LayoutBuilder to handle height properly
         return LayoutBuilder(
           builder: (context, constraints) {
             return Column(
@@ -1991,6 +2072,35 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                   ),
                 ),
 
+                // Status bar with delete filter info
+                if (_showDeleted)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delete_outline,
+                            size: 16, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Showing ${finalFiltered.where((l) => l.isDeleted == true).length} deleted receipts',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Reprint Filter
                 _buildReprintFilter(),
 
@@ -2042,13 +2152,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
                 const SizedBox(height: 8),
 
-                // Batch size info
                 Text(
                   "Showing ${_currentBatchEnd.clamp(0, finalFiltered.length)} of ${finalFiltered.length} receipts",
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
 
-                // Pagination buttons
                 if (_currentBatchEnd < finalFiltered.length)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2075,7 +2183,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 
                 const SizedBox(height: 8),
 
-                // Receipt List - Use Flexible with ListView
                 Flexible(
                   child: ListView.builder(
                     shrinkWrap: true,
@@ -2086,10 +2193,12 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                       final hasDuplicates = findDuplicateReceipts(finalFiltered)
                           .any((group) => group.any(
                               (g) => g.receiptNumber == log.receiptNumber));
+                      final isDeleted = log.isDeleted ?? false;
 
                       return Card(
                         margin: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
+                        color: isDeleted ? Colors.grey.shade100 : null,
                         child: ListTile(
                           leading: _isMultiSelectMode
                               ? Checkbox(
@@ -2123,12 +2232,32 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      "${log.studentName} • #${log.receiptNumber}",
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          "${log.studentName} • #${log.receiptNumber}",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            decoration: isDeleted
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                            color:
+                                                isDeleted ? Colors.grey : null,
+                                          ),
+                                        ),
+                                        if (isDeleted) ...[
+                                          const SizedBox(width: 8),
+                                          const Chip(
+                                            label: Text('DELETED'),
+                                            backgroundColor: Colors.red,
+                                            labelStyle: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 8,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                    // Show total paid amount
                                     _buildTotalPaidAmount(log),
                                   ],
                                 ),
@@ -2152,60 +2281,105 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                                 ),
                             ],
                           ),
-                          subtitle: Text("${log.className} • ${log.dateTime}"),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "${log.className} • ${log.dateTime}",
+                                style: TextStyle(
+                                  decoration: isDeleted
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                  color: isDeleted ? Colors.grey : null,
+                                ),
+                              ),
+                              if (isDeleted && log.deletedAt != null)
+                                Text(
+                                  'Deleted: ${log.deletedAt!.toLocal()}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                            ],
+                          ),
                           onTap: () {
                             _showReceiptPreview(log);
                           },
                           onLongPress: () {
                             _confirmDelete(log);
                           },
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'edit':
-                                  _editMultipleReceipts([log]);
-                                  break;
-                                case 'reprint':
-                                  _markAsReprints([log]);
-                                  break;
-                                case 'delete':
-                                  _confirmBulkDelete([log]);
-                                  break;
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'edit',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.edit,
-                                        size: 18, color: Colors.blue),
-                                    SizedBox(width: 8),
-                                    Text('Edit Receipt'),
-                                  ],
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isDeleted)
+                                IconButton(
+                                  icon: const Icon(Icons.restore,
+                                      color: Colors.green),
+                                  onPressed: () => _restoreReceipt(log),
+                                  tooltip: 'Restore Receipt',
                                 ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'reprint',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.copy,
-                                        size: 18, color: Colors.green),
-                                    SizedBox(width: 8),
-                                    Text('Mark as Reprint'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.delete,
-                                        size: 18, color: Colors.red),
-                                    SizedBox(width: 8),
-                                    Text('Delete Receipt'),
-                                  ],
-                                ),
+                              PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  switch (value) {
+                                    case 'edit':
+                                      _editMultipleReceipts([log]);
+                                      break;
+                                    case 'reprint':
+                                      _markAsReprints([log]);
+                                      break;
+                                    case 'delete':
+                                      if (isDeleted) {
+                                        _showInfoDialog('Already Deleted',
+                                            'This receipt is already soft-deleted.');
+                                      } else {
+                                        _confirmBulkDelete([log]);
+                                      }
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit,
+                                            size: 18, color: Colors.blue),
+                                        SizedBox(width: 8),
+                                        Text('Edit Receipt'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'reprint',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.copy,
+                                            size: 18, color: Colors.green),
+                                        SizedBox(width: 8),
+                                        Text('Mark as Reprint'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isDeleted ? Icons.info : Icons.delete,
+                                          size: 18,
+                                          color: isDeleted
+                                              ? Colors.grey
+                                              : Colors.red,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(isDeleted
+                                            ? 'Already Deleted'
+                                            : 'Delete Receipt'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -2230,17 +2404,25 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       return const SizedBox.shrink();
     }
 
-    // Check if it's a reprint to show different styling
     final isReprint = (log.reprintCount ?? 0) > 0 || (log.isReprint ?? false);
+    final isDeleted = log.isDeleted ?? false;
 
     return Container(
       margin: const EdgeInsets.only(top: 2),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isReprint ? Colors.orange.shade50 : Colors.green.shade50,
+        color: isDeleted
+            ? Colors.grey.shade200
+            : isReprint
+                ? Colors.orange.shade50
+                : Colors.green.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isReprint ? Colors.orange.shade200 : Colors.green.shade200,
+          color: isDeleted
+              ? Colors.grey.shade400
+              : isReprint
+                  ? Colors.orange.shade200
+                  : Colors.green.shade200,
           width: 1,
         ),
       ),
@@ -2250,7 +2432,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
           Icon(
             Icons.attach_money,
             size: 14,
-            color: isReprint ? Colors.orange : Colors.green,
+            color: isDeleted
+                ? Colors.grey
+                : isReprint
+                    ? Colors.orange
+                    : Colors.green,
           ),
           const SizedBox(width: 4),
           Text(
@@ -2258,7 +2444,12 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
-              color: isReprint ? Colors.orange.shade800 : Colors.green.shade800,
+              color: isDeleted
+                  ? Colors.grey
+                  : isReprint
+                      ? Colors.orange.shade800
+                      : Colors.green.shade800,
+              decoration: isDeleted ? TextDecoration.lineThrough : null,
             ),
           ),
           if (isReprint) ...[
@@ -2267,6 +2458,14 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               Icons.copy,
               size: 12,
               color: Colors.orange,
+            ),
+          ],
+          if (isDeleted) ...[
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.delete_outline,
+              size: 12,
+              color: Colors.grey,
             ),
           ],
         ],
@@ -2279,20 +2478,16 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     try {
       if (log.receiptLines.isEmpty) return '';
 
-      // Look specifically for "TOTAL PAID:" line
       for (var line in log.receiptLines) {
         final content = line['content']?.toString() ?? '';
 
-        // Check if this line contains "TOTAL PAID" or "Total Paid"
         if (content.toUpperCase().contains('TOTAL PAID')) {
-          // Extract the amount using regex
           final regExp = RegExp(r'\$?\s*([\d,]+\.?\d*)');
           final match = regExp.firstMatch(content);
 
           if (match != null && match.groupCount >= 1) {
             String amount = match.group(1) ?? '';
             if (amount.isNotEmpty) {
-              // Format the amount with $ and proper decimal places
               if (!amount.contains('.')) {
                 amount = '$amount.00';
               }
@@ -2336,10 +2531,8 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
         children: [
           if (_scanning) const LinearProgressIndicator(),
           const SizedBox(height: 8),
-
-          // 🆕 Platform-specific printer UI
           if (Platform.isAndroid) ...[
-            // Android Bluetooth UI (existing)
+            // Android Bluetooth UI
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
               label: Text(_scanning ? "Scanning…" : "Scan Printers"),
@@ -2386,7 +2579,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
               },
             ),
           ] else if (Platform.isWindows) ...[
-            // 🆕 Windows Printer UI
+            // Windows Printer UI
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -2542,9 +2735,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                 ),
               ),
           ],
-
           const SizedBox(height: 10),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -2579,8 +2770,7 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
                             setState(() => _connecting = false);
                           }
                         } else if (Platform.isWindows) {
-                          // Windows connection is handled by _connectWindowsPrinter
-                          // This button is only for Android
+                          // Windows connection handled by _connectWindowsPrinter
                         }
                       },
                 child: _connecting
@@ -2719,17 +2909,13 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
 // PRINT QUEUE (Host + Client)
 // ----------------------------
   Future<void> _printSelectedReceipts(List<PaymentLog> filteredList) async {
-    // 1. Detect host/client
     final host = await isHostDevice();
 
-    // 2. Load source logs
     List<PaymentLog> sourceLogs =
         host ? _logBox.values.toList() : List.from(_remoteLogs);
 
-    // 3. Sort newest → oldest
     sourceLogs.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
 
-    // 4. Map selected indexes to the *filtered* list
     if (_selectedIndexes.isEmpty) {
       return;
     }
@@ -2768,12 +2954,11 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
     );
 
     try {
-      // 6. PRINT LOGS IN ORDER
       if (Platform.isAndroid) {
         await AutomatedPrintHelper.printLogsInSequence(
           toPrint,
           bluetoothHelper.bluetoothPrint,
-          context, // Add context parameter
+          context,
         );
       } else if (Platform.isWindows) {
         await _printLogsToWindowsPrinter(toPrint);
@@ -2792,7 +2977,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       );
     }
 
-    // 7. Clear selections
     setState(() {
       _selectedIndexes.clear();
     });
@@ -2808,7 +2992,6 @@ class _ReceiptHistoryPageState extends State<ReceiptHistoryPage>
       try {
         final lines = _jsonToReceiptLines(log.receiptLines);
 
-        // Add duplicate header for REPRINTS
         lines.insert(
             0,
             LineText(
@@ -2904,7 +3087,6 @@ class AutomatedPrintHelper {
       try {
         final lines = _jsonToReceiptLines(log.receiptLines);
 
-        // Add duplicate header for REPRINTS
         lines.insert(
             0,
             LineText(
@@ -2934,16 +3116,11 @@ Future<String> _getSchoolName() async {
   List<School>? _cachedServerSchoolInfo;
 
   try {
-    // Detect device role
     final role = await getDeviceRole();
 
-    // Load host IP for client devices
     final prefs = await SharedPreferences.getInstance();
     final hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
 
-    // ---------------------------
-    // HOST MODE
-    // ---------------------------
     if (role == DeviceRole.host) {
       final box = await Hive.openBox<School>('school');
       if (box.isNotEmpty) {
@@ -2952,20 +3129,15 @@ Future<String> _getSchoolName() async {
       return "SCHOOL";
     }
 
-    // ---------------------------
-    // CLIENT MODE
-    // ---------------------------
     if (hostIp.isEmpty) {
       debugPrint("❌ Host IP not set.");
       return "SCHOOL";
     }
 
-    // If already cached from previous fetch, return cached
     if (_cachedServerSchoolInfo != null && _cachedServerSchoolInfo.isNotEmpty) {
       return _cachedServerSchoolInfo.first.schoolName ?? "SCHOOL";
     }
 
-    // Fetch from host
     final response = await HttpClient()
         .getUrl(Uri.parse('http://$hostIp:8080/api/school'))
         .then((req) => req.close());
@@ -2993,9 +3165,6 @@ Future<String> _getSchoolName() async {
 }
 
 class AutomatedSmsHelpers {
-  // ───────────────────────────────────────────────────────────────
-  // Collect all parent messages into drafts
-  // ───────────────────────────────────────────────────────────────
   static Future<List<Map<String, String>>> draftParentMessages(
       List<PaymentLog> logs) async {
     final role = await getDeviceRole();
@@ -3005,17 +3174,13 @@ class AutomatedSmsHelpers {
     List<Student> allStudents = [];
     List<Student>? _cachedServerStudentInfo;
 
-    // HOST → Local Hive
     if (role == DeviceRole.host) {
       final box = await Hive.openBox<Student>("students");
       allStudents = box.values.toList();
-    }
-    // CLIENT → Fetch from host
-    else {
-      allStudents = []; // completely unused now
+    } else {
+      allStudents = [];
     }
 
-    // Build drafts
     final List<Map<String, String>> drafts = [];
 
     for (final log in logs) {
@@ -3064,9 +3229,6 @@ class AutomatedSmsHelpers {
     return drafts;
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // Open SMS app for user to review/send all drafts sequentially
-  // ───────────────────────────────────────────────────────────────
   static int _currentDraftIndex = 0;
   static List<Map<String, String>> _draftQueue = [];
   static Function(String)? _dialogCallback;
@@ -3119,9 +3281,6 @@ class AutomatedSmsHelpers {
     }
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // SEND BACKGROUND SMS (Admins only)
-  // ───────────────────────────────────────────────────────────────
   static Future<bool> _sendSms(String phone, String message) async {
     if (!Platform.isAndroid) return false;
 
@@ -3174,9 +3333,6 @@ class AutomatedSmsHelpers {
     }
   }
 
-  // ───────────────────────────────────────────────────────────────
-// Build message from receipt log (ADVANCED VERSION)
-// ───────────────────────────────────────────────────────────────
   static Future<String> buildSmsFromLogAdvanced(
     PaymentLog log, {
     required bool forcedDuplicate,
@@ -3185,17 +3341,14 @@ class AutomatedSmsHelpers {
     final schoolName = await getSchoolName();
     final buf = StringBuffer();
 
-    // School name
     buf.writeln(schoolName);
     buf.writeln('');
 
-    // Duplicate marker
     if (forcedDuplicate) {
       buf.writeln('DUPLICATE MESSAGE.');
       buf.writeln('');
     }
 
-    // Greeting
     buf.writeln('DUPLICATE COPY,');
     buf.writeln('');
     buf.writeln('${log.studentName} has paid:');
@@ -3206,12 +3359,10 @@ class AutomatedSmsHelpers {
         final trimmed = content.trim();
         if (trimmed.isEmpty) continue;
 
-        // Skip separators
         if (trimmed.startsWith('---') || trimmed.startsWith('***')) continue;
 
         final lower = trimmed.toLowerCase();
 
-        // Only pick meaningful lines
         final matches = lower.contains('paid') ||
             lower.contains('total paid') ||
             RegExp(r'\$\s*\d').hasMatch(trimmed) ||
@@ -3233,9 +3384,6 @@ class AutomatedSmsHelpers {
     return buf.toString().trim();
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // Deep match student
-  // ───────────────────────────────────────────────────────────────
   static Student? _deepMatchStudentHostClient(
       PaymentLog log, List<Student> students) {
     final logName = log.studentName.trim().toLowerCase();
@@ -3268,9 +3416,6 @@ class AutomatedSmsHelpers {
     return bestScore >= 4 ? best : null;
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // MAIN SEQUENCE → Draft all parent SMS, then send admins in background
-  // ───────────────────────────────────────────────────────────────
   static Future<void> sendLogsInSequence(
     List<PaymentLog> logs, {
     required Function(String) showDialog,
@@ -3279,29 +3424,23 @@ class AutomatedSmsHelpers {
   }) async {
     List<User>? _cachedServerUsersInfo;
 
-    // Detect role & host IP
     final role = await getDeviceRole();
     final prefs = await SharedPreferences.getInstance();
     final hostIp = prefs.getString('host_ip') ?? '192.168.8.2';
 
-    // 1️⃣ Build drafts for parents
     List<Map<String, String>> parentDrafts = [];
     if (sendParent) {
       parentDrafts = await draftParentMessages(logs);
       await openSmsDrafts(parentDrafts, showDialog);
     }
 
-    // 2️⃣ Send background SMS to admins
     if (sendAdmins) {
       List<User> allUsers = [];
 
-      // HOST: Local users box
       if (role == DeviceRole.host) {
         final usersBox = await Hive.openBox<User>("users");
         allUsers = usersBox.values.toList();
-      }
-      // CLIENT: Fetch from host
-      else {
+      } else {
         if (_cachedServerUsersInfo == null) {
           try {
             final res = await HttpClient()
@@ -3322,7 +3461,6 @@ class AutomatedSmsHelpers {
         allUsers = _cachedServerUsersInfo ?? [];
       }
 
-      // Extract admin phones
       final adminPhones = allUsers
           .where((u) => (u.role ?? "").toLowerCase().contains("admin"))
           .map((u) => (u.phone ?? "").trim())
@@ -3332,11 +3470,10 @@ class AutomatedSmsHelpers {
       for (final log in logs) {
         final schoolName = await _getSchoolName();
 
-        final smsBodyCore =
-            await AutomatedSmsHelpers.buildSmsFromLogAdvanced(log,
-                forcedDuplicate: false, // from your UI if needed
-                getSchoolName: _getSchoolName // <-- pass your function here
-                );
+        final smsBodyCore = await AutomatedSmsHelpers.buildSmsFromLogAdvanced(
+            log,
+            forcedDuplicate: false,
+            getSchoolName: _getSchoolName);
         for (final adminPhone in adminPhones) {
           final ok = await _sendSms(adminPhone, smsBodyCore);
           if (ok) {

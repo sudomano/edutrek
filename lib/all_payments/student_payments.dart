@@ -65,17 +65,17 @@ class _MyPageState extends State<MakePayment> {
 
     // Determine what permissions to show based on role AND device type
     final bool canCreatePayments =
-        (admin || administration || secretary || subadmin) && !isClient;
+        (admin || administration || secretary || subadmin);
     final bool canViewPayments =
         (admin || administration || secretary || subadmin) && !isClient;
     final bool canReprintReceipts = (admin || administration) && !isClient;
     final bool canUpdatePayments = (admin || administration) && !isClient;
     final bool canDeletePayments = admin && !isClient;
 
-    // Special case: If device is client, only show limited functionality
+    // Special case: If device is client, only show limitFed functionality
     // For clients, we might want to show only view if they have permission
     final bool showLimitedView =
-        isClient && (admin || administration || secretary || subadmin);
+        isClient && (!admin || !administration || !secretary || !subadmin);
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Payments'),

@@ -47,7 +47,6 @@ class _UpdatePaymentPurposeScreenState
         TextEditingController(text: widget.existingPurpose.paymentPurpose);
     _amountController = TextEditingController(
         text: widget.existingPurpose.purposeAmount.toString());
-    // Ensure _selectedClasses is never null.
     _selectedClasses = widget.existingPurpose.associatedClasses != null
         ? List.from(widget.existingPurpose.associatedClasses as Iterable)
         : <String>[];
@@ -57,17 +56,18 @@ class _UpdatePaymentPurposeScreenState
 
     _fetchExceptionalStudents();
     _loadTermsWithSamePurpose();
-
     _fetchClasses();
   }
 
   void _loadTermsWithSamePurpose() async {
     final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
     final oldName = normalize(widget.existingPurpose.paymentPurpose);
+    // ✅ Only load active purposes
     _termsWithSamePurpose = box.values
         .where((p) =>
             normalize(p.paymentPurpose) == oldName &&
-            p.termId != widget.existingPurpose.termId)
+            p.termId != widget.existingPurpose.termId &&
+            !(p.isDeleted ?? false)) // ✅ Filter out deleted
         .map((p) => p.termId.toString())
         .toSet()
         .toList();
@@ -76,13 +76,14 @@ class _UpdatePaymentPurposeScreenState
   Future<void> _fetchExceptionalStudents() async {
     final box =
         await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
-    final all = box.values.toList();
+    // ✅ Only load active (non-deleted) exceptions
+    final all = box.values.where((e) => !(e.isDeleted ?? false)).toList();
 
     print(
         "🧠 Loaded ExceptionalStudents from Hive: ${all.map((e) => e.exceptionName).toList()}");
 
     setState(() {
-      _exceptionalStudents = box.values
+      _exceptionalStudents = all
           .where((e) => e.exceptionStatus!.toLowerCase() == 'active')
           .toList();
     });
@@ -90,10 +91,12 @@ class _UpdatePaymentPurposeScreenState
 
   Future<void> _fetchClasses() async {
     final box = await Hive.openBox<Classes>('classes');
+    // ✅ Only load active (non-deleted) classes
     final classes = box.values
         .where((purposeItem) =>
             purposeItem.termId != null &&
-            purposeItem.terms!.contains(globalTermId))
+            purposeItem.terms!.contains(globalTermId) &&
+            !(purposeItem.isDeleted ?? false))
         .map((e) => e.className)
         .toList();
     setState(() {
@@ -210,22 +213,6 @@ class _UpdatePaymentPurposeScreenState
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please enter $label';
-        }
-        return null;
-      },
-    );
-  }
-
   Widget _buildAmountField(String label, TextEditingController controller) {
     return TextFormField(
       controller: controller,
@@ -239,36 +226,45 @@ class _UpdatePaymentPurposeScreenState
         if (value == null || value.isEmpty) {
           return 'Please enter $label';
         }
+        final parsed = double.tryParse(value);
+        if (parsed == null) {
+          return 'Please enter a valid amount';
+        }
+        if (parsed < 0) {
+          return 'Amount must be greater than 0';
+        }
         return null;
       },
     );
   }
 
   Widget _buildClassesList() {
-    bool _selectAll = _selectedClasses.length == _classes.length;
+    bool _selectAll =
+        _selectedClasses.length == _classes.length && _classes.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Checkbox(
-                value: _selectAll,
-                onChanged: (isChecked) {
-                  setState(() {
-                    if (isChecked == true) {
-                      _selectedClasses = List.from(_classes);
-                    } else {
-                      _selectedClasses.clear();
-                    }
-                  });
-                },
-              ),
-              const Text('Select All'),
-            ],
-          ),
+          if (_classes.isNotEmpty)
+            Row(
+              children: [
+                Checkbox(
+                  value: _selectAll,
+                  onChanged: (isChecked) {
+                    setState(() {
+                      if (isChecked == true) {
+                        _selectedClasses = List.from(_classes);
+                      } else {
+                        _selectedClasses.clear();
+                      }
+                    });
+                  },
+                ),
+                const Text('Select All'),
+              ],
+            ),
           ..._classes.map((className) {
             return CheckboxListTile(
               title: Text(className),
@@ -292,6 +288,7 @@ class _UpdatePaymentPurposeScreenState
   Future<void> _update() async {
     if (_formKey.currentState!.validate()) {
       debugPrint('✅ Form validated successfully');
+
       if (normalize(widget.existingPurpose.paymentPurpose) !=
           normalize(_purposeController.text)) {
         applyGlobally = await showDialog<bool>(
@@ -312,6 +309,7 @@ class _UpdatePaymentPurposeScreenState
             ) ??
             false;
       }
+
       final purposeCode = widget.existingPurpose.purposeCode;
       debugPrint('🔎 Looking for purposeCode: $purposeCode');
 
@@ -344,6 +342,7 @@ class _UpdatePaymentPurposeScreenState
           modifiedFields.add('associatedClasses');
         }
       }
+
       if (!const DeepCollectionEquality()
           .equals(widget.existingPurpose.exceptions, _selectedExceptions)) {
         debugPrint('⚠️ exceptions changed');
@@ -369,25 +368,33 @@ class _UpdatePaymentPurposeScreenState
         associatedClasses: List<String>.from(filteredSelectedClasses),
         exceptions: List<ExceptionalStudents>.from(_selectedExceptions),
         forNewcomersOnly: _forNewcomersOnly,
-        syncStatus: false,
+        syncStatus: false, // ✅ Needs sync
         lastModified: DateTime.now(),
         operationType: 'update',
         purposeCode: purposeCode,
         modifiedFields: modifiedFields,
+        // ✅ Preserve deletion status (not deleted if updating)
+        isDeleted: false,
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        deletedSyncStatus: true,
       );
 
       debugPrint('🔧 Updated Purpose Object: $updatedPurpose');
 
       final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
+
       // TEMP CLEANUP: Fix duplicates by reassigning new purposeCode to all but one
-      final dupes =
-          box.values.where((p) => p.purposeCode == purposeCode).toList();
+      final dupes = box.values
+          .where((p) => p.purposeCode == purposeCode && !(p.isDeleted ?? false))
+          .toList();
 
       final targetPurpose =
           widget.existingPurpose.paymentPurpose.toLowerCase().trim();
       final targetTermId = widget.existingPurpose.termId;
 
-// 🔁 Step 1: Reassign purposeCode for true duplicates (same code)
+      // 🔁 Step 1: Reassign purposeCode for true duplicates (same code)
       if (dupes.length > 1) {
         debugPrint('⚠️ Duplicate entries found for purposeCode: $purposeCode');
 
@@ -411,12 +418,12 @@ class _UpdatePaymentPurposeScreenState
           await box.put(key, updatedDupe);
 
           if (applyGlobally) {
-            final allPurposes = box.values.toList();
+            final allPurposes =
+                box.values.where((p) => !(p.isDeleted ?? false)).toList();
             final oldPurposeName =
                 normalize(widget.existingPurpose.paymentPurpose);
             final newPurposeName = _purposeController.text.trim();
 
-            // Step 2A: Update all PaymentPurpose entries with same old name (excluding current one)
             for (var p in allPurposes) {
               if (normalize(p.paymentPurpose) == oldPurposeName &&
                   p.purposeCode != purposeCode) {
@@ -437,7 +444,6 @@ class _UpdatePaymentPurposeScreenState
               }
             }
 
-            // Step 2B: Update all related StudentPayments with old name
             final studentPaymentBox =
                 await Hive.openBox<StudentPayment>('student_payments');
             final matchingPayments = studentPaymentBox.values.where(
@@ -468,9 +474,11 @@ class _UpdatePaymentPurposeScreenState
           }
         }
       }
+
       if (_selectedTermsToOverride.isNotEmpty && !_purposeNameChanged) {
         final overrideBox = Hive.box<PaymentPurpose>('payment_purposes');
-        final allPurposes = overrideBox.values.toList();
+        final allPurposes =
+            overrideBox.values.where((p) => !(p.isDeleted ?? false)).toList();
 
         for (var p in allPurposes) {
           final termMatches = _selectedTermsToOverride.contains(p.termId);
@@ -501,23 +509,32 @@ class _UpdatePaymentPurposeScreenState
         }
       }
 
-// ❌ Step 2: Delete same-name purposes (case-insensitive) with different purposeCodes in the same term
+      // ❌ Step 2: Delete same-name duplicates (case-insensitive) with different purposeCodes in the same term
       final sameNameDuplicates = box.values
           .where((p) =>
               p.paymentPurpose.toLowerCase().trim() == targetPurpose &&
               p.purposeCode != purposeCode &&
-              p.termId == targetTermId)
+              p.termId == targetTermId &&
+              !(p.isDeleted ?? false)) // ✅ Only check active
           .toList();
 
       for (var dupe in sameNameDuplicates) {
         final key = box.keyAt(box.values.toList().indexOf(dupe));
         debugPrint(
-            '🗑 Deleting same-name duplicate with different purposeCode at key: $key');
-        await box.delete(key);
-      }
-      final allPurposes = box.values.toList();
+            '🗑 Soft-deleting same-name duplicate with different purposeCode at key: $key');
 
-      debugPrint('📦 Total purposes in box: ${allPurposes.length}');
+        // ✅ Soft delete instead of hard delete
+        dupe.markDeleted(
+          deletedBy: 'System - Duplicate cleanup',
+          reason: 'Duplicate purpose found during update',
+        );
+        await box.put(key, dupe);
+      }
+
+      final allPurposes =
+          box.values.where((p) => !(p.isDeleted ?? false)).toList();
+
+      debugPrint('📦 Total active purposes in box: ${allPurposes.length}');
       for (var p in allPurposes) {
         debugPrint(
             '→ purposeCode: ${p.purposeCode}, purpose: ${p.paymentPurpose}');
@@ -527,8 +544,7 @@ class _UpdatePaymentPurposeScreenState
         (p) => p.purposeCode == purposeCode,
         orElse: () {
           debugPrint('❌ No matching purposeCode found in box!');
-          return null
-              as PaymentPurpose; // <- workaround to avoid analyzer complaints
+          return null as PaymentPurpose;
         },
       );
 
@@ -564,13 +580,14 @@ class _UpdatePaymentPurposeScreenState
             final key = payment.key;
             if (key != null) {
               await studentPaymentBox.put(key, updatedPayment);
+
               if (applyGlobally) {
-                final allPurposes = box.values.toList();
+                final allPurposes =
+                    box.values.where((p) => !(p.isDeleted ?? false)).toList();
                 final oldPurposeName =
                     normalize(widget.existingPurpose.paymentPurpose);
                 final newPurposeName = _purposeController.text.trim();
 
-                // Step 2A: Update all PaymentPurpose entries with same old name (excluding current one)
                 for (var p in allPurposes) {
                   if (normalize(p.paymentPurpose) == oldPurposeName &&
                       p.purposeCode != purposeCode) {
@@ -590,11 +607,14 @@ class _UpdatePaymentPurposeScreenState
                         '🌍 Updated purpose name for purposeCode ${p.purposeCode}');
                   }
                 }
+
                 if (_selectedTermsToOverride.isNotEmpty &&
                     !_purposeNameChanged) {
                   final overrideBox =
                       Hive.box<PaymentPurpose>('payment_purposes');
-                  final allPurposes = overrideBox.values.toList();
+                  final allPurposes = overrideBox.values
+                      .where((p) => !(p.isDeleted ?? false))
+                      .toList();
 
                   for (var p in allPurposes) {
                     final termMatches =
@@ -627,7 +647,6 @@ class _UpdatePaymentPurposeScreenState
                   }
                 }
 
-                // Step 2B: Update all related StudentPayments with old name
                 final studentPaymentBox =
                     await Hive.openBox<StudentPayment>('student_payments');
                 final matchingPayments = studentPaymentBox.values.where(
@@ -663,6 +682,7 @@ class _UpdatePaymentPurposeScreenState
           debugPrint(
               '✅ ${matchingPayments.length} related student payments updated.');
         }
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Payment Purpose Updated Successfully')),
         );

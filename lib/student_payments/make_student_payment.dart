@@ -747,7 +747,10 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     if (role == DeviceRole.host) {
       // Host mode: Load directly from Hive
-      _students = Hive.box<Student>('students').values.toList();
+      _students = Hive.box<Student>('students')
+          .values
+          .where((s) => !(s.isDeleted ?? false)) // ✅ ADD THIS
+          .toList();
       _projects = Hive.box<Project>('projects').values.toList();
       _items = Hive.box<ProjectItem>('projectItems').values.toList();
       _selectedBatch =
@@ -1471,7 +1474,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         // ------------------ HOST: Load users from local Hive ------------------
         //
         final userBox = await Hive.openBox<User>('users');
-        allUsers = userBox.values.toList();
+        allUsers = userBox.values
+            .where((u) => !(u.isDeleted ?? false)) // ✅ ADD THIS
+            .toList();
       } else {
         //
         // ------------------ CLIENT: Fetch users from host ------------------
@@ -1536,8 +1541,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       if (_role == DeviceRole.host) {
         final termBox = await Hive.openBox<Terms>('terms');
 
-        allTerms = termBox.values.toList();
-        // Populate the terms list with unique term IDs
+        allTerms = termBox.values
+            .where((t) => !(t.isDeleted ?? false)) // ✅ ADD THIS
+            .toList(); // Populate the terms list with unique term IDs
       } else {
         if (_hostIp!.isEmpty) {
           _showDialog("⚠️ Host IP not set. Please configure connection.");
@@ -1650,8 +1656,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         final paymentPurposeBox =
             await Hive.openBox<PaymentPurpose>('payment_purposes');
 
-        allStudentPaymentPurposes = paymentPurposeBox.values.toList();
-        // Populate the terms list with unique term IDs
+        allStudentPaymentPurposes = paymentPurposeBox.values
+            .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+            .toList(); // Populate the terms list with unique term IDs
       } else {
         if (_hostIp!.isEmpty) {
           _showDialog("⚠️ Host IP not set. Please configure connection.");
@@ -1702,7 +1709,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         final paymentBox =
             await Hive.openBox<StudentPayment>('student_payments');
 
-        allStudentPayments = paymentBox.values.toList();
+        allStudentPayments = paymentBox.values
+            .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+            .toList();
       } else {
         if (_hostIp!.isEmpty) {
           _showDialog("⚠️ Host IP not set. Please configure connection.");
@@ -2255,7 +2264,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         // Host: local Hive query (fast)
         final studentBox = await Hive.openBox<Student>('students');
         results = studentBox.values
-            .where((s) => s.termId != null)
+            .where((s) => s.termId != null && !(s.isDeleted ?? false))
             .where((s) => deepMatchStudentWithInverse(s, query))
             .toList();
       } else {
@@ -3700,8 +3709,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     // ✅ Collect both "admin" and "administration"
     final adminUsers = adminBox.values
         .where((term) =>
-            term.role.toLowerCase() == "admin" ||
-            term.role.toLowerCase() == "administration")
+            (term.role.toLowerCase() == "admin" ||
+                term.role.toLowerCase() == "administration") &&
+            !(term.isDeleted ?? false)) // ✅ ADD THIS
         .toList();
 
     // ✅ Get current arrears data from ArrearsSection
@@ -7024,7 +7034,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
     if (_role == DeviceRole.host) {
       final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
-      allPurposes = box.values.toList();
+      allPurposes = box.values
+          .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+          .toList();
     } else {
       if (_cachedServerStudentPaymentPurposes == null) {
         final prefs = await SharedPreferences.getInstance();
@@ -7602,7 +7614,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     if (_role == DeviceRole.host) {
       final paymentPurposeBox =
           await Hive.openBox<PaymentPurpose>('payment_purposes');
-      allPurposes = paymentPurposeBox.values.toList();
+      allPurposes = paymentPurposeBox.values
+          .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+          .toList();
     } else {
       if (_cachedServerStudentPaymentPurposes == null) {
         final prefs = await SharedPreferences.getInstance();
@@ -7738,7 +7752,10 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       if (!isNewcomerValid) continue;
 
       final allStudentPayments = _role == DeviceRole.host
-          ? Hive.box<StudentPayment>('student_payments').values.toList()
+          ? Hive.box<StudentPayment>('student_payments')
+              .values
+              .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+              .toList()
           : _cachedServerStudentPayments ?? [];
       // Calculate paid amounts
       final double hivePaid = _sumPaymentsFromHive(
@@ -7830,7 +7847,10 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       if (!isNewcomerValid) continue;
 
       final allStudentPayments = _role == DeviceRole.host
-          ? Hive.box<StudentPayment>('student_payments').values.toList()
+          ? Hive.box<StudentPayment>('student_payments')
+              .values
+              .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+              .toList()
           : _cachedServerStudentPayments ?? [];
 
       final double hivePaid = _sumPaymentsFromHive(
@@ -7870,7 +7890,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
     if (_role == DeviceRole.host) {
       // Host reads from local Hive box
       final box = Hive.box<PaymentPurpose>('payment_purposes');
-      allPurposes = box.values.toList();
+      allPurposes = box.values
+          .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+          .toList();
     } else {
       // Client uses cached server data
       allPurposes = _cachedServerStudentPaymentPurposes ?? [];

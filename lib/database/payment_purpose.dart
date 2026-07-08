@@ -121,6 +121,12 @@ class PaymentPurpose extends HiveObject {
     List<String>? modifiedFields,
     List<ExceptionalStudents>? exceptions,
     bool? forNewcomersOnly, // ✅ NEW
+    // ✅ Deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return PaymentPurpose(
       id: id ?? this.id,
@@ -135,6 +141,12 @@ class PaymentPurpose extends HiveObject {
       modifiedFields: modifiedFields ?? this.modifiedFields,
       exceptions: exceptions ?? this.exceptions,
       forNewcomersOnly: forNewcomersOnly ?? this.forNewcomersOnly,
+      // ✅ Include deletion fields
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 }

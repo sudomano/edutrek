@@ -38,6 +38,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
 
   String? _globalTermId;
   bool _isComputing = false;
+  bool _showDeleted = false; // ✅ Toggle to show deleted exceptions
 
   @override
   void initState() {
@@ -77,8 +78,20 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
         'exceptionFigure',
         'exceptionStatus',
         'terms',
-        'priorityFlag', // Add priority flag to modified fields
+        'priorityFlag',
       ];
+
+      // ✅ If restoring a deleted exception, clear deletion fields
+      if (_currentException != null &&
+          (_currentException!.isDeleted ?? false)) {
+        modifiedFields.addAll([
+          'isDeleted',
+          'deletedAt',
+          'deletedBy',
+          'deleteReason',
+          'deletedSyncStatus'
+        ]);
+      }
 
       final updated = ExceptionalStudents(
         exceptionId: _currentException?.exceptionId ?? const Uuid().v4(),
@@ -91,7 +104,13 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
         operationType: isNew ? 'create' : 'update',
         modifiedFields: modifiedFields,
         terms: _selectedTerms.toList(),
-        priorityFlag: _priorityFlag, // Set priority flag
+        priorityFlag: _priorityFlag,
+        // ✅ If restoring, clear deletion flags
+        isDeleted: false,
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        deletedSyncStatus: false,
       );
 
       if (isNew) {
@@ -109,7 +128,12 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
             ..priorityFlag = updated.priorityFlag
             ..lastModified = now
             ..operationType = 'update'
-            ..syncStatus = false;
+            ..syncStatus = false
+            ..isDeleted = false
+            ..deletedAt = null
+            ..deletedBy = null
+            ..deleteReason = null
+            ..deletedSyncStatus = false;
 
           _box.put(key, updatedException);
           final studentBox = Hive.box<Student>('students');
@@ -260,29 +284,89 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
     }
   }
 
+  // ✅ SOFT DELETE - Mark as deleted instead of hard delete
   void _deleteException(ExceptionalStudents exception) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Soft delete exception: ${exception.exceptionName}?',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'This will mark the exception as deleted and sync to host.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Status: ${exception.exceptionStatus}',
+              style: TextStyle(
+                fontSize: 12,
+                color: exception.exceptionStatus == 'ACTIVE'
+                    ? Colors.green
+                    : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _performSoftDelete(exception);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _performSoftDelete(ExceptionalStudents exception) {
     final studentBox = Hive.box<Student>('students');
     final paymentPurposeBox = Hive.box<PaymentPurpose>('payment_purposes');
 
     final now = DateTime.now();
 
+    // ✅ Mark exception as deleted
+    exception.markDeleted(
+      deletedBy: 'User: ${exception.exceptionName}',
+      reason: 'Soft deleted from ExceptionalStudentsScreen',
+    );
+    exception.save();
+
+    // ✅ Update references in Student models
     for (var student in studentBox.values) {
       if (student.exceptions != null &&
           student.exceptions!
               .any((e) => e.exceptionId == exception.exceptionId)) {
+        // Remove from student's exceptions list
         student.exceptions!
             .removeWhere((e) => e.exceptionId == exception.exceptionId);
 
-        final key =
-            studentBox.keyAt(studentBox.values.toList().indexOf(student));
         student
           ..syncStatus = false
           ..operationType = 'update'
           ..lastModified = now;
+
+        final key =
+            studentBox.keyAt(studentBox.values.toList().indexOf(student));
         studentBox.put(key, student);
       }
     }
 
+    // ✅ Update references in PaymentPurpose models
     for (var pp in paymentPurposeBox.values) {
       if (pp.exceptions != null &&
           pp.exceptions!.any((e) => e.exceptionId == exception.exceptionId)) {
@@ -299,7 +383,56 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
       }
     }
 
-    exception.delete();
+    _showDialog('✅ Exception soft-deleted successfully.\n'
+        'Exception: ${exception.exceptionName}\n'
+        'Deletion will sync to host when online.');
+  }
+
+  // ✅ Restore deleted exception
+  void _restoreException(ExceptionalStudents exception) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Restore'),
+        content: Text(
+          'Restore exception: ${exception.exceptionName}?\n\n'
+          'This will mark the exception as active again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _performRestore(exception);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _performRestore(ExceptionalStudents exception) {
+    exception.restoreDeleted();
+    exception.save();
+
+    _showDialog('✅ Exception restored successfully.\n'
+        'Exception: ${exception.exceptionName}\n'
+        'Restoration will sync to host when online.');
+  }
+
+  void _showDialog(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   void _resetForm() {
@@ -370,6 +503,21 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
         title: const Center(child: Text('Exceptional Students Management')),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
+        actions: [
+          // ✅ Toggle to show deleted exceptions
+          IconButton(
+            icon: Icon(
+              _showDeleted ? Icons.visibility : Icons.visibility_off,
+              color: _showDeleted ? Colors.amber : Colors.white,
+            ),
+            onPressed: () {
+              setState(() {
+                _showDeleted = !_showDeleted;
+              });
+            },
+            tooltip: _showDeleted ? 'Hide Deleted' : 'Show Deleted',
+          ),
+        ],
       ),
       body: _isComputing
           ? const Center(
@@ -708,7 +856,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
-                                  'Total: ${_box.length}',
+                                  'Total: ${_getFilteredExceptions().length}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue.shade800,
@@ -722,12 +870,14 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                             valueListenable: _box.listenable(),
                             builder:
                                 (context, Box<ExceptionalStudents> box, _) {
-                              if (box.isEmpty) {
+                              final exceptions = _getFilteredExceptions();
+
+                              if (exceptions.isEmpty) {
                                 return const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(32.0),
                                     child: Text(
-                                      "No exceptions added yet.\nAdd your first exception above.",
+                                      "No exceptions available.",
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color: Colors.grey,
@@ -737,8 +887,6 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                   ),
                                 );
                               }
-
-                              final exceptions = box.values.toList();
 
                               // Sort exceptions: priority first, then by name
                               exceptions.sort((a, b) {
@@ -765,6 +913,7 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                       ),
                                       child: const Row(
                                         children: [
+                                          _TableHeaderCell('Status'),
                                           _TableHeaderCell('Priority'),
                                           _TableHeaderCell('Name'),
                                           _TableHeaderCell('Type'),
@@ -778,19 +927,26 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                     const SizedBox(height: 8),
                                     // Data rows
                                     ...exceptions.map((exception) {
+                                      final isDeleted =
+                                          exception.isDeleted ?? false;
+
                                       return Container(
                                         margin:
                                             const EdgeInsets.only(bottom: 4),
                                         decoration: BoxDecoration(
-                                          color:
-                                              (exception.priorityFlag ?? 0) == 1
+                                          color: isDeleted
+                                              ? Colors.grey.shade100
+                                              : (exception.priorityFlag ?? 0) ==
+                                                      1
                                                   ? Colors.red.shade50
                                                   : Colors.transparent,
                                           borderRadius:
                                               BorderRadius.circular(4),
                                           border: Border.all(
-                                            color:
-                                                (exception.priorityFlag ?? 0) ==
+                                            color: isDeleted
+                                                ? Colors.grey.shade400
+                                                : (exception.priorityFlag ??
+                                                            0) ==
                                                         1
                                                     ? Colors.red.shade200
                                                     : Colors.grey.shade200,
@@ -801,21 +957,44 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.center,
                                           children: [
+                                            // ✅ Status indicator
+                                            _TableCell(
+                                              isDeleted
+                                                  ? '🗑️'
+                                                  : (exception.exceptionStatus
+                                                              ?.toUpperCase() ==
+                                                          'ACTIVE'
+                                                      ? '✅'
+                                                      : '⏸️'),
+                                            ),
                                             _TableCell(
                                               exception.priorityFlag == 1
                                                   ? '🔴'
                                                   : '⚪',
                                             ),
                                             _TableCell(
-                                                exception.exceptionName ?? ''),
+                                              exception.exceptionName ?? '',
+                                              textColor: isDeleted
+                                                  ? Colors.grey
+                                                  : null,
+                                              decoration: isDeleted
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
                                             _TableCell(
                                                 exception.exceptionType ?? ''),
                                             _TableCell(
                                               '${exception.exceptionFigure ?? ''}${exception.exceptionType == 'PERCENTAGE' ? '%' : ''}',
+                                              textColor: isDeleted
+                                                  ? Colors.grey
+                                                  : null,
                                             ),
                                             _TableCell(
-                                                exception.exceptionStatus ??
-                                                    ''),
+                                              exception.exceptionStatus ?? '',
+                                              textColor: isDeleted
+                                                  ? Colors.grey
+                                                  : null,
+                                            ),
                                             _TableCell(
                                               (exception.terms ?? [])
                                                   .map((term) => Padding(
@@ -825,8 +1004,11 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                                         child: Chip(
                                                           label: Text(term),
                                                           backgroundColor:
-                                                              Colors.blue
-                                                                  .shade100,
+                                                              isDeleted
+                                                                  ? Colors.grey
+                                                                      .shade300
+                                                                  : Colors.blue
+                                                                      .shade100,
                                                           side: BorderSide.none,
                                                           materialTapTargetSize:
                                                               MaterialTapTargetSize
@@ -840,23 +1022,46 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
                                               Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
+                                                  // ✅ Restore button for deleted
+                                                  if (isDeleted)
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.restore,
+                                                          color: Colors.green,
+                                                          size: 20),
+                                                      onPressed: () =>
+                                                          _restoreException(
+                                                              exception),
+                                                      tooltip: 'Restore',
+                                                    ),
+                                                  // ✅ Edit button (only for active)
+                                                  if (!isDeleted)
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.edit,
+                                                          color: Colors.blue,
+                                                          size: 20),
+                                                      onPressed: () =>
+                                                          _startEdit(exception),
+                                                      tooltip: 'Edit',
+                                                    ),
+                                                  // ✅ Delete button
                                                   IconButton(
-                                                    icon: const Icon(Icons.edit,
-                                                        color: Colors.blue,
-                                                        size: 20),
-                                                    onPressed: () =>
-                                                        _startEdit(exception),
-                                                    tooltip: 'Edit',
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(
-                                                        Icons.delete,
-                                                        color: Colors.red,
-                                                        size: 20),
-                                                    onPressed: () =>
-                                                        _deleteException(
-                                                            exception),
-                                                    tooltip: 'Delete',
+                                                    icon: Icon(
+                                                      Icons.delete,
+                                                      color: isDeleted
+                                                          ? Colors.grey
+                                                          : Colors.red,
+                                                      size: 20,
+                                                    ),
+                                                    onPressed: isDeleted
+                                                        ? null
+                                                        : () =>
+                                                            _deleteException(
+                                                                exception),
+                                                    tooltip: isDeleted
+                                                        ? 'Already deleted'
+                                                        : 'Soft Delete',
                                                   ),
                                                 ],
                                               ),
@@ -880,7 +1085,23 @@ class _ExceptionalStudentsScreenState extends State<ExceptionalStudentsScreen> {
             ),
     );
   }
+
+  // ✅ Helper to get filtered exceptions based on showDeleted toggle
+  List<ExceptionalStudents> _getFilteredExceptions() {
+    final allExceptions = _box.values.toList();
+
+    if (_showDeleted) {
+      return allExceptions;
+    } else {
+      // ✅ Only show active (non-deleted) exceptions
+      return allExceptions.where((e) => !(e.isDeleted ?? false)).toList();
+    }
+  }
 }
+
+// ============================================================
+// Helper Widgets
+// ============================================================
 
 class _TableHeaderCell extends StatelessWidget {
   final String label;
@@ -889,7 +1110,7 @@ class _TableHeaderCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 120,
+      width: 90,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       child: Text(
         label,
@@ -906,13 +1127,21 @@ class _TableCell extends StatelessWidget {
   final dynamic content;
   final bool isWidget;
   final bool isWrap;
+  final Color? textColor;
+  final TextDecoration? decoration;
 
-  const _TableCell(this.content, {this.isWidget = false, this.isWrap = false});
+  const _TableCell(
+    this.content, {
+    this.isWidget = false,
+    this.isWrap = false,
+    this.textColor,
+    this.decoration,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 120,
+      width: 90,
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: isWidget
           ? content
@@ -925,7 +1154,11 @@ class _TableCell extends StatelessWidget {
                 )
               : Text(
                   content.toString(),
-                  style: const TextStyle(fontSize: 13),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: textColor,
+                    decoration: decoration,
+                  ),
                 ),
     );
   }
