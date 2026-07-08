@@ -168,30 +168,51 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     try {
       // Sync PaymentPurpose records
 
+      //=================== Payment Log sync =========================
+
       List<PaymentLog> createPaymentLogs = _paymentLogBox!.values
           .where((cls) => cls.syncStatus == false)
           .toList();
+
       for (PaymentLog cls in createPaymentLogs) {
+        print('Processing PaymentLog: ${cls.logId}');
+        print('Operation Type: ${cls.operationType}');
+        print('Is Deleted: ${cls.isDeleted}');
+        print('Deleted Sync Status: ${cls.deletedSyncStatus}');
+
         if (cls.operationType == 'create') {
           await _createPaymentLogInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updatePaymentLogInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // ✅ Handle deletion sync
+          await _deletePaymentLogInMySQL(cls);
+        } else {
+          print('⚠️ Unknown operationType: ${cls.operationType}');
         }
       }
       List<ExceptionalStudents> createExceptions = _exceptionalStudentsBox!
           .values
           .where((cls) => cls.syncStatus == false)
           .toList();
+
       for (ExceptionalStudents cls in createExceptions) {
+        print('Processing Exception: ${cls.exceptionId}');
+        print('Operation Type: ${cls.operationType}');
+        print('Is Deleted: ${cls.isDeleted}');
+        print('Deleted Sync Status: ${cls.deletedSyncStatus}');
+
         if (cls.operationType == 'create') {
           await _createExceptionInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateExceptionInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // ✅ Handle deletion sync
+          await _deleteExceptionInMySQL(cls);
+        } else {
+          print('⚠️ Unknown operationType: ${cls.operationType}');
         }
       }
-
-      print('=== _syncBatchUnits START ===');
-      print('Checking for unsynced batch units...');
 
       // Step 1: Push unsynced batch units to server
       List<BatchUnit> unsyncedUnits = _batchUnitBox!.values
@@ -441,24 +462,48 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
       }
 
+      //=================== Payment Purpose sync =========================
+
       List<PaymentPurpose> createPaymentPurpose = _payment_purposesBox!.values
           .where((cls) => cls.syncStatus == false)
           .toList();
+
       for (PaymentPurpose cls in createPaymentPurpose) {
+        print('Processing Payment Purpose: ${cls.purposeCode}');
+        print('Operation Type: ${cls.operationType}');
+        print('Is Deleted: ${cls.isDeleted}');
+        print('Deleted Sync Status: ${cls.deletedSyncStatus}');
+
         if (cls.operationType == 'create') {
           await _createPaymentPurposeInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updatePaymentPurposeInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // ✅ Handle deletion sync
+          await _deletePaymentPurposeInMySQL(cls);
+        } else {
+          print('⚠️ Unknown operationType: ${cls.operationType}');
         }
       }
       List<StudentPayment> createStudentPayment = _student_paymentsBox!.values
           .where((cls) => cls.syncStatus == false)
           .toList();
+
       for (StudentPayment cls in createStudentPayment) {
+        print('Processing StudentPayment: ${cls.receiptNumber}');
+        print('Operation Type: ${cls.operationType}');
+        print('Is Deleted: ${cls.isDeleted}');
+        print('Deleted Sync Status: ${cls.deletedSyncStatus}');
+
         if (cls.operationType == 'create') {
           await _createStudentPaymentInMySQL(cls);
         } else if (cls.operationType == 'update') {
           await _updateStudentPaymentInMySQL(cls);
+        } else if (cls.operationType == 'delete') {
+          // ✅ Handle deletion sync
+          await _deleteStudentPaymentInMySQL(cls);
+        } else {
+          print('⚠️ Unknown operationType: ${cls.operationType}');
         }
       }
 
@@ -588,6 +633,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'lastModified': log.lastModified?.toIso8601String(),
       'operationType': log.operationType ?? 'create',
       'modifiedFields': log.modifiedFields ?? [],
+      // ✅ Deletion fields
+      'isDeleted': log.isDeleted ?? false,
+      'deletedAt': log.deletedAt?.toIso8601String(),
+      'deletedBy': log.deletedBy,
+      'deleteReason': log.deleteReason,
+      'deletedSyncStatus': log.deletedSyncStatus ?? false,
     };
   }
 
@@ -763,18 +814,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exception) {
     return {
-      'id': exception.id,
       'exceptionId': exception.exceptionId,
       'exceptionName': exception.exceptionName,
       'exceptionStatus': exception.exceptionStatus,
       'exceptionType': exception.exceptionType,
       'exceptionFigure': exception.exceptionFigure,
       'priorityFlag': exception.priorityFlag ?? 0,
-      'terms': exception.terms ?? [], // ✅ Pass as List
-      'syncStatus': exception.syncStatus,
+      'terms': exception.terms ?? [],
+      'syncStatus': exception.syncStatus ?? false,
       'lastModified': exception.lastModified?.toIso8601String(),
-      'operationType': exception.operationType,
-      'modifiedFields': exception.modifiedFields ?? [], // ✅ Pass as List
+      'operationType': exception.operationType ?? 'create',
+      'modifiedFields': exception.modifiedFields ?? [],
+      // ✅ Deletion fields
+      'isDeleted': exception.isDeleted ?? false,
+      'deletedAt': exception.deletedAt?.toIso8601String(),
+      'deletedBy': exception.deletedBy,
+      'deleteReason': exception.deleteReason,
+      'deletedSyncStatus': exception.deletedSyncStatus ?? false,
     };
   }
 
@@ -951,20 +1007,34 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   Map<String, dynamic> _paymentPurposeToJson(PaymentPurpose purpose) {
     return {
       'id': purpose.id,
-      'purposeCode': purpose.purposeCode,
       'paymentPurpose': purpose.paymentPurpose,
       'purposeAmount': purpose.purposeAmount,
       'termId': purpose.termId,
-      'associatedClasses': purpose.associatedClasses ?? [], // ✅ Pass as List
+      'associatedClasses': purpose.associatedClasses ?? [],
       'exceptions': purpose.exceptions != null
           ? purpose.exceptions!
-              .map((e) => _exceptionsToJson(e))
-              .toList() // ✅ Pass as List
-          : [], // ✅ Pass as List
+              .map((e) => {
+                    'exceptionId': e.exceptionId,
+                    'exceptionName': e.exceptionName,
+                    'exceptionType': e.exceptionType,
+                    'exceptionFigure': e.exceptionFigure,
+                    'priorityFlag': e.priorityFlag,
+                    'isDeleted': e.isDeleted ?? false,
+                  })
+              .toList()
+          : [],
       'forNewcomersOnly': purpose.forNewcomersOnly ?? false,
-      'operationType': purpose.operationType,
-      'syncStatus': purpose.syncStatus,
+      'purposeCode': purpose.purposeCode,
+      'syncStatus': purpose.syncStatus ?? false,
       'lastModified': purpose.lastModified?.toIso8601String(),
+      'operationType': purpose.operationType ?? 'create',
+      'modifiedFields': purpose.modifiedFields ?? [],
+      // ✅ Deletion fields
+      'isDeleted': purpose.isDeleted ?? false,
+      'deletedAt': purpose.deletedAt?.toIso8601String(),
+      'deletedBy': purpose.deletedBy,
+      'deleteReason': purpose.deleteReason,
+      'deletedSyncStatus': purpose.deletedSyncStatus ?? false,
     };
   }
 
@@ -995,6 +1065,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       'operationType': payment.operationType,
       'syncStatus': payment.syncStatus,
       'lastModified': payment.lastModified?.toIso8601String(),
+      // ✅ Deletion fields
+      'isDeleted': payment.isDeleted ?? false,
+      'deletedAt': payment.deletedAt?.toIso8601String(),
+      'deletedBy': payment.deletedBy,
+      'deleteReason': payment.deleteReason,
+      'deletedSyncStatus': payment.deletedSyncStatus ?? false,
     };
   }
 
@@ -1192,13 +1268,28 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //==================== BatchUnit sync ======================
 
 // CREATE PaymentLog on server
+// CREATE PaymentLog on server
   Future<void> _createPaymentLogInMySQL(PaymentLog newLog) async {
-    final Map<String, dynamic> jsonData = _paymentLogToJson(newLog);
+    print('=== _createPaymentLogInMySQL START ===');
+    print('Log ID: ${newLog.logId}');
+    print('Receipt Number: ${newLog.receiptNumber}');
+    print('Student: ${newLog.studentName}');
+    print('Is Deleted: ${newLog.isDeleted}');
+    print('Operation Type: ${newLog.operationType}');
 
     // ✅ Ensure logId exists
     if (newLog.logId == null || newLog.logId!.isEmpty) {
       newLog.logId =
           'LOG_${newLog.receiptNumber}_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    final Map<String, dynamic> jsonData = _paymentLogToJson(newLog);
+
+    // ✅ Ensure deletion fields are included if this is a restore
+    if (newLog.operationType == 'create' &&
+        (newLog.isDeleted ?? false) == false) {
+      jsonData['isDeleted'] = 0;
+      jsonData['deletedSyncStatus'] = 1;
     }
 
     setState(() {
@@ -1215,13 +1306,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonEncode(jsonData),
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('PaymentLog ${newLog.logId} created/updated successfully.');
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
 
-        // ✅ Update sync status
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('✅ PaymentLog ${newLog.logId} created/updated successfully.');
+
         newLog.syncStatus = true;
         newLog.operationType = 'none';
         newLog.modifiedFields = [];
+
+        // ✅ If this was a restore, mark deletion as synced
+        if ((newLog.isDeleted ?? false) == false) {
+          newLog.deletedSyncStatus = true;
+          print('✅ PaymentLog restored and marked as synced');
+        }
+
         await newLog.save();
       } else {
         throw Exception(
@@ -1238,62 +1338,179 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _createPaymentLogInMySQL END ===');
     }
   }
 
 // UPDATE PaymentLog on server
   Future<void> _updatePaymentLogInMySQL(PaymentLog updatedLog) async {
+    print('=== _updatePaymentLogInMySQL START ===');
+    print('Log ID: ${updatedLog.logId}');
+    print('Receipt Number: ${updatedLog.receiptNumber}');
+    print('Student: ${updatedLog.studentName}');
+    print('Modified Fields: ${updatedLog.modifiedFields}');
+    print('Operation Type: ${updatedLog.operationType}');
+    print('Is Deleted: ${updatedLog.isDeleted}');
+    print('Deleted Sync Status: ${updatedLog.deletedSyncStatus}');
+
     final Map<String, dynamic> modifiedFieldsJson = {};
 
     // ✅ Track modified fields
     for (String field in updatedLog.modifiedFields ?? []) {
+      print('  ➜ Processing field: $field');
+
       switch (field) {
         case 'parentName':
           modifiedFieldsJson['parentName'] = updatedLog.parentName;
+          print('    → parentName: ${updatedLog.parentName}');
           break;
         case 'parentPhone':
           modifiedFieldsJson['parentPhone'] = updatedLog.parentPhone;
+          print('    → parentPhone: ${updatedLog.parentPhone}');
           break;
         case 'isReprint':
           modifiedFieldsJson['isReprint'] = updatedLog.isReprint ?? false;
+          print('    → isReprint: ${updatedLog.isReprint}');
           break;
         case 'originalReceiptNumber':
           modifiedFieldsJson['originalReceiptNumber'] =
               updatedLog.originalReceiptNumber;
+          print(
+              '    → originalReceiptNumber: ${updatedLog.originalReceiptNumber}');
           break;
         case 'reprintCount':
           modifiedFieldsJson['reprintCount'] = updatedLog.reprintCount ?? 0;
+          print('    → reprintCount: ${updatedLog.reprintCount}');
           break;
+
+        // ✅ DELETION FIELD HANDLERS
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] =
+              (updatedLog.isDeleted ?? false) ? 1 : 0;
+          print('    → isDeleted: ${(updatedLog.isDeleted ?? false) ? 1 : 0}');
+          break;
+        case 'deletedAt':
+          if (updatedLog.deletedAt != null) {
+            modifiedFieldsJson['deletedAt'] =
+                updatedLog.deletedAt!.toIso8601String();
+            print(
+                '    → deletedAt: ${updatedLog.deletedAt!.toIso8601String()}');
+          } else {
+            modifiedFieldsJson['deletedAt'] = null;
+            print('    → deletedAt: null');
+          }
+          break;
+        case 'deletedBy':
+          modifiedFieldsJson['deletedBy'] = updatedLog.deletedBy ?? '';
+          print('    → deletedBy: ${updatedLog.deletedBy ?? ''}');
+          break;
+        case 'deleteReason':
+          modifiedFieldsJson['deleteReason'] = updatedLog.deleteReason ?? '';
+          print('    → deleteReason: ${updatedLog.deleteReason ?? ''}');
+          break;
+        case 'deletedSyncStatus':
+          modifiedFieldsJson['deletedSyncStatus'] =
+              (updatedLog.deletedSyncStatus ?? false) ? 1 : 0;
+          print(
+              '    → deletedSyncStatus: ${(updatedLog.deletedSyncStatus ?? false) ? 1 : 0}');
+          break;
+        case 'operationType':
+          modifiedFieldsJson['operationType'] =
+              updatedLog.operationType ?? 'none';
+          print('    → operationType: ${updatedLog.operationType ?? 'none'}');
+          break;
+        case 'lastModified':
+          if (updatedLog.lastModified != null) {
+            modifiedFieldsJson['lastModified'] =
+                updatedLog.lastModified!.toIso8601String();
+            print(
+                '    → lastModified: ${updatedLog.lastModified!.toIso8601String()}');
+          }
+          break;
+        case 'syncStatus':
+          modifiedFieldsJson['syncStatus'] =
+              (updatedLog.syncStatus ?? false) ? 1 : 0;
+          print(
+              '    → syncStatus: ${(updatedLog.syncStatus ?? false) ? 1 : 0}');
+          break;
+        default:
+          print('⚠️ UNKNOWN FIELD: $field - SKIPPING');
       }
     }
 
     // Always include logId for identification
     modifiedFieldsJson['logId'] = updatedLog.logId;
+    print('📌 Added logId: ${updatedLog.logId}');
+
+    // ✅ Check if we have fields to update
+    final fieldsToUpdate = Map<String, dynamic>.from(modifiedFieldsJson);
+    fieldsToUpdate.remove('logId');
+
+    print('📊 Fields to update count: ${fieldsToUpdate.length}');
+    print('📊 Fields to update: ${fieldsToUpdate.keys.join(', ')}');
+
+    if (fieldsToUpdate.isEmpty) {
+      print('⚠️ No fields to update. Marking as synced.');
+      updatedLog.syncStatus = true;
+      updatedLog.operationType = 'none';
+      updatedLog.modifiedFields = [];
+      await updatedLog.save();
+      print('=== _updatePaymentLogInMySQL END (No changes) ===');
+      return;
+    }
 
     setState(() {
       _isSyncings = true;
     });
 
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php?logId=${updatedLog.logId}';
+      print('🌐 URL: $url');
+      print('📤 Method: PUT');
+      print('📦 Body: ${jsonEncode(modifiedFieldsJson)}');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php?logId=${updatedLog.logId}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('PaymentLog ${updatedLog.logId} updated successfully.');
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
 
-        // ✅ Update sync status
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        print('✅ PaymentLog ${updatedLog.logId} updated successfully.');
+
+        // ✅ Mark sync status based on operation type
         updatedLog.syncStatus = true;
+
+        // ✅ If this was a deletion, mark deletion as synced
+        if (updatedLog.operationType == 'delete') {
+          updatedLog.deletedSyncStatus = true;
+          print('✅ Deletion synced for log: ${updatedLog.logId}');
+        }
+
+        // ✅ If this was a restore, mark restoration as synced
+        if (updatedLog.operationType == 'update' &&
+            updatedLog.modifiedFields?.contains('isDeleted') == true &&
+            (updatedLog.isDeleted ?? false) == false) {
+          updatedLog.deletedSyncStatus = true;
+          // ✅ Clear deletion fields since it's restored
+          updatedLog.deletedAt = null;
+          updatedLog.deletedBy = null;
+          updatedLog.deleteReason = null;
+          print('✅ Restoration synced for log: ${updatedLog.logId}');
+        }
+
         updatedLog.operationType = 'none';
         updatedLog.modifiedFields = [];
         await updatedLog.save();
       } else {
-        throw Exception('Failed to update payment log.');
+        throw Exception(
+            'Failed to update payment log. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
       print('--- Exception Details ---');
@@ -1301,13 +1518,96 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       print('Stack Trace: $stackTrace');
       print('Log ID: ${updatedLog.logId}');
       print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry
+      await updatedLog.save();
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updatePaymentLogInMySQL END ===');
     }
   }
 
+// DELETE PaymentLog on server (Soft Delete Sync)
+  Future<void> _deletePaymentLogInMySQL(PaymentLog deletedLog) async {
+    print('=== _deletePaymentLogInMySQL START ===');
+    print('Log ID: ${deletedLog.logId}');
+    print('Receipt Number: ${deletedLog.receiptNumber}');
+    print('Student: ${deletedLog.studentName}');
+    print('Deleted By: ${deletedLog.deletedBy}');
+    print('Delete Reason: ${deletedLog.deleteReason}');
+    print('Deleted At: ${deletedLog.deletedAt}');
+    print('Deleted Sync Status: ${deletedLog.deletedSyncStatus}');
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      // ✅ Build URL with deletion parameters
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php'
+          '?logId=${deletedLog.logId}'
+          '&deletedBy=${Uri.encodeComponent(deletedLog.deletedBy ?? "system")}'
+          '&reason=${Uri.encodeComponent(deletedLog.deleteReason ?? "Soft deleted from app")}';
+
+      print('🌐 DELETE URL: $url');
+      print('📤 Method: DELETE');
+
+      final response = await http.delete(
+        Uri.parse(url),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ Deletion synced for PaymentLog: ${deletedLog.logId}');
+
+        // ✅ Mark deletion as synced
+        deletedLog.deletedSyncStatus = true;
+        deletedLog.syncStatus = true;
+        deletedLog.operationType = 'none';
+        deletedLog.lastModified = DateTime.now();
+        await deletedLog.save();
+
+        print('💾 PaymentLog ${deletedLog.logId} marked as synced');
+      } else if (response.statusCode == 404) {
+        // ✅ If already deleted on server, mark as synced locally
+        print('⚠️ PaymentLog already deleted on server (404)');
+        deletedLog.deletedSyncStatus = true;
+        deletedLog.syncStatus = true;
+        deletedLog.operationType = 'none';
+        await deletedLog.save();
+
+        print(
+            '💾 PaymentLog ${deletedLog.logId} marked as synced (server already deleted)');
+      } else {
+        print('❌ Failed to sync deletion. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to sync deletion. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('--- ❌ Exception Details ---');
+      print('Error syncing deletion: $e');
+      print('Stack Trace: $stackTrace');
+      print('Log ID: ${deletedLog.logId}');
+      print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry later
+      await deletedLog.save();
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+      print('=== _deletePaymentLogInMySQL END ===');
+    }
+  }
 // CREATE BatchUnit on server
 
 // CREATE BatchUnit on server
@@ -2295,8 +2595,22 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   //=================== Exceptions  sync =========================
 
   // CREATE Exception on server
+  // CREATE Exception on server
   Future<void> _createExceptionInMySQL(ExceptionalStudents newException) async {
+    print('=== _createExceptionInMySQL START ===');
+    print('Exception ID: ${newException.exceptionId}');
+    print('Exception Name: ${newException.exceptionName}');
+    print('Is Deleted: ${newException.isDeleted}');
+    print('Operation Type: ${newException.operationType}');
+
     final Map<String, dynamic> jsonData = _exceptionsToJson(newException);
+
+    // ✅ Ensure deletion fields are included if this is a restore
+    if (newException.operationType == 'create' &&
+        (newException.isDeleted ?? false) == false) {
+      jsonData['isDeleted'] = 0;
+      jsonData['deletedSyncStatus'] = 1;
+    }
 
     setState(() {
       _isSyncings = true;
@@ -2312,14 +2626,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonEncode(jsonData),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'Exception ${newException.exceptionId} created/updated successfully.');
+            '✅ Exception ${newException.exceptionId} created/updated successfully.');
 
-        // Update syncStatus in Hive
         newException.syncStatus = true;
         newException.operationType = 'none';
         newException.modifiedFields = [];
+
+        // ✅ If this was a restore, mark deletion as synced
+        if ((newException.isDeleted ?? false) == false) {
+          newException.deletedSyncStatus = true;
+          print('✅ Exception restored and marked as synced');
+        }
+
         await newException.save();
 
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2338,92 +2661,331 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       print('Exception ID: ${newException.exceptionId}');
       print('Exception Name: ${newException.exceptionName}');
       print('--- End of Exception Details ---');
-      await newException.save(); // Keep syncStatus false to retry
+      await newException.save();
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _createExceptionInMySQL END ===');
     }
   }
 
 // UPDATE Exception on server
+  // UPDATE Exception on server
   Future<void> _updateExceptionInMySQL(
       ExceptionalStudents updatedException) async {
+    print('=== _updateExceptionInMySQL START ===');
+    print('Exception ID: ${updatedException.exceptionId}');
+    print('Exception Name: ${updatedException.exceptionName}');
+    print('Modified Fields: ${updatedException.modifiedFields}');
+    print('Operation Type: ${updatedException.operationType}');
+    print('Is Deleted: ${updatedException.isDeleted}');
+    print('Deleted Sync Status: ${updatedException.deletedSyncStatus}');
+
     final Map<String, dynamic> modifiedFieldsJson = {};
 
     for (String field in updatedException.modifiedFields ?? []) {
+      print('  ➜ Processing field: $field');
+
       switch (field) {
         case 'exceptionName':
           modifiedFieldsJson['exceptionName'] = updatedException.exceptionName;
+          print('    → exceptionName: ${updatedException.exceptionName}');
           break;
+
         case 'exceptionStatus':
           modifiedFieldsJson['exceptionStatus'] =
               updatedException.exceptionStatus;
+          print('    → exceptionStatus: ${updatedException.exceptionStatus}');
           break;
+
         case 'exceptionType':
           modifiedFieldsJson['exceptionType'] = updatedException.exceptionType;
+          print('    → exceptionType: ${updatedException.exceptionType}');
           break;
+
         case 'exceptionFigure':
           modifiedFieldsJson['exceptionFigure'] =
               updatedException.exceptionFigure;
+          print('    → exceptionFigure: ${updatedException.exceptionFigure}');
           break;
+
         case 'priorityFlag':
           modifiedFieldsJson['priorityFlag'] = updatedException.priorityFlag;
+          print('    → priorityFlag: ${updatedException.priorityFlag}');
           break;
+
         case 'terms':
           modifiedFieldsJson['terms'] =
               jsonEncode(updatedException.terms ?? []);
+          print('    → terms: ${updatedException.terms}');
           break;
+
+        // ✅ DELETION FIELD HANDLERS
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] =
+              (updatedException.isDeleted ?? false) ? 1 : 0;
+          print(
+              '    → isDeleted: ${(updatedException.isDeleted ?? false) ? 1 : 0}');
+          break;
+
+        case 'deletedAt':
+          if (updatedException.deletedAt != null) {
+            modifiedFieldsJson['deletedAt'] =
+                updatedException.deletedAt!.toIso8601String();
+            print(
+                '    → deletedAt: ${updatedException.deletedAt!.toIso8601String()}');
+          } else {
+            modifiedFieldsJson['deletedAt'] = null;
+            print('    → deletedAt: null');
+          }
+          break;
+
+        case 'deletedBy':
+          modifiedFieldsJson['deletedBy'] = updatedException.deletedBy ?? '';
+          print('    → deletedBy: ${updatedException.deletedBy ?? ''}');
+          break;
+
+        case 'deleteReason':
+          modifiedFieldsJson['deleteReason'] =
+              updatedException.deleteReason ?? '';
+          print('    → deleteReason: ${updatedException.deleteReason ?? ''}');
+          break;
+
+        case 'deletedSyncStatus':
+          modifiedFieldsJson['deletedSyncStatus'] =
+              (updatedException.deletedSyncStatus ?? false) ? 1 : 0;
+          print(
+              '    → deletedSyncStatus: ${(updatedException.deletedSyncStatus ?? false) ? 1 : 0}');
+          break;
+
+        case 'operationType':
+          modifiedFieldsJson['operationType'] =
+              updatedException.operationType ?? 'none';
+          print(
+              '    → operationType: ${updatedException.operationType ?? 'none'}');
+          break;
+
+        case 'lastModified':
+          if (updatedException.lastModified != null) {
+            modifiedFieldsJson['lastModified'] =
+                updatedException.lastModified!.toIso8601String();
+            print(
+                '    → lastModified: ${updatedException.lastModified!.toIso8601String()}');
+          }
+          break;
+
+        case 'syncStatus':
+          modifiedFieldsJson['syncStatus'] =
+              (updatedException.syncStatus ?? false) ? 1 : 0;
+          print(
+              '    → syncStatus: ${(updatedException.syncStatus ?? false) ? 1 : 0}');
+          break;
+
+        default:
+          print('⚠️ UNKNOWN FIELD: $field - SKIPPING');
       }
     }
 
-    // Always include exceptionId for identification
+    // Always include exceptionId
     modifiedFieldsJson['exceptionId'] = updatedException.exceptionId;
+    print('📌 Added exceptionId: ${updatedException.exceptionId}');
+
+    final fieldsToUpdate = Map<String, dynamic>.from(modifiedFieldsJson);
+    fieldsToUpdate.remove('exceptionId');
+
+    if (fieldsToUpdate.isEmpty) {
+      print('⚠️ No fields to update. Marking as synced.');
+      updatedException.syncStatus = true;
+      updatedException.operationType = 'none';
+      updatedException.modifiedFields = [];
+      await updatedException.save();
+      print('=== _updateExceptionInMySQL END (No changes) ===');
+      return;
+    }
 
     setState(() {
       _isSyncings = true;
     });
 
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${updatedException.exceptionId}';
+      print('🌐 URL: $url');
+      print('📤 Method: PUT');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?exceptionId=${updatedException.exceptionId}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'Exception ${updatedException.exceptionId} updated successfully.');
+            '✅ Exception ${updatedException.exceptionId} updated successfully.');
 
         updatedException.syncStatus = true;
+
+        // ✅ If this was a deletion, mark deletion as synced
+        if (updatedException.operationType == 'delete') {
+          updatedException.deletedSyncStatus = true;
+          print(
+              '✅ Deletion synced for exception: ${updatedException.exceptionId}');
+        }
+
+        // ✅ If this was a restore (isDeleted changed from true to false)
+        if (updatedException.modifiedFields?.contains('isDeleted') == true &&
+            (updatedException.isDeleted ?? false) == false) {
+          updatedException.deletedSyncStatus = true;
+          // ✅ Clear deletion fields since it's restored
+          updatedException.deletedAt = null;
+          updatedException.deletedBy = null;
+          updatedException.deleteReason = null;
+          print(
+              '✅ Restoration synced for exception: ${updatedException.exceptionId}');
+        }
+
         updatedException.operationType = 'none';
         updatedException.modifiedFields = [];
         await updatedException.save();
 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
             content: Text(
-                'Exception ${updatedException.exceptionName} updated successfully')));
+                'Exception ${updatedException.exceptionName} updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
+        print('❌ Failed to update exception. Status: ${response.statusCode}');
+        print('❌ Response Body: ${response.body}');
         throw Exception(
             'Failed to update exception. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      print('--- Exception Details ---');
-      print('Error updating exception: $e');
+      print('--- ❌ EXCEPTION DETAILS ---');
+      print('Error: $e');
       print('Stack Trace: $stackTrace');
       print('Exception ID: ${updatedException.exceptionId}');
+      print('Exception Name: ${updatedException.exceptionName}');
       print('--- End of Exception Details ---');
+
       await updatedException.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error updating exception: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updateExceptionInMySQL END ===');
     }
   }
 
+// DELETE Exception on server (Soft Delete Sync)
+  Future<void> _deleteExceptionInMySQL(
+      ExceptionalStudents deletedException) async {
+    print('=== _deleteExceptionInMySQL START ===');
+    print('Exception ID: ${deletedException.exceptionId}');
+    print('Exception Name: ${deletedException.exceptionName}');
+    print('Deleted By: ${deletedException.deletedBy}');
+    print('Delete Reason: ${deletedException.deleteReason}');
+    print('Deleted At: ${deletedException.deletedAt}');
+    print('Deleted Sync Status: ${deletedException.deletedSyncStatus}');
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      // ✅ Build URL with deletion parameters
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php'
+          '?exceptionId=${deletedException.exceptionId}'
+          '&deletedBy=${Uri.encodeComponent(deletedException.deletedBy ?? "system")}'
+          '&reason=${Uri.encodeComponent(deletedException.deleteReason ?? "Soft deleted from app")}';
+
+      print('🌐 DELETE URL: $url');
+      print('📤 Method: DELETE');
+
+      final response = await http.delete(
+        Uri.parse(url),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+            '✅ Deletion synced for Exception: ${deletedException.exceptionId}');
+
+        // ✅ Mark deletion as synced
+        deletedException.deletedSyncStatus = true;
+        deletedException.syncStatus = true;
+        deletedException.operationType = 'none';
+        deletedException.lastModified = DateTime.now();
+        await deletedException.save();
+
+        print('💾 Exception ${deletedException.exceptionId} marked as synced');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '✅ Exception "${deletedException.exceptionName}" deletion synced'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (response.statusCode == 404) {
+        // ✅ If already deleted on server, mark as synced locally
+        print('⚠️ Exception already deleted on server (404)');
+        deletedException.deletedSyncStatus = true;
+        deletedException.syncStatus = true;
+        deletedException.operationType = 'none';
+        await deletedException.save();
+
+        print(
+            '💾 Exception ${deletedException.exceptionId} marked as synced (server already deleted)');
+      } else {
+        print('❌ Failed to sync deletion. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to sync deletion. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('--- ❌ Exception Details ---');
+      print('Error syncing deletion: $e');
+      print('Stack Trace: $stackTrace');
+      print('Exception ID: ${deletedException.exceptionId}');
+      print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry later
+      await deletedException.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to sync deletion: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+      print('=== _deleteExceptionInMySQL END ===');
+    }
+  }
   //=================== teachers payment  sync =========================
 
   // CREATE TeacherPayment on server
@@ -2859,7 +3421,20 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //=================== student payment sync =========================
 // CREATE StudentPayment on server
   Future<void> _createStudentPaymentInMySQL(StudentPayment newPayment) async {
+    print('=== _createStudentPaymentInMySQL START ===');
+    print('Receipt Number: ${newPayment.receiptNumber}');
+    print('Student: ${newPayment.studentName} ${newPayment.studentSurname}');
+    print('Is Deleted: ${newPayment.isDeleted}');
+    print('Operation Type: ${newPayment.operationType}');
+
     final Map<String, dynamic> jsonData = _studentPaymentToJson(newPayment);
+
+    // ✅ Ensure deletion fields are included if this is a restore
+    if (newPayment.operationType == 'create' &&
+        (newPayment.isDeleted ?? false) == false) {
+      jsonData['isDeleted'] = 0;
+      jsonData['deletedSyncStatus'] = 1;
+    }
 
     setState(() {
       _isSyncings = true;
@@ -2875,13 +3450,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonEncode(jsonData),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'StudentPayment ${newPayment.receiptNumber} created/updated successfully.');
+            '✅ StudentPayment ${newPayment.receiptNumber} created/updated successfully.');
 
         newPayment.syncStatus = true;
         newPayment.operationType = 'none';
         newPayment.modifiedFields = [];
+
+        // ✅ If this was a restore, mark deletion as synced
+        if ((newPayment.isDeleted ?? false) == false) {
+          newPayment.deletedSyncStatus = true;
+          print('✅ Payment restored and marked as synced');
+        }
+
         await newPayment.save();
 
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2902,120 +3487,262 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _createStudentPaymentInMySQL END ===');
     }
   }
 
 // UPDATE StudentPayment on server
   Future<void> _updateStudentPaymentInMySQL(
       StudentPayment updatedPayment) async {
+    print('=== _updateStudentPaymentInMySQL START ===');
+    print('Receipt Number: ${updatedPayment.receiptNumber}');
+    print(
+        'Student: ${updatedPayment.studentName} ${updatedPayment.studentSurname}');
+    print('Modified Fields: ${updatedPayment.modifiedFields}');
+    print('Operation Type: ${updatedPayment.operationType}');
+    print('Is Deleted: ${updatedPayment.isDeleted}');
+    print('Deleted Sync Status: ${updatedPayment.deletedSyncStatus}');
+
     final Map<String, dynamic> modifiedFieldsJson = {};
 
     for (String field in updatedPayment.modifiedFields ?? []) {
+      print('  ➜ Processing field: $field');
+
       switch (field) {
         case 'studentName':
           modifiedFieldsJson['studentName'] = updatedPayment.studentName;
+          print('    → studentName: ${updatedPayment.studentName}');
           break;
         case 'studentSurname':
           modifiedFieldsJson['studentSurname'] = updatedPayment.studentSurname;
+          print('    → studentSurname: ${updatedPayment.studentSurname}');
           break;
         case 'studentClass':
           modifiedFieldsJson['studentClass'] = updatedPayment.studentClass;
+          print('    → studentClass: ${updatedPayment.studentClass}');
           break;
         case 'studentRegNumber':
           modifiedFieldsJson['studentRegNumber'] =
               updatedPayment.studentRegNumber;
+          print('    → studentRegNumber: ${updatedPayment.studentRegNumber}');
           break;
         case 'phoneNumber':
           modifiedFieldsJson['phoneNumber'] = updatedPayment.phoneNumber;
+          print('    → phoneNumber: ${updatedPayment.phoneNumber}');
           break;
         case 'paymentPurpose':
           modifiedFieldsJson['paymentPurpose'] = updatedPayment.paymentPurpose;
+          print('    → paymentPurpose: ${updatedPayment.paymentPurpose}');
           break;
         case 'amountToPay':
           modifiedFieldsJson['amountToPay'] = updatedPayment.amountToPay;
+          print('    → amountToPay: ${updatedPayment.amountToPay}');
           break;
         case 'paymentDate':
           modifiedFieldsJson['paymentDate'] =
               updatedPayment.paymentDate.toIso8601String();
+          print('    → paymentDate: ${updatedPayment.paymentDate}');
           break;
         case 'termId':
           modifiedFieldsJson['termId'] = updatedPayment.termId;
+          print('    → termId: ${updatedPayment.termId}');
           break;
         case 'receiptNumber':
           modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
+          print('    → receiptNumber: ${updatedPayment.receiptNumber}');
           break;
         case 'username':
           modifiedFieldsJson['username'] = updatedPayment.username;
+          print('    → username: ${updatedPayment.username}');
           break;
         case 'role':
           modifiedFieldsJson['role'] = updatedPayment.role;
+          print('    → role: ${updatedPayment.role}');
           break;
         case 'paymentMethodType':
           modifiedFieldsJson['paymentMethodType'] =
               updatedPayment.paymentMethodType;
+          print('    → paymentMethodType: ${updatedPayment.paymentMethodType}');
           break;
         case 'paymentMethodAmount':
           modifiedFieldsJson['paymentMethodAmount'] =
               updatedPayment.paymentMethodAmount;
+          print(
+              '    → paymentMethodAmount: ${updatedPayment.paymentMethodAmount}');
           break;
         case 'paymentReference':
           modifiedFieldsJson['paymentReference'] =
               updatedPayment.paymentReference;
+          print('    → paymentReference: ${updatedPayment.paymentReference}');
           break;
         case 'mobileMoneyPhone':
           modifiedFieldsJson['mobileMoneyPhone'] =
               updatedPayment.mobileMoneyPhone;
+          print('    → mobileMoneyPhone: ${updatedPayment.mobileMoneyPhone}');
           break;
         case 'mobileMoneyProvider':
           modifiedFieldsJson['mobileMoneyProvider'] =
               updatedPayment.mobileMoneyProvider;
+          print(
+              '    → mobileMoneyProvider: ${updatedPayment.mobileMoneyProvider}');
           break;
         case 'bankAccountNumber':
           modifiedFieldsJson['bankAccountNumber'] =
               updatedPayment.bankAccountNumber;
+          print('    → bankAccountNumber: ${updatedPayment.bankAccountNumber}');
           break;
         case 'bankAccountName':
           modifiedFieldsJson['bankAccountName'] =
               updatedPayment.bankAccountName;
+          print('    → bankAccountName: ${updatedPayment.bankAccountName}');
           break;
         case 'changeGiven':
           modifiedFieldsJson['changeGiven'] = updatedPayment.changeGiven;
+          print('    → changeGiven: ${updatedPayment.changeGiven}');
           break;
+
+        // ✅ DELETION FIELD HANDLERS
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] =
+              (updatedPayment.isDeleted ?? false) ? 1 : 0;
+          print(
+              '    → isDeleted: ${(updatedPayment.isDeleted ?? false) ? 1 : 0}');
+          break;
+        case 'deletedAt':
+          if (updatedPayment.deletedAt != null) {
+            modifiedFieldsJson['deletedAt'] =
+                updatedPayment.deletedAt!.toIso8601String();
+            print(
+                '    → deletedAt: ${updatedPayment.deletedAt!.toIso8601String()}');
+          } else {
+            modifiedFieldsJson['deletedAt'] = null;
+            print('    → deletedAt: null');
+          }
+          break;
+        case 'deletedBy':
+          modifiedFieldsJson['deletedBy'] = updatedPayment.deletedBy ?? '';
+          print('    → deletedBy: ${updatedPayment.deletedBy ?? ''}');
+          break;
+        case 'deleteReason':
+          modifiedFieldsJson['deleteReason'] =
+              updatedPayment.deleteReason ?? '';
+          print('    → deleteReason: ${updatedPayment.deleteReason ?? ''}');
+          break;
+        case 'deletedSyncStatus':
+          modifiedFieldsJson['deletedSyncStatus'] =
+              (updatedPayment.deletedSyncStatus ?? false) ? 1 : 0;
+          print(
+              '    → deletedSyncStatus: ${(updatedPayment.deletedSyncStatus ?? false) ? 1 : 0}');
+          break;
+        case 'operationType':
+          modifiedFieldsJson['operationType'] =
+              updatedPayment.operationType ?? 'none';
+          print(
+              '    → operationType: ${updatedPayment.operationType ?? 'none'}');
+          break;
+        case 'lastModified':
+          if (updatedPayment.lastModified != null) {
+            modifiedFieldsJson['lastModified'] =
+                updatedPayment.lastModified!.toIso8601String();
+            print(
+                '    → lastModified: ${updatedPayment.lastModified!.toIso8601String()}');
+          }
+          break;
+        case 'syncStatus':
+          modifiedFieldsJson['syncStatus'] =
+              (updatedPayment.syncStatus ?? false) ? 1 : 0;
+          print(
+              '    → syncStatus: ${(updatedPayment.syncStatus ?? false) ? 1 : 0}');
+          break;
+        default:
+          print('⚠️ UNKNOWN FIELD: $field - SKIPPING');
       }
     }
 
     // Always include receiptNumber for identification
     modifiedFieldsJson['receiptNumber'] = updatedPayment.receiptNumber;
+    print('📌 Added receiptNumber: ${updatedPayment.receiptNumber}');
+
+    // ✅ Check if we have fields to update
+    final fieldsToUpdate = Map<String, dynamic>.from(modifiedFieldsJson);
+    fieldsToUpdate.remove('receiptNumber');
+
+    print('📊 Fields to update count: ${fieldsToUpdate.length}');
+    print('📊 Fields to update: ${fieldsToUpdate.keys.join(', ')}');
+
+    if (fieldsToUpdate.isEmpty) {
+      print('⚠️ No fields to update. Marking as synced.');
+      updatedPayment.syncStatus = true;
+      updatedPayment.operationType = 'none';
+      updatedPayment.modifiedFields = [];
+      await updatedPayment.save();
+      print('=== _updateStudentPaymentInMySQL END (No changes) ===');
+      return;
+    }
 
     setState(() {
       _isSyncings = true;
     });
 
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${updatedPayment.receiptNumber}';
+      print('🌐 URL: $url');
+      print('📤 Method: PUT');
+      print('📦 Body: ${jsonEncode(modifiedFieldsJson)}');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?receiptNumber=${updatedPayment.receiptNumber}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'StudentPayment ${updatedPayment.receiptNumber} updated successfully.');
+            '✅ StudentPayment ${updatedPayment.receiptNumber} updated successfully.');
 
-        if ((updatedPayment.modifiedFields?.isNotEmpty ?? false) &&
-            updatedPayment.operationType != null &&
-            updatedPayment.operationType != 'none') {
-          SyncQueueManager().enqueue(updatedPayment);
-        }
+        // ✅ Mark sync status based on operation type
         updatedPayment.syncStatus = true;
+
+        // ✅ If this was a deletion, mark deletion as synced
+        if (updatedPayment.operationType == 'delete') {
+          updatedPayment.deletedSyncStatus = true;
+          print(
+              '✅ Deletion synced for payment: ${updatedPayment.receiptNumber}');
+        }
+
+        // ✅ If this was a restore, mark restoration as synced
+        if (updatedPayment.operationType == 'update' &&
+            updatedPayment.modifiedFields?.contains('isDeleted') == true &&
+            (updatedPayment.isDeleted ?? false) == false) {
+          updatedPayment.deletedSyncStatus = true;
+          // ✅ Clear deletion fields since it's restored
+          updatedPayment.deletedAt = null;
+          updatedPayment.deletedBy = null;
+          updatedPayment.deleteReason = null;
+          print(
+              '✅ Restoration synced for payment: ${updatedPayment.receiptNumber}');
+        }
+
         updatedPayment.operationType = 'none';
         updatedPayment.modifiedFields = [];
         await updatedPayment.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Payment for ${updatedPayment.studentName} updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
-        throw Exception('Failed to update payment.');
+        throw Exception(
+            'Failed to update payment. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
       print('--- Exception Details ---');
@@ -3023,18 +3750,132 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       print('Stack Trace: $stackTrace');
       print('Receipt Number: ${updatedPayment.receiptNumber}');
       print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry
+      await updatedPayment.save();
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updateStudentPaymentInMySQL END ===');
     }
   }
 
+// DELETE StudentPayment on server (Soft Delete Sync)
+  Future<void> _deleteStudentPaymentInMySQL(
+      StudentPayment deletedPayment) async {
+    print('=== _deleteStudentPaymentInMySQL START ===');
+    print('Receipt Number: ${deletedPayment.receiptNumber}');
+    print(
+        'Student: ${deletedPayment.studentName} ${deletedPayment.studentSurname}');
+    print('Deleted By: ${deletedPayment.deletedBy}');
+    print('Delete Reason: ${deletedPayment.deleteReason}');
+    print('Deleted At: ${deletedPayment.deletedAt}');
+    print('Deleted Sync Status: ${deletedPayment.deletedSyncStatus}');
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      // ✅ Build URL with deletion parameters
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php'
+          '?receiptNumber=${deletedPayment.receiptNumber}'
+          '&deletedBy=${Uri.encodeComponent(deletedPayment.deletedBy ?? "system")}'
+          '&reason=${Uri.encodeComponent(deletedPayment.deleteReason ?? "Soft deleted from app")}';
+
+      print('🌐 DELETE URL: $url');
+      print('📤 Method: DELETE');
+
+      final response = await http.delete(
+        Uri.parse(url),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ Deletion synced for Payment: ${deletedPayment.receiptNumber}');
+
+        // ✅ Mark deletion as synced
+        deletedPayment.deletedSyncStatus = true;
+        deletedPayment.syncStatus = true;
+        deletedPayment.operationType = 'none';
+        deletedPayment.lastModified = DateTime.now();
+        await deletedPayment.save();
+
+        print('💾 Payment ${deletedPayment.receiptNumber} marked as synced');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '✅ Payment "${deletedPayment.studentName}" deletion synced'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (response.statusCode == 404) {
+        // ✅ If already deleted on server, mark as synced locally
+        print('⚠️ Payment already deleted on server (404)');
+        deletedPayment.deletedSyncStatus = true;
+        deletedPayment.syncStatus = true;
+        deletedPayment.operationType = 'none';
+        await deletedPayment.save();
+
+        print(
+            '💾 Payment ${deletedPayment.receiptNumber} marked as synced (server already deleted)');
+      } else {
+        print('❌ Failed to sync deletion. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to sync deletion. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('--- ❌ Exception Details ---');
+      print('Error syncing deletion: $e');
+      print('Stack Trace: $stackTrace');
+      print('Receipt Number: ${deletedPayment.receiptNumber}');
+      print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry later
+      await deletedPayment.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to sync deletion: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+      print('=== _deleteStudentPaymentInMySQL END ===');
+    }
+  }
   //=================== purpose sync =========================
 
 // CREATE PaymentPurpose on server
+// CREATE PaymentPurpose on server
   Future<void> _createPaymentPurposeInMySQL(PaymentPurpose newPurpose) async {
+    print('=== _createPaymentPurposeInMySQL START ===');
+    print('Purpose Code: ${newPurpose.purposeCode}');
+    print('Purpose Name: ${newPurpose.paymentPurpose}');
+    print('Is Deleted: ${newPurpose.isDeleted}');
+    print('Operation Type: ${newPurpose.operationType}');
+
     final Map<String, dynamic> jsonData = _paymentPurposeToJson(newPurpose);
+
+    // ✅ Ensure deletion fields are included if this is a restore
+    if (newPurpose.operationType == 'create' &&
+        (newPurpose.isDeleted ?? false) == false) {
+      // New purpose - ensure it's marked as not deleted
+      jsonData['isDeleted'] = 0;
+      jsonData['deletedSyncStatus'] = 1;
+    }
 
     setState(() {
       _isSyncings = true;
@@ -3050,13 +3891,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         body: jsonEncode(jsonData),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'PaymentPurpose ${newPurpose.purposeCode} created/updated successfully.');
+            '✅ PaymentPurpose ${newPurpose.purposeCode} created/updated successfully.');
 
         newPurpose.syncStatus = true;
         newPurpose.operationType = 'none';
         newPurpose.modifiedFields = [];
+
+        // ✅ If this was a restore, mark deletion as synced
+        if ((newPurpose.isDeleted ?? false) == false) {
+          newPurpose.deletedSyncStatus = true;
+          print('✅ Purpose restored and marked as synced');
+        }
+
         await newPurpose.save();
 
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -3077,86 +3928,349 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _createPaymentPurposeInMySQL END ===');
     }
   }
 
 // UPDATE PaymentPurpose on server
   Future<void> _updatePaymentPurposeInMySQL(
       PaymentPurpose updatedPurpose) async {
+    print('=== _updatePaymentPurposeInMySQL START ===');
+    print('Purpose Code: ${updatedPurpose.purposeCode}');
+    print('Purpose Name: ${updatedPurpose.paymentPurpose}');
+    print('Modified Fields: ${updatedPurpose.modifiedFields}');
+    print('Operation Type: ${updatedPurpose.operationType}');
+    print('Is Deleted: ${updatedPurpose.isDeleted}');
+    print('Deleted Sync Status: ${updatedPurpose.deletedSyncStatus}');
+
     final Map<String, dynamic> modifiedFieldsJson = {};
 
+    // ✅ Process all modified fields
     for (String field in updatedPurpose.modifiedFields ?? []) {
+      print('  ➜ Processing field: $field');
+
       switch (field) {
         case 'paymentPurpose':
           modifiedFieldsJson['paymentPurpose'] = updatedPurpose.paymentPurpose;
+          print('    → paymentPurpose: ${updatedPurpose.paymentPurpose}');
           break;
+
         case 'purposeAmount':
           modifiedFieldsJson['purposeAmount'] = updatedPurpose.purposeAmount;
+          print('    → purposeAmount: ${updatedPurpose.purposeAmount}');
           break;
+
         case 'termId':
           modifiedFieldsJson['termId'] = updatedPurpose.termId;
+          print('    → termId: ${updatedPurpose.termId}');
           break;
+
         case 'associatedClasses':
           modifiedFieldsJson['associatedClasses'] =
               updatedPurpose.associatedClasses ?? [];
+          print('    → associatedClasses: ${updatedPurpose.associatedClasses}');
           break;
+
         case 'exceptions':
-          modifiedFieldsJson['exceptions'] = updatedPurpose.exceptions != null
-              ? updatedPurpose.exceptions!
-                  .map((e) => _exceptionsToJson(e))
-                  .toList()
-              : [];
+          if (updatedPurpose.exceptions != null &&
+              updatedPurpose.exceptions!.isNotEmpty) {
+            final exceptionData = updatedPurpose.exceptions!.map((e) {
+              return {
+                'exceptionId': e.exceptionId,
+                'exceptionName': e.exceptionName,
+                'exceptionType': e.exceptionType,
+                'exceptionFigure': e.exceptionFigure,
+                'priorityFlag': e.priorityFlag,
+                'isDeleted': e.isDeleted ?? false,
+              };
+            }).toList();
+            modifiedFieldsJson['exceptions'] = jsonEncode(exceptionData);
+            print('    → exceptions: ${exceptionData.length} exceptions');
+          } else {
+            modifiedFieldsJson['exceptions'] = jsonEncode([]);
+            print('    → exceptions: []');
+          }
           break;
+
         case 'forNewcomersOnly':
           modifiedFieldsJson['forNewcomersOnly'] =
-              updatedPurpose.forNewcomersOnly ?? false;
+              (updatedPurpose.forNewcomersOnly ?? false) ? 1 : 0;
+          print(
+              '    → forNewcomersOnly: ${(updatedPurpose.forNewcomersOnly ?? false) ? 1 : 0}');
           break;
+
+        // ✅ DELETION FIELD HANDLERS
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] =
+              (updatedPurpose.isDeleted ?? false) ? 1 : 0;
+          print(
+              '    → isDeleted: ${(updatedPurpose.isDeleted ?? false) ? 1 : 0}');
+          break;
+
+        case 'deletedAt':
+          if (updatedPurpose.deletedAt != null) {
+            modifiedFieldsJson['deletedAt'] =
+                updatedPurpose.deletedAt!.toIso8601String();
+            print(
+                '    → deletedAt: ${updatedPurpose.deletedAt!.toIso8601String()}');
+          } else {
+            modifiedFieldsJson['deletedAt'] = null;
+            print('    → deletedAt: null');
+          }
+          break;
+
+        case 'deletedBy':
+          modifiedFieldsJson['deletedBy'] = updatedPurpose.deletedBy ?? '';
+          print('    → deletedBy: ${updatedPurpose.deletedBy ?? ''}');
+          break;
+
+        case 'deleteReason':
+          modifiedFieldsJson['deleteReason'] =
+              updatedPurpose.deleteReason ?? '';
+          print('    → deleteReason: ${updatedPurpose.deleteReason ?? ''}');
+          break;
+
+        case 'deletedSyncStatus':
+          modifiedFieldsJson['deletedSyncStatus'] =
+              (updatedPurpose.deletedSyncStatus ?? false) ? 1 : 0;
+          print(
+              '    → deletedSyncStatus: ${(updatedPurpose.deletedSyncStatus ?? false) ? 1 : 0}');
+          break;
+
+        case 'operationType':
+          modifiedFieldsJson['operationType'] =
+              updatedPurpose.operationType ?? 'none';
+          print(
+              '    → operationType: ${updatedPurpose.operationType ?? 'none'}');
+          break;
+
+        case 'lastModified':
+          if (updatedPurpose.lastModified != null) {
+            modifiedFieldsJson['lastModified'] =
+                updatedPurpose.lastModified!.toIso8601String();
+            print(
+                '    → lastModified: ${updatedPurpose.lastModified!.toIso8601String()}');
+          }
+          break;
+
+        case 'syncStatus':
+          modifiedFieldsJson['syncStatus'] =
+              (updatedPurpose.syncStatus ?? false) ? 1 : 0;
+          print(
+              '    → syncStatus: ${(updatedPurpose.syncStatus ?? false) ? 1 : 0}');
+          break;
+
+        default:
+          print('⚠️ UNKNOWN FIELD: $field - SKIPPING');
       }
     }
 
     // Always include purposeCode for identification
     modifiedFieldsJson['purposeCode'] = updatedPurpose.purposeCode;
+    print('📌 Added purposeCode: ${updatedPurpose.purposeCode}');
+
+    // ✅ Check if we have fields to update
+    final fieldsToUpdate = Map<String, dynamic>.from(modifiedFieldsJson);
+    fieldsToUpdate.remove('purposeCode');
+
+    print('📊 Fields to update count: ${fieldsToUpdate.length}');
+    print('📊 Fields to update: ${fieldsToUpdate.keys.join(', ')}');
+
+    if (fieldsToUpdate.isEmpty) {
+      print('⚠️ No fields to update. Marking as synced.');
+      updatedPurpose.syncStatus = true;
+      updatedPurpose.operationType = 'none';
+      updatedPurpose.modifiedFields = [];
+      await updatedPurpose.save();
+      print('=== _updatePaymentPurposeInMySQL END (No changes) ===');
+      return;
+    }
+
+    print('📦 Full JSON to send:');
+    print(jsonEncode(modifiedFieldsJson));
 
     setState(() {
       _isSyncings = true;
     });
 
     try {
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${updatedPurpose.purposeCode}';
+      print('🌐 URL: $url');
+      print('📤 Method: PUT');
+
       final response = await http.put(
-        Uri.parse(
-            'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?purposeCode=${updatedPurpose.purposeCode}'),
+        Uri.parse(url),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(modifiedFieldsJson),
       );
 
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
       if (response.statusCode == 201 || response.statusCode == 200) {
         print(
-            'PaymentPurpose ${updatedPurpose.purposeCode} updated successfully.');
+            '✅ Payment Purpose ${updatedPurpose.purposeCode} updated successfully.');
 
-        if ((updatedPurpose.modifiedFields?.isNotEmpty ?? false) &&
-            updatedPurpose.operationType != null &&
-            updatedPurpose.operationType != 'none') {
-          SyncQueueManager().enqueue(updatedPurpose);
-        }
+        // ✅ Mark sync status based on operation type
         updatedPurpose.syncStatus = true;
+
+        // ✅ If this was a deletion, mark deletion as synced
+        if (updatedPurpose.operationType == 'delete') {
+          updatedPurpose.deletedSyncStatus = true;
+          print('✅ Deletion synced for purpose: ${updatedPurpose.purposeCode}');
+        }
+
+        // ✅ If this was a restore (isDeleted changed from true to false)
+        if (updatedPurpose.modifiedFields?.contains('isDeleted') == true &&
+            (updatedPurpose.isDeleted ?? false) == false) {
+          updatedPurpose.deletedSyncStatus = true;
+          // ✅ Clear deletion fields since it's restored
+          updatedPurpose.deletedAt = null;
+          updatedPurpose.deletedBy = null;
+          updatedPurpose.deleteReason = null;
+          print(
+              '✅ Restoration synced for purpose: ${updatedPurpose.purposeCode}');
+        }
+
         updatedPurpose.operationType = 'none';
         updatedPurpose.modifiedFields = [];
         await updatedPurpose.save();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Payment Purpose ${updatedPurpose.paymentPurpose} updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
-        throw Exception('Failed to update payment purpose.');
+        print(
+            '❌ Failed to update payment purpose. Status: ${response.statusCode}');
+        print('❌ Response Body: ${response.body}');
+        throw Exception(
+            'Failed to update payment purpose. Status: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      print('--- Exception Details ---');
+      print('--- ❌ Exception Details ---');
       print('Error updating payment purpose: $e');
       print('Stack Trace: $stackTrace');
       print('Purpose Code: ${updatedPurpose.purposeCode}');
       print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry
+      await updatedPurpose.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error updating payment purpose: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       setState(() {
         _isSyncings = false;
       });
+      print('=== _updatePaymentPurposeInMySQL END ===');
+    }
+  }
+
+// DELETE Payment Purpose on server (Soft Delete Sync)
+  Future<void> _deletePaymentPurposeInMySQL(
+      PaymentPurpose deletedPurpose) async {
+    print('=== _deletePaymentPurposeInMySQL START ===');
+    print('Purpose Code: ${deletedPurpose.purposeCode}');
+    print('Purpose Name: ${deletedPurpose.paymentPurpose}');
+    print('Deleted By: ${deletedPurpose.deletedBy}');
+    print('Delete Reason: ${deletedPurpose.deleteReason}');
+    print('Deleted At: ${deletedPurpose.deletedAt}');
+    print('Deleted Sync Status: ${deletedPurpose.deletedSyncStatus}');
+
+    setState(() {
+      _isSyncings = true;
+    });
+
+    try {
+      // ✅ Build URL with deletion parameters
+      final url =
+          'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php'
+          '?purposeCode=${deletedPurpose.purposeCode}'
+          '&deletedBy=${Uri.encodeComponent(deletedPurpose.deletedBy ?? "system")}'
+          '&reason=${Uri.encodeComponent(deletedPurpose.deleteReason ?? "Soft deleted from app")}';
+
+      print('🌐 DELETE URL: $url');
+      print('📤 Method: DELETE');
+
+      final response = await http.delete(
+        Uri.parse(url),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8'
+        },
+      );
+
+      print('📥 Response Status Code: ${response.statusCode}');
+      print('📥 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+            '✅ Deletion synced for Payment Purpose: ${deletedPurpose.purposeCode}');
+
+        // ✅ Mark deletion as synced
+        deletedPurpose.deletedSyncStatus = true;
+        deletedPurpose.syncStatus = true;
+        deletedPurpose.operationType = 'none';
+        deletedPurpose.lastModified = DateTime.now();
+        await deletedPurpose.save();
+
+        print(
+            '💾 Payment Purpose ${deletedPurpose.purposeCode} marked as synced');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '✅ Payment Purpose "${deletedPurpose.paymentPurpose}" deletion synced'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (response.statusCode == 404) {
+        // ✅ If already deleted on server, mark as synced locally
+        print('⚠️ Payment Purpose already deleted on server (404)');
+        deletedPurpose.deletedSyncStatus = true;
+        deletedPurpose.syncStatus = true;
+        deletedPurpose.operationType = 'none';
+        await deletedPurpose.save();
+
+        print(
+            '💾 Payment Purpose ${deletedPurpose.purposeCode} marked as synced (server already deleted)');
+      } else {
+        print('❌ Failed to sync deletion. Status: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        throw Exception(
+            'Failed to sync deletion. Status: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      print('--- ❌ Exception Details ---');
+      print('Error syncing deletion: $e');
+      print('Stack Trace: $stackTrace');
+      print('Purpose Code: ${deletedPurpose.purposeCode}');
+      print('--- End of Exception Details ---');
+
+      // ✅ Keep syncStatus false to retry later
+      await deletedPurpose.save();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Failed to sync deletion: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isSyncings = false;
+      });
+      print('=== _deletePaymentPurposeInMySQL END ===');
     }
   }
 
@@ -3464,6 +4578,67 @@ class _SyncClassesPageState extends State<ClassesFinal> {
     for (String field in updatedStudent.modifiedFields ?? []) {
       print('Processing field: $field');
       switch (field) {
+        // ... existing cases ...
+
+        // ============================================================
+        // ✅ ADD DELETION FIELD HANDLERS HERE
+        // ============================================================
+        case 'isDeleted':
+          modifiedFieldsJson['isDeleted'] =
+              (updatedStudent.isDeleted ?? false) ? 1 : 0;
+          print('  → isDeleted: ${updatedStudent.isDeleted}');
+          break;
+
+        case 'deletedAt':
+          if (updatedStudent.deletedAt != null) {
+            modifiedFieldsJson['deletedAt'] =
+                updatedStudent.deletedAt!.toIso8601String();
+            print('  → deletedAt: ${updatedStudent.deletedAt}');
+          } else {
+            modifiedFieldsJson['deletedAt'] = null;
+            print('  → deletedAt: null');
+          }
+          break;
+
+        case 'deletedBy':
+          modifiedFieldsJson['deletedBy'] = updatedStudent.deletedBy ?? '';
+          print('  → deletedBy: ${updatedStudent.deletedBy}');
+          break;
+
+        case 'deleteReason':
+          modifiedFieldsJson['deleteReason'] =
+              updatedStudent.deleteReason ?? '';
+          print('  → deleteReason: ${updatedStudent.deleteReason}');
+          break;
+
+        case 'deletedSyncStatus':
+          modifiedFieldsJson['deletedSyncStatus'] =
+              (updatedStudent.deletedSyncStatus ?? false) ? 1 : 0;
+          print('  → deletedSyncStatus: ${updatedStudent.deletedSyncStatus}');
+          break;
+
+        case 'operationType':
+          modifiedFieldsJson['operationType'] =
+              updatedStudent.operationType ?? 'none';
+          print('  → operationType: ${updatedStudent.operationType}');
+          break;
+
+        case 'lastModified':
+          if (updatedStudent.lastModified != null) {
+            modifiedFieldsJson['lastModified'] =
+                updatedStudent.lastModified!.toIso8601String();
+            print('  → lastModified: ${updatedStudent.lastModified}');
+          }
+          break;
+
+        case 'syncStatus':
+          modifiedFieldsJson['syncStatus'] =
+              (updatedStudent.syncStatus ?? false) ? 1 : 0;
+          print('  → syncStatus: ${updatedStudent.syncStatus}');
+          break;
+
+        // ... rest of existing cases ...
+
         case 'termId':
           modifiedFieldsJson['termId'] = updatedStudent.termId;
           break;
@@ -3492,16 +4667,14 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           modifiedFieldsJson['paymentStatus'] = updatedStudent.paymentStatus;
           break;
         case 'isPresent':
-          modifiedFieldsJson['isPresent'] = updatedStudent.isPresent;
+          modifiedFieldsJson['isPresent'] = updatedStudent.isPresent ? 1 : 0;
           break;
         case 'presentDates':
-          // ✅ Pass as List
           modifiedFieldsJson['presentDates'] = updatedStudent.presentDates
               .map((date) => date.toIso8601String())
               .toList();
           break;
         case 'absentDates':
-          // ✅ Pass as List
           modifiedFieldsJson['absentDates'] = updatedStudent.absentDates
               .map((date) => date.toIso8601String())
               .toList();
@@ -3518,6 +4691,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           break;
         case 'denomination':
           modifiedFieldsJson['denomination'] = updatedStudent.denomination;
+          break;
+        case 'studentIdNumber':
+          // Skip - handled separately
           break;
         case 'nationalIdNumber':
           modifiedFieldsJson['nationalIdNumber'] =
@@ -3553,7 +4729,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               updatedStudent.healthDetailedInformation;
           break;
         case 'exceptions':
-          // ✅ Pass as List
           modifiedFieldsJson['exceptions'] = updatedStudent.exceptions != null
               ? updatedStudent.exceptions!
                   .map((e) => _exceptionsToJson(e))
@@ -3561,7 +4736,8 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               : [];
           break;
         case 'isNewComer':
-          modifiedFieldsJson['isNewComer'] = updatedStudent.isNewComer ?? false;
+          modifiedFieldsJson['isNewComer'] =
+              (updatedStudent.isNewComer ?? false) ? 1 : 0;
           break;
         case 'isNewComerFrom':
           modifiedFieldsJson['isNewComerFrom'] =
@@ -3572,17 +4748,69 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               updatedStudent.isNewComerUntil?.toIso8601String();
           break;
         case 'terms':
-          // ✅ Pass as List
           modifiedFieldsJson['terms'] = updatedStudent.terms ?? [];
           break;
+        default:
+          print('⚠️ Unknown field: $field');
       }
     }
 
     // Always include studentIdNumber
     modifiedFieldsJson['studentIdNumber'] = updatedStudent.studentIdNumber;
 
+    // ✅ If this is a deletion, ensure we include all deletion fields
+    if (updatedStudent.operationType == 'delete') {
+      // Ensure all deletion fields are present even if not in modifiedFields
+      if (!modifiedFieldsJson.containsKey('isDeleted')) {
+        modifiedFieldsJson['isDeleted'] =
+            (updatedStudent.isDeleted ?? false) ? 1 : 0;
+      }
+      if (!modifiedFieldsJson.containsKey('deletedAt') &&
+          updatedStudent.deletedAt != null) {
+        modifiedFieldsJson['deletedAt'] =
+            updatedStudent.deletedAt!.toIso8601String();
+      }
+      if (!modifiedFieldsJson.containsKey('deletedBy') &&
+          updatedStudent.deletedBy != null) {
+        modifiedFieldsJson['deletedBy'] = updatedStudent.deletedBy;
+      }
+      if (!modifiedFieldsJson.containsKey('deleteReason') &&
+          updatedStudent.deleteReason != null) {
+        modifiedFieldsJson['deleteReason'] = updatedStudent.deleteReason;
+      }
+      if (!modifiedFieldsJson.containsKey('deletedSyncStatus')) {
+        modifiedFieldsJson['deletedSyncStatus'] =
+            (updatedStudent.deletedSyncStatus ?? false) ? 1 : 0;
+      }
+      if (!modifiedFieldsJson.containsKey('operationType')) {
+        modifiedFieldsJson['operationType'] = 'delete';
+      }
+    }
+
+    // ✅ If this is a restore, ensure we set isDeleted to 0
+    if (updatedStudent.operationType == 'update' &&
+        updatedStudent.modifiedFields?.contains('isDeleted') == true) {
+      modifiedFieldsJson['isDeleted'] =
+          (updatedStudent.isDeleted ?? false) ? 1 : 0;
+      modifiedFieldsJson['deletedSyncStatus'] =
+          (updatedStudent.deletedSyncStatus ?? false) ? 1 : 0;
+    }
+
     print('Modified fields JSON to send:');
     print(modifiedFieldsJson);
+
+    // ✅ Check if we have fields to update (besides studentIdNumber)
+    final fieldsToUpdate = Map<String, dynamic>.from(modifiedFieldsJson);
+    fieldsToUpdate.remove('studentIdNumber');
+
+    if (fieldsToUpdate.isEmpty) {
+      print('⚠️ No fields to update. Marking as synced.');
+      updatedStudent.syncStatus = true;
+      updatedStudent.operationType = 'none';
+      updatedStudent.modifiedFields = [];
+      await updatedStudent.save();
+      return;
+    }
 
     setState(() {
       _isSyncings = true;
@@ -3610,11 +4838,9 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       if (response.statusCode == 201 || response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        // 🔴 FIX: If no changes, try POST instead
         if (responseData['message'] == 'No changes made to student') {
           print(
               '⚠️ No changes detected. Student may not exist. Trying POST...');
-          // Try POST which handles both create and update
           await _createStudentsInMySQL(updatedStudent);
           return;
         }
@@ -3622,12 +4848,25 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         print(
             '✅ Student ${updatedStudent.studentIdNumber} updated successfully.');
 
-        if ((updatedStudent.modifiedFields?.isNotEmpty ?? false) &&
-            updatedStudent.operationType != null &&
-            updatedStudent.operationType != 'none') {
-          SyncQueueManager().enqueue(updatedStudent);
-        }
+        // ✅ Mark sync status based on operation type
         updatedStudent.syncStatus = true;
+
+        // ✅ If this was a deletion, mark deletion as synced
+        if (updatedStudent.operationType == 'delete') {
+          updatedStudent.deletedSyncStatus = true;
+          print(
+              '✅ Deletion synced for student: ${updatedStudent.studentIdNumber}');
+        }
+
+        // ✅ If this was a restore, mark restoration as synced
+        if (updatedStudent.operationType == 'update' &&
+            updatedStudent.modifiedFields?.contains('isDeleted') == true &&
+            updatedStudent.isDeleted == false) {
+          updatedStudent.deletedSyncStatus = true;
+          print(
+              '✅ Restoration synced for student: ${updatedStudent.studentIdNumber}');
+        }
+
         updatedStudent.operationType = 'none';
         updatedStudent.modifiedFields = [];
         await updatedStudent.save();
@@ -5912,9 +7151,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
   // PULL PaymentLogs from server
+  // PULL PaymentLogs from server
   Future<void> _fetchAndSyncPaymentLogs() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/payment_receipts_log_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -5944,7 +7184,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
         for (var logData in logs) {
           try {
-            // ✅ Convert syncStatus from int to bool
+            // ✅ Parse syncStatus
             bool syncStatus = true;
             if (logData['syncStatus'] != null) {
               if (logData['syncStatus'] is int) {
@@ -5954,13 +7194,43 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Convert isReprint from int to bool
+            // ✅ Parse isReprint
             bool isReprint = false;
             if (logData['isReprint'] != null) {
               if (logData['isReprint'] is int) {
                 isReprint = logData['isReprint'] == 1;
               } else if (logData['isReprint'] is bool) {
                 isReprint = logData['isReprint'];
+              }
+            }
+
+            // ✅ Parse deletion fields
+            bool isDeleted = false;
+            if (logData['isDeleted'] != null) {
+              if (logData['isDeleted'] is int) {
+                isDeleted = logData['isDeleted'] == 1;
+              } else if (logData['isDeleted'] is bool) {
+                isDeleted = logData['isDeleted'];
+              }
+            }
+
+            bool deletedSyncStatus = false;
+            if (logData['deletedSyncStatus'] != null) {
+              if (logData['deletedSyncStatus'] is int) {
+                deletedSyncStatus = logData['deletedSyncStatus'] == 1;
+              } else if (logData['deletedSyncStatus'] is bool) {
+                deletedSyncStatus = logData['deletedSyncStatus'];
+              }
+            }
+
+            DateTime? deletedAt;
+            if (logData['deletedAt'] != null) {
+              try {
+                if (logData['deletedAt'] is String) {
+                  deletedAt = DateTime.parse(logData['deletedAt']);
+                }
+              } catch (e) {
+                deletedAt = null;
               }
             }
 
@@ -6032,6 +7302,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               lastModified: lastModified,
               operationType: 'none',
               modifiedFields: modifiedFields,
+              // ✅ Deletion fields
+              isDeleted: isDeleted,
+              deletedAt: deletedAt,
+              deletedBy: logData['deletedBy'],
+              deleteReason: logData['deleteReason'],
+              deletedSyncStatus: deletedSyncStatus,
             );
 
             // Check if log exists in Hive
@@ -6040,7 +7316,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 .toList();
 
             if (existingLogList.isNotEmpty) {
-              // Update existing log
               var existingLog = existingLogList.first;
               existingLog
                 ..receiptNumber = fetchedLog.receiptNumber
@@ -6053,6 +7328,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..isReprint = fetchedLog.isReprint
                 ..originalReceiptNumber = fetchedLog.originalReceiptNumber
                 ..reprintCount = fetchedLog.reprintCount
+                ..isDeleted = fetchedLog.isDeleted
+                ..deletedAt = fetchedLog.deletedAt
+                ..deletedBy = fetchedLog.deletedBy
+                ..deleteReason = fetchedLog.deleteReason
+                ..deletedSyncStatus = fetchedLog.deletedSyncStatus
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
@@ -6060,7 +7340,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               await existingLog.save();
               print('PaymentLog ${fetchedLog.logId} updated in Hive.');
             } else {
-              // Create new log
               await _paymentLogBox!.add(fetchedLog);
               print('PaymentLog ${fetchedLog.logId} added to Hive.');
             }
@@ -6092,9 +7371,10 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 //================================pull _fetchAndSyncStudentExceptions =======================================================================//
 
 // PULL Exceptions from server
+// PULL Exceptions from server
   Future<void> _fetchAndSyncStudentExceptions() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/exceptions_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -6106,7 +7386,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
 
-        // Handle both list and map responses
         List<dynamic> exceptions;
         if (decoded is List) {
           exceptions = decoded;
@@ -6126,7 +7405,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
         }
 
         for (var exceptionData in exceptions) {
-          // ✅ Convert syncStatus from int to bool
+          // ✅ Parse existing fields
           bool syncStatus = true;
           if (exceptionData['syncStatus'] != null) {
             if (exceptionData['syncStatus'] is int) {
@@ -6136,7 +7415,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             }
           }
 
-          // ✅ Parse priorityFlag
           int priorityFlag = 0;
           if (exceptionData['priorityFlag'] != null) {
             if (exceptionData['priorityFlag'] is int) {
@@ -6147,14 +7425,39 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               priorityFlag = int.tryParse(exceptionData['priorityFlag']) ?? 0;
             }
           }
-          // ✅ Parse terms - using existing _decodeToList method
-          List<String> terms = _decodeToList(exceptionData['terms']);
 
-          // ✅ Parse modifiedFields - using existing _decodeToList method
+          List<String> terms = _decodeToList(exceptionData['terms']);
           List<String> modifiedFields =
               _decodeToList(exceptionData['modifiedFields']);
 
-          // ✅ Handle id
+          // ✅ Parse deletion fields
+          bool isDeleted = false;
+          if (exceptionData['isDeleted'] != null) {
+            if (exceptionData['isDeleted'] is int) {
+              isDeleted = exceptionData['isDeleted'] == 1;
+            } else if (exceptionData['isDeleted'] is bool) {
+              isDeleted = exceptionData['isDeleted'];
+            }
+          }
+
+          bool deletedSyncStatus = false;
+          if (exceptionData['deletedSyncStatus'] != null) {
+            if (exceptionData['deletedSyncStatus'] is int) {
+              deletedSyncStatus = exceptionData['deletedSyncStatus'] == 1;
+            } else if (exceptionData['deletedSyncStatus'] is bool) {
+              deletedSyncStatus = exceptionData['deletedSyncStatus'];
+            }
+          }
+
+          DateTime? deletedAt;
+          if (exceptionData['deletedAt'] != null) {
+            try {
+              deletedAt = DateTime.parse(exceptionData['deletedAt']);
+            } catch (e) {
+              deletedAt = null;
+            }
+          }
+
           int? id;
           if (exceptionData['id'] != null) {
             id = exceptionData['id'] is int
@@ -6162,7 +7465,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 : int.tryParse(exceptionData['id'].toString());
           }
 
-          // ✅ Parse lastModified
           DateTime? lastModified;
           try {
             if (exceptionData['lastModified'] != null) {
@@ -6185,6 +7487,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             operationType: 'none',
             lastModified: lastModified,
             modifiedFields: modifiedFields,
+            // ✅ Deletion fields
+            isDeleted: isDeleted,
+            deletedAt: deletedAt,
+            deletedBy: exceptionData['deletedBy'],
+            deleteReason: exceptionData['deleteReason'],
+            deletedSyncStatus: deletedSyncStatus,
           );
 
           // Check if exception exists in Hive
@@ -6194,7 +7502,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               .toList();
 
           if (existingExceptionList.isNotEmpty) {
-            // Update existing exception
             var existingException = existingExceptionList.first;
             existingException
               ..id = fetchedException.id
@@ -6205,6 +7512,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               ..exceptionFigure = fetchedException.exceptionFigure
               ..priorityFlag = fetchedException.priorityFlag
               ..terms = fetchedException.terms
+              ..isDeleted = fetchedException.isDeleted
+              ..deletedAt = fetchedException.deletedAt
+              ..deletedBy = fetchedException.deletedBy
+              ..deleteReason = fetchedException.deleteReason
+              ..deletedSyncStatus = fetchedException.deletedSyncStatus
               ..syncStatus = true
               ..operationType = 'none'
               ..lastModified = DateTime.now();
@@ -6212,7 +7524,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
             await existingException.save();
             print('Exception ${fetchedException.exceptionId} updated in Hive.');
           } else {
-            // Create new exception
             await _exceptionalStudentsBox!.add(fetchedException);
             print('Exception ${fetchedException.exceptionId} added to Hive.');
           }
@@ -6237,7 +7548,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
   }
 
   //================================pull _fetchAndSyncProjectReceiptSnapshot =======================================================================//
-//================================pull _fetchAndSyncProjectReceiptSnapshot =======================================================================//
 
   Future<void> _fetchAndSyncProjectReceiptSnapshot() async {
     final String apiUrl =
@@ -7893,7 +9203,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
   Future<void> _fetchAndSyncPurposes() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_purpose_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -7926,8 +9236,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
           try {
             print('Processing purpose data: $purposeData');
 
-            // ✅ FIX: Safely convert all values
-            // Handle purposeCode - could be String or int
+            // ✅ Parse purposeCode
             String? purposeCode;
             if (purposeData['purposeCode'] != null) {
               if (purposeData['purposeCode'] is String) {
@@ -7939,7 +9248,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ If no purposeCode, use id or fid
             if (purposeCode == null || purposeCode.isEmpty) {
               if (purposeData['id'] != null) {
                 purposeCode = purposeData['id'].toString();
@@ -7948,13 +9256,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // Skip if no purposeCode
             if (purposeCode == null || purposeCode.isEmpty) {
               print('Skipping purpose with no purposeCode');
               continue;
             }
 
-            // ✅ Convert syncStatus from int to bool
+            // ✅ Parse syncStatus
             bool syncStatus = true;
             if (purposeData['syncStatus'] != null) {
               if (purposeData['syncStatus'] is int) {
@@ -7967,7 +9274,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Convert forNewcomersOnly from int to bool
+            // ✅ Parse forNewcomersOnly
             bool forNewcomersOnly = false;
             if (purposeData['forNewcomersOnly'] != null) {
               if (purposeData['forNewcomersOnly'] is int) {
@@ -7980,17 +9287,53 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Parse associatedClasses - handles List or String
+            // ✅ Parse deletion fields
+            bool isDeleted = false;
+            if (purposeData['isDeleted'] != null) {
+              if (purposeData['isDeleted'] is int) {
+                isDeleted = purposeData['isDeleted'] == 1;
+              } else if (purposeData['isDeleted'] is bool) {
+                isDeleted = purposeData['isDeleted'];
+              } else if (purposeData['isDeleted'] is String) {
+                isDeleted = purposeData['isDeleted'] == '1' ||
+                    purposeData['isDeleted'].toLowerCase() == 'true';
+              }
+            }
+
+            bool deletedSyncStatus = false;
+            if (purposeData['deletedSyncStatus'] != null) {
+              if (purposeData['deletedSyncStatus'] is int) {
+                deletedSyncStatus = purposeData['deletedSyncStatus'] == 1;
+              } else if (purposeData['deletedSyncStatus'] is bool) {
+                deletedSyncStatus = purposeData['deletedSyncStatus'];
+              } else if (purposeData['deletedSyncStatus'] is String) {
+                deletedSyncStatus = purposeData['deletedSyncStatus'] == '1' ||
+                    purposeData['deletedSyncStatus'].toLowerCase() == 'true';
+              }
+            }
+
+            DateTime? deletedAt;
+            if (purposeData['deletedAt'] != null) {
+              try {
+                if (purposeData['deletedAt'] is String) {
+                  deletedAt = DateTime.parse(purposeData['deletedAt']);
+                }
+              } catch (e) {
+                deletedAt = null;
+              }
+            }
+
+            // ✅ Parse associatedClasses
             List<String> associatedClasses =
                 _decodeToList(purposeData['associatedClasses']);
 
-            // ✅ Parse exceptions - handles List or String
+            // ✅ Parse exceptions
             List<ExceptionalStudents>? exceptions;
             if (purposeData['exceptions'] != null) {
               exceptions = _decodeExceptions(purposeData['exceptions']);
             }
 
-            // ✅ Handle id mapping - safely convert to int
+            // ✅ Parse id
             int? id;
             if (purposeData['id'] != null) {
               if (purposeData['id'] is int) {
@@ -8011,7 +9354,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Parse purposeAmount - safely convert to double
+            // ✅ Parse purposeAmount
             double purposeAmount = 0.0;
             if (purposeData['purposeAmount'] != null) {
               if (purposeData['purposeAmount'] is double) {
@@ -8049,6 +9392,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               operationType: 'none',
               lastModified: lastModified,
               modifiedFields: [],
+              // ✅ Deletion fields
+              isDeleted: isDeleted,
+              deletedAt: deletedAt,
+              deletedBy: purposeData['deletedBy']?.toString(),
+              deleteReason: purposeData['deleteReason']?.toString(),
+              deletedSyncStatus: deletedSyncStatus,
             );
 
             // Check if purpose exists in Hive
@@ -8058,7 +9407,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 .toList();
 
             if (existingPurposeList.isNotEmpty) {
-              // Update existing purpose
               var existingPurpose = existingPurposeList.first;
               existingPurpose
                 ..id = fetchedPurpose.id
@@ -8069,6 +9417,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..associatedClasses = fetchedPurpose.associatedClasses
                 ..exceptions = fetchedPurpose.exceptions
                 ..forNewcomersOnly = fetchedPurpose.forNewcomersOnly
+                ..isDeleted = fetchedPurpose.isDeleted
+                ..deletedAt = fetchedPurpose.deletedAt
+                ..deletedBy = fetchedPurpose.deletedBy
+                ..deleteReason = fetchedPurpose.deleteReason
+                ..deletedSyncStatus = fetchedPurpose.deletedSyncStatus
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
@@ -8077,7 +9430,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               print(
                   'PaymentPurpose ${fetchedPurpose.purposeCode} updated in Hive.');
             } else {
-              // Create new purpose
               await _payment_purposesBox!.add(fetchedPurpose);
               print(
                   'PaymentPurpose ${fetchedPurpose.purposeCode} added to Hive.');
@@ -8243,7 +9595,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 // PULL StudentPayments from server
   Future<void> _fetchAndSyncStudentPayments() async {
     final String apiUrl =
-        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php';
+        'http://$_domainName/api_school_management_system/php_codes_for_a_restful_api/student_payment_api.php?include_deleted=true';
 
     setState(() {
       _isSyncing = true;
@@ -8273,10 +9625,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
 
         for (var paymentsData in studentPayments) {
           try {
-            // ✅ Debug paymentDate
-            debugPrint(
-                'Raw paymentDate received: ${paymentsData['paymentDate']}');
-
             // ✅ Parse paymentDate safely
             DateTime paymentDate;
             if (paymentsData['paymentDate'] != null) {
@@ -8293,7 +9641,7 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               paymentDate = DateTime.now();
             }
 
-            // ✅ Convert syncStatus from int to bool
+            // ✅ Parse syncStatus
             bool syncStatus = true;
             if (paymentsData['syncStatus'] != null) {
               if (paymentsData['syncStatus'] is int) {
@@ -8303,20 +9651,33 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               }
             }
 
-            // ✅ Handle id mapping
-            int? id;
-            if (paymentsData['id'] != null) {
-              if (paymentsData['id'] is int) {
-                id = paymentsData['id'];
-              } else if (paymentsData['id'] is String) {
-                id = int.tryParse(paymentsData['id']);
+            // ✅ Parse deletion fields
+            bool isDeleted = false;
+            if (paymentsData['isDeleted'] != null) {
+              if (paymentsData['isDeleted'] is int) {
+                isDeleted = paymentsData['isDeleted'] == 1;
+              } else if (paymentsData['isDeleted'] is bool) {
+                isDeleted = paymentsData['isDeleted'];
               }
             }
-            if (id == null && paymentsData['fid'] != null) {
-              if (paymentsData['fid'] is int) {
-                id = paymentsData['fid'];
-              } else if (paymentsData['fid'] is String) {
-                id = int.tryParse(paymentsData['fid']);
+
+            bool deletedSyncStatus = false;
+            if (paymentsData['deletedSyncStatus'] != null) {
+              if (paymentsData['deletedSyncStatus'] is int) {
+                deletedSyncStatus = paymentsData['deletedSyncStatus'] == 1;
+              } else if (paymentsData['deletedSyncStatus'] is bool) {
+                deletedSyncStatus = paymentsData['deletedSyncStatus'];
+              }
+            }
+
+            DateTime? deletedAt;
+            if (paymentsData['deletedAt'] != null) {
+              try {
+                if (paymentsData['deletedAt'] is String) {
+                  deletedAt = DateTime.parse(paymentsData['deletedAt']);
+                }
+              } catch (e) {
+                deletedAt = null;
               }
             }
 
@@ -8357,6 +9718,23 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               } else if (paymentsData['changeGiven'] is String) {
                 changeGiven =
                     double.tryParse(paymentsData['changeGiven']) ?? 0.0;
+              }
+            }
+
+            // ✅ Parse id
+            int? id;
+            if (paymentsData['id'] != null) {
+              if (paymentsData['id'] is int) {
+                id = paymentsData['id'];
+              } else if (paymentsData['id'] is String) {
+                id = int.tryParse(paymentsData['id']);
+              }
+            }
+            if (id == null && paymentsData['fid'] != null) {
+              if (paymentsData['fid'] is int) {
+                id = paymentsData['fid'];
+              } else if (paymentsData['fid'] is String) {
+                id = int.tryParse(paymentsData['fid']);
               }
             }
 
@@ -8404,6 +9782,12 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               operationType: 'none',
               lastModified: lastModified,
               modifiedFields: [],
+              // ✅ Deletion fields
+              isDeleted: isDeleted,
+              deletedAt: deletedAt,
+              deletedBy: paymentsData['deletedBy']?.toString(),
+              deleteReason: paymentsData['deleteReason']?.toString(),
+              deletedSyncStatus: deletedSyncStatus,
             );
 
             // Check if payment exists in Hive
@@ -8413,7 +9797,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 .toList();
 
             if (existingPaymentList.isNotEmpty) {
-              // Update existing payment
               var existingPayment = existingPaymentList.first;
               existingPayment
                 ..id = fetchedPayment.id
@@ -8437,6 +9820,11 @@ class _SyncClassesPageState extends State<ClassesFinal> {
                 ..bankAccountNumber = fetchedPayment.bankAccountNumber
                 ..bankAccountName = fetchedPayment.bankAccountName
                 ..changeGiven = fetchedPayment.changeGiven
+                ..isDeleted = fetchedPayment.isDeleted
+                ..deletedAt = fetchedPayment.deletedAt
+                ..deletedBy = fetchedPayment.deletedBy
+                ..deleteReason = fetchedPayment.deleteReason
+                ..deletedSyncStatus = fetchedPayment.deletedSyncStatus
                 ..syncStatus = true
                 ..operationType = 'none'
                 ..lastModified = DateTime.now();
@@ -8445,7 +9833,6 @@ class _SyncClassesPageState extends State<ClassesFinal> {
               print(
                   'StudentPayment ${fetchedPayment.receiptNumber} updated in Hive.');
             } else {
-              // Create new payment
               await _student_paymentsBox!.add(fetchedPayment);
               print(
                   'StudentPayment ${fetchedPayment.receiptNumber} added to Hive.');

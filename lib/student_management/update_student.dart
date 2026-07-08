@@ -66,7 +66,9 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
   void _loadExceptionalStudents() async {
     final box =
         await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
-    final all = box.values.toList();
+    final all = box.values
+        .where((e) => !(e.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+        .toList();
 
     setState(() {
       _exceptionalStudents = all
@@ -94,8 +96,11 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
   Future<void> _loadTerms() async {
     final termsBox = await Hive.openBox<Terms>('terms');
     setState(() {
-      _availableTerms =
-          termsBox.values.map((term) => term.termId).toSet().toList();
+      _availableTerms = termsBox.values
+          .where((t) => !(t.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+          .map((term) => term.termId)
+          .toSet()
+          .toList();
     });
   }
 
@@ -103,7 +108,9 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
     final box = await Hive.openBox<Classes>('classes');
     setState(() {
       _classes = box.values
-          .where((c) => c.terms!.contains(globalTermId))
+          .where((c) =>
+              !(c.isDeleted ?? false) && // ✅ FILTER OUT DELETED
+              c.terms!.contains(globalTermId))
           .map((c) => c.className)
           .toList();
     });
@@ -111,7 +118,9 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
   void _searchStudents() async {
     final box = await Hive.openBox<Student>('students');
-    final students = box.values.toList();
+    final students = box.values
+        .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+        .toList();
     final searchQuery = _surnameController.text.toLowerCase().trim();
 
     // If search query is empty, show all students or clear results
@@ -236,7 +245,6 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
     setState(() {
       _foundStudent = student;
-      // 🔍 Check what comes from the student
       print(
           "📦 student.exceptions: ${student.exceptions?.map((e) => e.exceptionName).toList()}");
 
@@ -265,41 +273,37 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
           student.emergencyContactName.toString();
       _emergencyContactNumberController.text =
           student.emergencyContactNumber.toString();
-      // Preload the selected terms
-// Ensure _selectedTerms is assigned a valid list (handle null case)
-      // 🔹 Set exceptional and newcomer values from the existing student
       _selectedExceptions = student.exceptions ?? [];
       print(
           "✅ _selectedExceptions after load: ${_selectedExceptions.map((e) => e.exceptionName).toList()}");
-
       _isNewComer = student.isNewComer ?? false;
       _isNewComerFrom = student.isNewComerFrom;
       _isNewComerUntil = student.isNewComerUntil;
       _selectedTerms = List<String>.from(student.terms ?? []);
       _matchingStudents = [];
     });
-    // Now, load the class's terms to override student terms
     await _loadClassTerms(student.class_);
   }
 
   Future<void> _loadClassTerms(String className) async {
     final classBox = await Hive.openBox<Classes>('classes');
-    final selectedClass = classBox.values.firstWhere(
-      (c) => c.className == className,
-      orElse: () => Classes(
-        id: -1,
-        className: '',
-        classCode: '',
-        date: DateTime(1970),
-        termId: globalTermId,
-      ),
-    );
+    final selectedClass = classBox.values
+        .where((c) => !(c.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+        .firstWhere(
+          (c) => c.className == className,
+          orElse: () => Classes(
+            id: -1,
+            className: '',
+            classCode: '',
+            date: DateTime(1970),
+            termId: globalTermId,
+          ),
+        );
 
     if (selectedClass.id != -1) {
-      // Update the available terms for this class
       setState(() {
         _availableTerms = selectedClass.terms != null
-            ? selectedClass.terms!.toSet().toList() // Remove duplicates
+            ? selectedClass.terms!.toSet().toList()
             : [];
       });
     }
@@ -768,26 +772,28 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
       // Fetch the current student record
       final boxen = await Hive.openBox<Student>('students');
 
-      final currentStudent = boxen.values.firstWhere(
-        (s) => s.id == student.id,
-        orElse: () => Student(
-          id: -1,
-          name: '',
-          surname: '',
-          regNumber: '',
-          class_: '',
-          gender: '',
-          age: DateTime(1970),
-          phoneNumber: '',
-          paymentStatus: '',
-          termId: globalTermId,
-          syncStatus: false,
-          lastModified: DateTime(1970),
-          operationType: 'update',
-          physicalAddress: '',
-          terms: [],
-        ),
-      );
+      final currentStudent = boxen.values
+          .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+          .firstWhere(
+            (s) => s.id == student.id,
+            orElse: () => Student(
+              id: -1,
+              name: '',
+              surname: '',
+              regNumber: '',
+              class_: '',
+              gender: '',
+              age: DateTime(1970),
+              phoneNumber: '',
+              paymentStatus: '',
+              termId: globalTermId,
+              syncStatus: false,
+              lastModified: DateTime(1970),
+              operationType: 'update',
+              physicalAddress: '',
+              terms: [],
+            ),
+          );
 
       if (currentStudent.id == -1) {
         _showDialog('Error: Student not found');
@@ -796,16 +802,18 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
 
       // Ensure the terms list in the student is overridden by the class terms
       final classBox = await Hive.openBox<Classes>('classes');
-      final selectedClass = classBox.values.firstWhere(
-        (c) => c.className == _selectedClass,
-        orElse: () => Classes(
-          id: -1,
-          className: '',
-          classCode: '',
-          date: DateTime(1970),
-          termId: globalTermId,
-        ),
-      );
+      final selectedClass = classBox.values
+          .where((c) => !(c.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+          .firstWhere(
+            (c) => c.className == _selectedClass,
+            orElse: () => Classes(
+              id: -1,
+              className: '',
+              classCode: '',
+              date: DateTime(1970),
+              termId: globalTermId,
+            ),
+          );
 
       List<String> modifiedFields = student.modifiedFields ??
           []; // Initialize with existing modified fields
@@ -1087,31 +1095,37 @@ class _UpdateStudentScreenState extends State<UpdateStudentScreen> {
         // ...
         modifiedFields: modifiedFields,
         terms: List<String>.from(_selectedTerms), // ✅ Save Updated Terms Here
+        // ✅ PRESERVE DELETION STATUS
+        isDeleted: student.isDeleted ?? false,
+        deletedSyncStatus: student.deletedSyncStatus ?? true,
       );
 
       final box = await Hive.openBox<Student>('students');
-      final existingStudent = box.values.cast<Student>().firstWhere(
-          (c) =>
-              c.name.toLowerCase() == name &&
-              c.surname.toLowerCase() == surname &&
-              c.regNumber.toLowerCase() == reg &&
-              c.class_.toLowerCase() == classes &&
-              c.gender.toLowerCase() == gender &&
-              c.age == age &&
-              c.phoneNumber.toLowerCase() == phone &&
-              c.paymentStatus.toLowerCase() == status,
-          orElse: () => Student(
-                name: 'empty',
-                surname: 'empty',
-                class_: '',
-                regNumber: '-1',
-                gender: '',
-                age: DateTime(1970),
-                phoneNumber: '',
-                paymentStatus: '',
-                termId: globalTermId,
-              ) // Ensure termId matches),
-          );
+      final existingStudent = box.values
+          .where((s) => !(s.isDeleted ?? false)) // ✅ FILTER OUT DELETED
+          .cast<Student>()
+          .firstWhere(
+              (c) =>
+                  c.name.toLowerCase() == name &&
+                  c.surname.toLowerCase() == surname &&
+                  c.regNumber.toLowerCase() == reg &&
+                  c.class_.toLowerCase() == classes &&
+                  c.gender.toLowerCase() == gender &&
+                  c.age == age &&
+                  c.phoneNumber.toLowerCase() == phone &&
+                  c.paymentStatus.toLowerCase() == status,
+              orElse: () => Student(
+                    name: 'empty',
+                    surname: 'empty',
+                    class_: '',
+                    regNumber: '-1',
+                    gender: '',
+                    age: DateTime(1970),
+                    phoneNumber: '',
+                    paymentStatus: '',
+                    termId: globalTermId,
+                  ) // Ensure termId matches),
+              );
 
       if (existingStudent.name != 'empty' &&
           existingStudent.surname != 'empty' &&

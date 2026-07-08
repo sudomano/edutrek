@@ -187,6 +187,12 @@ class StudentPayment extends HiveObject {
     String? bankAccountNumber,
     String? bankAccountName,
     double? changeGiven,
+    // ✅ Deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return StudentPayment(
       studentName: studentName ?? this.studentName,
@@ -214,6 +220,12 @@ class StudentPayment extends HiveObject {
       bankAccountNumber: bankAccountNumber ?? this.bankAccountNumber,
       bankAccountName: bankAccountName ?? this.bankAccountName,
       changeGiven: changeGiven ?? this.changeGiven,
+      // ✅ Include deletion fields
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 }

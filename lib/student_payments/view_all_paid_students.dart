@@ -129,7 +129,9 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
   }
 
   Future<List<StudentPayment>> _fetchStudentPaymentFromHive() async {
-    final payments = paymentBoxes.values.toList();
+    final payments = paymentBoxes.values
+        .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+        .toList();
 
     final terms = payments.map((e) => e.termId).whereType<String>().toSet();
     _termIds = terms.toList()..sort();
@@ -157,10 +159,15 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
         final jsonList = jsonDecode(jsonString) as List;
 
         // Convert JSON to List<PaymentPurpose>
-        final payments = jsonList
+        // Convert JSON to List<StudentPayment>
+        final allPayments = jsonList
             .map((json) =>
                 studentPaymentsFromJson(Map<String, dynamic>.from(json)))
             .toList();
+
+        // ✅ FILTER OUT DELETED PAYMENTS
+        final payments =
+            allPayments.where((p) => !(p.isDeleted ?? false)).toList();
 
         // Extract and update _termIds
         final terms = payments.map((e) => e.termId).whereType<String>().toSet();
@@ -197,8 +204,12 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       if (_role == DeviceRole.host) {
         final termBox = await Hive.openBox<Terms>('terms');
 
-        allStudentPayments = paymentBoxes.values.toList();
-        allTerms = termBox.values.toList();
+        allStudentPayments = paymentBoxes.values
+            .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
+            .toList();
+        allTerms = termBox.values
+            .where((t) => !(t.isDeleted ?? false)) // ✅ ADD THIS
+            .toList();
       } else {
         if (_hostIp!.isEmpty) {
           _showDialog("⚠️ Host IP not set. Please configure connection.");
@@ -227,10 +238,13 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
 
             _cachedServerTerms = termsList
                 .map((json) => termsFromJson(Map<String, dynamic>.from(json)))
+                .where((t) => !(t.isDeleted ?? false)) // ✅ ADD THIS
                 .toList();
+
             _cachedServerStudentPayments = studentPaymentsList
                 .map((json) =>
                     studentPaymentsFromJson(Map<String, dynamic>.from(json)))
+                .where((p) => !(p.isDeleted ?? false)) // ✅ ADD THIS
                 .toList();
           } else {
             throw Exception("Failed to load terms or students data from host.");
@@ -248,8 +262,11 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       }
 
       // Filter payments by globalTermId
+      // Filter payments by globalTermId
       final filteredPayments = allStudentPayments
-          .where((payment) => _selectedTermIds.contains(payment.termId))
+          .where((payment) =>
+              _selectedTermIds.contains(payment.termId) &&
+              !(payment.isDeleted ?? false)) // ✅ ADD THIS
           .toList();
 
       // Fetch unique classes from filtered payments
@@ -313,8 +330,10 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
 
       if (_role == DeviceRole.host) {
         allStudentPayments = paymentBoxes.values
-            .where(
-                (s) => s.termId != null && _selectedTermIds.contains(s.termId))
+            .where((s) =>
+                s.termId != null &&
+                _selectedTermIds.contains(s.termId) &&
+                !(s.isDeleted ?? false)) // ✅ ADD THIS
             .toList();
       } else {
         // Use previously fetched server data
@@ -1236,44 +1255,42 @@ class _ViewByScreenState extends State<ViewAllStudentPayments> {
       // ✅ SAME HOST / CLIENT LOGIC FROM OLD CODE
       if (_role == DeviceRole.host) {
         allStudentPayments = paymentBoxes.values
-            .where(
-              (s) => s.termId != null && newSelected.contains(s.termId),
-            )
+            .where((s) =>
+                s.termId != null &&
+                newSelected.contains(s.termId) &&
+                !(s.isDeleted ?? false)) // ✅ ADD THIS
             .toList();
       } else {
         // Previously loaded server Future
         allStudentPayments = await _StudentPaymentFuture;
         allStudentPayments = allStudentPayments
-            .where(
-              (s) => s.termId != null && newSelected.contains(s.termId),
-            )
+            .where((s) =>
+                s.termId != null &&
+                newSelected.contains(s.termId) &&
+                !(s.isDeleted ?? false)) // ✅ ADD THIS
             .toList();
       }
 
       final termPayments = allStudentPayments;
 
-      // ✅ Rebuild classes
+      // Rebuild classes from active payments
       _classes = ['All'];
-      _classes.addAll(
-        termPayments.map((p) => p.studentClass).toSet().toList(),
-      );
+      _classes.addAll(termPayments.map((p) => p.studentClass).toSet().toList());
 
-      // ✅ Rebuild payment methods
+      // Rebuild payment methods from active payments
       _paymentMethods = ['All'];
       _paymentMethods.addAll(
-        termPayments.map((p) => p.paymentMethodType).toSet().toList(),
-      );
-      // ✅ Rebuild users
+          termPayments.map((p) => p.paymentMethodType).toSet().toList());
+
+      // Rebuild users from active payments
       _users = ['All'];
       _users.addAll(
-        termPayments.map((p) => p.username.toString()).toSet().toList(),
-      );
+          termPayments.map((p) => p.username.toString()).toSet().toList());
 
-      // ✅ Rebuild purposes
+      // Rebuild purposes from active payments
       _purposes = ['All'];
-      _purposes.addAll(
-        termPayments.map((p) => p.paymentPurpose).toSet().toList(),
-      );
+      _purposes
+          .addAll(termPayments.map((p) => p.paymentPurpose).toSet().toList());
     } catch (e) {
       debugPrint("Error during term filter: $e");
     }

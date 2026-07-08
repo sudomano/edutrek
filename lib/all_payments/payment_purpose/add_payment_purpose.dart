@@ -24,8 +24,8 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
   final _purposeController = TextEditingController();
   final _amountController = TextEditingController();
 
-  List<String> _classes = []; // List of class names
-  List<String> _selectedClasses = []; // Selected classes
+  List<String> _classes = [];
+  List<String> _selectedClasses = [];
 
   List<ExceptionalStudents> _exceptionNames = [];
   List<ExceptionalStudents> _selectedExceptionNames = [];
@@ -37,16 +37,22 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchClasses(); // Fetch classes when screen loads
-    _fetchExceptionalStudents(); // <- new
-    _loadTerms(); // Load terms on init
+    _fetchClasses();
+    _fetchExceptionalStudents();
+    _loadTerms();
   }
 
   Future<void> _loadTerms() async {
     final termsBox = await Hive.openBox<Terms>('terms');
+    // ✅ Only load active (non-deleted) terms
+    final activeTerms = termsBox.values
+        .where((t) => !(t.isDeleted ?? false))
+        .map((term) => term.termId)
+        .toList();
+
     setState(() {
-      _availableTerms = termsBox.values.map((term) => term.termId).toList();
-      _selectedTerms = List.from(_availableTerms); // Preselect all
+      _availableTerms = activeTerms;
+      _selectedTerms = List.from(_availableTerms);
     });
   }
 
@@ -69,7 +75,8 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
   void _fetchExceptionalStudents() async {
     final box =
         await Hive.openBox<ExceptionalStudents>('exceptionalStudentsBox');
-    final all = box.values.toList();
+    // ✅ Only load active (non-deleted) exceptions
+    final all = box.values.where((e) => !(e.isDeleted ?? false)).toList();
 
     setState(() {
       _exceptionNames = all
@@ -80,12 +87,15 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
 
   Future<void> _fetchClasses() async {
     final box = await Hive.openBox<Classes>('classes');
+    // ✅ Only load active (non-deleted) classes
     final classes = box.values
         .where((purposeItem) =>
             purposeItem.termId != null &&
-            purposeItem.terms!.contains(globalTermId))
+            purposeItem.terms!.contains(globalTermId) &&
+            !(purposeItem.isDeleted ?? false))
         .map((e) => e.className)
         .toList();
+
     setState(() {
       _classes = classes;
     });
@@ -221,50 +231,62 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
         if (value == null || value.isEmpty) {
           return 'Please enter $label';
         }
+        final parsed = double.tryParse(value);
+        if (parsed == null) {
+          return 'Please enter a valid amount';
+        }
+        if (parsed < 0) {
+          return 'Amount must be greater than 0';
+        }
         return null;
       },
     );
   }
 
   Widget _buildClassesList() {
-    // Boolean to track the Select/Deselect All state
-    bool _selectAll = _selectedClasses.length == _classes.length;
+    bool _selectAll =
+        _selectedClasses.length == _classes.length && _classes.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Select/Deselect All Checkbox
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: Row(
-              children: [
-                Checkbox(
-                  value: _selectAll,
-                  onChanged: (isChecked) {
-                    setState(() {
-                      if (isChecked == true) {
-                        // Select all classes
-                        _selectedClasses = List.from(_classes);
-                      } else {
-                        // Deselect all classes
-                        _selectedClasses.clear();
-                      }
-                    });
-                  },
-                ),
-                Text(
-                  'Select All',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontSize: 14.0, // Reduced font size
-                        color: Colors.black87, // Slightly muted color
-                      ),
-                ),
-              ],
+          if (_classes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _selectAll,
+                    onChanged: (isChecked) {
+                      setState(() {
+                        if (isChecked == true) {
+                          _selectedClasses = List.from(_classes);
+                        } else {
+                          _selectedClasses.clear();
+                        }
+                      });
+                    },
+                  ),
+                  Text(
+                    'Select All',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 14.0,
+                          color: Colors.black87,
+                        ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          // List of checkboxes for individual classes
+          if (_classes.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Text(
+                'No classes available for the current term.',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ),
           ..._classes.map((className) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
@@ -278,9 +300,8 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
                   title: Text(
                     className,
                     style: const TextStyle(
-                      fontSize: 14.0, // Reduced font size
-                      color:
-                          Colors.black87, // Slightly muted for professionalism
+                      fontSize: 14.0,
+                      color: Colors.black87,
                     ),
                   ),
                   value: _selectedClasses.contains(className),
@@ -294,8 +315,7 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
                     });
                   },
                   controlAffinity: ListTileControlAffinity.leading,
-                  activeColor: Theme.of(context)
-                      .primaryColor, // Primary color for checked state
+                  activeColor: Theme.of(context).primaryColor,
                 ),
               ),
             );
@@ -311,81 +331,110 @@ class _AddPaymentPurposeScreenState extends State<AddPaymentPurposeScreen> {
         _showDialog('Please select at least one term.');
         return;
       }
-      if (globalTermId != null) {
-        List<String> modifiedFields = [];
-        modifiedFields.add('id');
-        modifiedFields.add('paymentPurpose');
-        modifiedFields.add('purposeCode');
-        modifiedFields.add('purposeAmount');
-        modifiedFields.add('termId');
-        modifiedFields.add('associatedClasses');
-        modifiedFields.add('associatedExceptions');
-        modifiedFields.add('forNewcomersOnly');
 
-        final paymentPurpose = _purposeController.text.toLowerCase();
-        for (var termId in _selectedTerms) {
-          final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
-          int newId = await getNextId();
-          final newPkValue = uuid.v4();
+      if (globalTermId == null) {
+        _showDialog(
+            'No Selected School Term Was Found. Create A New Term or Switch Terms To An Existing One.');
+        return;
+      }
 
-          // Check for duplicate in the term
-          bool alreadyExists = box.values.any((pp) =>
-              pp.paymentPurpose.toLowerCase() == paymentPurpose &&
-              pp.termId == termId);
+      final paymentPurpose = _purposeController.text.trim().toLowerCase();
+      final amount = double.parse(_amountController.text.trim());
 
-          if (alreadyExists) continue;
+      // ✅ Prepare modified fields for new purpose
+      List<String> modifiedFields = [
+        'id',
+        'paymentPurpose',
+        'purposeCode',
+        'purposeAmount',
+        'termId',
+        'associatedClasses',
+        'exceptions',
+        'forNewcomersOnly',
+        'syncStatus',
+        'lastModified',
+        'operationType'
+      ];
 
-          final newPurpose = PaymentPurpose(
-            id: newId,
-            paymentPurpose: paymentPurpose,
-            purposeCode: newPkValue,
-            purposeAmount: double.parse(_amountController.text),
-            termId: termId,
-            associatedClasses: _selectedClasses, // Save the selected classes
-            syncStatus: false, // Set syncStatus to false
-            lastModified:
-                DateTime.now(), // Set lastModified to current datetime
-            operationType: 'create', // Set operationType to 'create'
-            exceptions: _selectedExceptionNames, // New line
-            forNewcomersOnly: _forNewcomersOnly, // New line
-            modifiedFields: modifiedFields,
-          );
+      final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
+      int createdCount = 0;
 
-          final existingPurpose = box.values.cast<PaymentPurpose>().firstWhere(
-                (c) =>
-                    ((c.paymentPurpose.toLowerCase() ==
-                        paymentPurpose.toLowerCase())) &&
-                    c.termId == termId,
-                orElse: () => PaymentPurpose(
-                  id: -1,
-                  paymentPurpose: 'empty',
-                  purposeAmount: -0.0,
-                  termId: '',
-                ),
-              );
+      for (var termId in _selectedTerms) {
+        // ✅ Check for duplicate in the term (only check active purposes)
+        bool alreadyExists = box.values.any((pp) =>
+            pp.paymentPurpose.toLowerCase() == paymentPurpose &&
+            pp.termId == termId &&
+            !(pp.isDeleted ?? false)); // ✅ Only check active records
 
-          if (existingPurpose.paymentPurpose.toLowerCase() != 'empty') {
-            _showDialog('Payment Purpose Already Exists');
-            return;
-          }
-
-          box.add(newPurpose); // Add the new payment purpose
+        if (alreadyExists) {
+          _showDialog(
+              'Payment Purpose "$paymentPurpose" already exists for term $termId.');
+          continue;
         }
-        _showDialog('Payment Purpose Added Successfully');
 
-        Navigator.pop(context); // Return to the previous screen
+        int newId = await getNextId();
+        final newPkValue = uuid.v4();
+
+        final newPurpose = PaymentPurpose(
+          id: newId,
+          paymentPurpose: paymentPurpose,
+          purposeCode: newPkValue,
+          purposeAmount: amount,
+          termId: termId,
+          associatedClasses:
+              _selectedClasses.isNotEmpty ? _selectedClasses : null,
+          syncStatus: false, // ✅ Needs sync
+          lastModified: DateTime.now(),
+          operationType: 'create',
+          exceptions: _selectedExceptionNames.isNotEmpty
+              ? _selectedExceptionNames
+              : null,
+          forNewcomersOnly: _forNewcomersOnly,
+          modifiedFields: modifiedFields,
+          // ✅ Deletion fields - new purpose is not deleted
+          isDeleted: false,
+          deletedAt: null,
+          deletedBy: null,
+          deleteReason: null,
+          deletedSyncStatus: true,
+        );
+
+        await box.add(newPurpose);
+        createdCount++;
+
+        print('✅ Payment Purpose created: $paymentPurpose for term: $termId');
+        print('   Purpose Code: ${newPurpose.purposeCode}');
+        print('   Sync Status: ${newPurpose.syncStatus}');
+        print('   Modified Fields: ${newPurpose.modifiedFields}');
+      }
+
+      if (createdCount > 0) {
+        _showDialog('✅ $createdCount Payment Purpose(s) Added Successfully!\n\n'
+            'Purpose: $paymentPurpose\n'
+            'Amount: \$${amount.toStringAsFixed(2)}\n'
+            'Terms: ${_selectedTerms.join(", ")}\n'
+            'Classes: ${_selectedClasses.isNotEmpty ? _selectedClasses.join(", ") : "All Classes"}\n'
+            'Exceptions: ${_selectedExceptionNames.isNotEmpty ? _selectedExceptionNames.map((e) => e.exceptionName).join(", ") : "None"}\n'
+            'Newcomers Only: ${_forNewcomersOnly ? "Yes" : "No"}\n\n'
+            '📤 Ready to sync to host when online.');
+
+        Navigator.pop(context);
       } else {
         _showDialog(
-            'No Selected School Term Was Found. Create A New Term or Switch Terms To AnExisting One.');
+            'No new payment purposes were created. They may already exist.');
       }
     }
   }
 
   Future<int> getNextId() async {
     final box = await Hive.openBox<PaymentPurpose>('payment_purposes');
-    if (box.isEmpty) return 1; // Start with ID 1 if no records exist
+    // ✅ Only count active (non-deleted) purposes
+    final activePurposes =
+        box.values.where((p) => !(p.isDeleted ?? false)).toList();
 
-    int currentMaxId = box.values
+    if (activePurposes.isEmpty) return 1;
+
+    int currentMaxId = activePurposes
         .map((e) => e.id ?? 0)
         .reduce((curr, next) => curr > next ? curr : next);
     return currentMaxId + 1;

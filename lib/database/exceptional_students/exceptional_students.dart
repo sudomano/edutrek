@@ -93,7 +93,16 @@ class ExceptionalStudents extends HiveObject {
     deletedSyncStatus = false;
     operationType = 'delete';
     lastModified = DateTime.now();
-    modifiedFields = ['isDeleted', 'deletedAt', 'deletedBy', 'deleteReason'];
+    modifiedFields = [
+      'isDeleted',
+      'deletedAt',
+      'deletedBy',
+      'deleteReason',
+      'deletedSyncStatus',
+      'syncStatus',
+      'operationType',
+      'lastModified'
+    ];
   }
 
   // ✅ Helper: Restore deleted user
@@ -125,6 +134,12 @@ class ExceptionalStudents extends HiveObject {
     List<String>? modifiedFields,
     int? priorityFlag,
     List<String>? terms,
+    // ✅ Deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return ExceptionalStudents(
       id: id ?? this.id,
@@ -139,6 +154,12 @@ class ExceptionalStudents extends HiveObject {
       modifiedFields: modifiedFields ?? this.modifiedFields,
       terms: terms ?? this.terms,
       priorityFlag: priorityFlag ?? this.priorityFlag,
+      // ✅ Include deletion fields
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 

@@ -140,6 +140,12 @@ class PaymentLog extends HiveObject {
     String? operationType,
     String? logId,
     List<String>? modifiedFields,
+    // ✅ Deletion fields
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? deleteReason,
+    bool? deletedSyncStatus,
   }) {
     return PaymentLog(
       receiptNumber: receiptNumber ?? this.receiptNumber,
@@ -158,6 +164,12 @@ class PaymentLog extends HiveObject {
       operationType: operationType ?? this.operationType,
       logId: logId ?? this.logId,
       modifiedFields: modifiedFields ?? this.modifiedFields,
+      // ✅ Include deletion fields
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      deleteReason: deleteReason ?? this.deleteReason,
+      deletedSyncStatus: deletedSyncStatus ?? this.deletedSyncStatus,
     );
   }
 }
