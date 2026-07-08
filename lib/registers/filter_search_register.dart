@@ -46,7 +46,7 @@ class _ViewAttendanceScreenFilterState
   bool _isAdmin = false;
   bool _isTeacher = false;
   List<String> _teacherClasses = [];
-  bool _isHost = false; // ✅ Add this
+  bool _isHost = false;
 
   @override
   void initState() {
@@ -55,22 +55,19 @@ class _ViewAttendanceScreenFilterState
   }
 
   Future<void> _initialize() async {
-    await _loadDeviceRole(); // ✅ Add this
-
+    await _loadDeviceRole();
     await _loadLoggedInUser();
     await _loadStudents();
     _applyFilters();
     setState(() => _isLoading = false);
   }
 
-// ✅ Add this method
   Future<void> _loadDeviceRole() async {
     final role = await getDeviceRole();
     _isHost = role == DeviceRole.host;
     debugPrint('🖥 Device Role: ${_isHost ? "Host" : "Client"}');
   }
 
-  // ✅ Load logged in user and determine permissions
   Future<void> _loadLoggedInUser() async {
     try {
       _loggedInUser = await getLoggedInUser();
@@ -89,7 +86,6 @@ class _ViewAttendanceScreenFilterState
       }
     } catch (e) {
       debugPrint('❌ Error loading logged in user: $e');
-      // Try fallback: get from preferences
       try {
         final prefs = await SharedPreferences.getInstance();
         final username = prefs.getString('logged_in_username');
@@ -127,7 +123,6 @@ class _ViewAttendanceScreenFilterState
       final role = await getDeviceRole();
 
       if (role == DeviceRole.host) {
-        // ✅ HOST: Load from Hive
         final studentBox = await Hive.openBox<Student>('students');
         _allStudents = studentBox.values
             .where((student) =>
@@ -136,14 +131,12 @@ class _ViewAttendanceScreenFilterState
         debugPrint(
             '📊 Host - Loaded ${_allStudents.length} students from Hive');
       } else {
-        // ✅ CLIENT: Fetch from server using /all endpoint and cache
         setState(() => _isSyncing = true);
 
         try {
           final allStudents = await StudentRegisterFetchApi.fetchAllStudents();
           _cachedStudents = allStudents;
 
-          // Filter for current term
           _allStudents = allStudents
               .where((student) =>
                   student.terms != null &&
@@ -160,17 +153,13 @@ class _ViewAttendanceScreenFilterState
         }
       }
 
-      // ✅ Get all distinct classes from students
       final allClasses = _allStudents.map((s) => s.class_).toSet().toList();
       debugPrint('📊 All classes from students: $allClasses');
 
-      // ✅ Apply role-based filtering for classes
       if (_isAdmin) {
-        // ✅ Admin: See ALL classes
         _classes = ['All', ...allClasses];
         debugPrint('🔑 Admin - Showing all ${_classes.length} classes');
       } else if (_isTeacher) {
-        // ✅ Teacher: Only see assigned classes (case-insensitive)
         final normalizedTeacherClasses =
             _teacherClasses.map((c) => c.toLowerCase()).toList();
         final filteredClasses = allClasses.where((className) {
@@ -195,12 +184,10 @@ class _ViewAttendanceScreenFilterState
           });
         }
       } else {
-        // ✅ Other roles: No class access
         _classes = ['All'];
         debugPrint('👤 ${_loggedInUser?.role} - No class access');
       }
 
-      // ✅ Set default selected class
       _selectedClass = "All";
       debugPrint('📋 Default selected class: $_selectedClass');
     } catch (e) {
@@ -214,14 +201,12 @@ class _ViewAttendanceScreenFilterState
   void _applyFilters() {
     List<Student> filtered = List.from(_allStudents);
 
-    // ✅ Apply class filter (case-insensitive)
     if (_selectedClass != null && _selectedClass != "All") {
       final normalizedSelected = _selectedClass!.toLowerCase();
       filtered = filtered.where((student) {
         return student.class_.toLowerCase() == normalizedSelected;
       }).toList();
     } else if (_isTeacher && !_isAdmin) {
-      // ✅ Teacher with "All" selected: Show only their assigned classes
       final normalizedTeacherClasses =
           _teacherClasses.map((c) => c.toLowerCase()).toList();
       filtered = filtered.where((student) {
@@ -229,7 +214,6 @@ class _ViewAttendanceScreenFilterState
       }).toList();
     }
 
-    // ✅ Apply date range filter
     if (_selectedStartDate != null && _selectedEndDate != null) {
       final startDate = _selectedStartDate!;
       final endDate = _selectedEndDate!.add(const Duration(days: 1));
@@ -242,7 +226,6 @@ class _ViewAttendanceScreenFilterState
       }).toList();
     }
 
-    // ✅ Apply student name search
     if (_selectedStudentName != null && _selectedStudentName!.isNotEmpty) {
       final searchQuery = _selectedStudentName!.toLowerCase();
       filtered = filtered.where((student) {
@@ -251,7 +234,6 @@ class _ViewAttendanceScreenFilterState
       }).toList();
     }
 
-    // ✅ Group by class alphabetically, then by surname alphabetically
     filtered.sort((a, b) {
       final classCompare = a.class_.compareTo(b.class_);
       if (classCompare != 0) return classCompare;
@@ -280,7 +262,6 @@ class _ViewAttendanceScreenFilterState
     _applyFilters();
   }
 
-  // ✅ Manual sync students from host
   Future<void> _syncStudents() async {
     setState(() => _isSyncing = true);
 
@@ -288,13 +269,11 @@ class _ViewAttendanceScreenFilterState
       final allStudents = await StudentRegisterFetchApi.fetchAllStudents();
       _cachedStudents = allStudents;
 
-      // Filter for current term
       _allStudents = allStudents
           .where((student) =>
               student.terms != null && student.terms!.contains(globalTermId))
           .toList();
 
-      // ✅ Rebuild classes list
       final allClasses = _allStudents.map((s) => s.class_).toSet().toList();
 
       if (_isAdmin) {
@@ -332,7 +311,6 @@ class _ViewAttendanceScreenFilterState
   }
 
   void _deleteAllAttendanceForClass(String className) {
-    // ✅ Only Host Admin can delete
     if (!_isHost || !_isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -372,17 +350,14 @@ class _ViewAttendanceScreenFilterState
   }
 
   void _confirmDeleteClassAttendance(String className) {
-    // Find students in this class
     final students = _allStudents.where((s) => s.class_ == className).toList();
 
-    // Clear attendance for each student
     for (var student in students) {
       student.presentDates.clear();
       student.absentDates.clear();
       student.save();
     }
 
-    // Refresh data
     _loadStudents();
     _applyFilters();
 
@@ -396,7 +371,6 @@ class _ViewAttendanceScreenFilterState
   }
 
   void _deleteStudentAttendanceHistory(Student student) {
-    // ✅ Only Host Admin can delete
     if (!_isHost || !_isAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -578,324 +552,345 @@ class _ViewAttendanceScreenFilterState
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final hasClassAccess = _isAdmin || (_isTeacher && _classes.length > 1);
+  // ✅ Build Admin Summary View
+  Widget _buildAdminSummaryView() {
+    // Get all classes with defaultTerm
+    final classNames = _allStudents.map((s) => s.class_).toSet().toList()
+      ..sort();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Center(
-          child: Text(
-            'View Attendance',
-            style: TextStyle(
-              fontSize: 14.0,
-              fontWeight: FontWeight.normal,
-              color: Colors.white,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        actions: [
-          // ✅ Sync button (for client)
-          IconButton(
-            onPressed: _syncStudents,
-            icon: _isSyncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+    if (classNames.isEmpty) {
+      return const Center(
+        child: Text('No classes found for the current term'),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: classNames.length,
+      itemBuilder: (context, index) {
+        final className = classNames[index];
+        final stats = _getClassAttendanceStats(className);
+        final isMarked = _isRegisterMarkedForClass(className);
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          child: ExpansionTile(
+            title: Row(
+              children: [
+                Icon(
+                  isMarked ? Icons.check_circle : Icons.cancel,
+                  color: isMarked ? Colors.green : Colors.red,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  className,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: stats['percentage'] >= 80
+                        ? Colors.green.shade100
+                        : stats['percentage'] >= 60
+                            ? Colors.orange.shade100
+                            : Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${stats['percentage'].toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: stats['percentage'] >= 80
+                          ? Colors.green.shade800
+                          : stats['percentage'] >= 60
+                              ? Colors.orange.shade800
+                              : Colors.red.shade800,
                     ),
-                  )
-                : const Icon(Icons.sync, color: Colors.white),
-            tooltip: 'Sync Students from Host',
-          ),
-          // ✅ Filter button
-          IconButton(
-            onPressed: _showFilterOptions,
-            icon: const Icon(Icons.filter_list, color: Colors.white),
-            tooltip: 'Filter Options',
-          ),
-          // ✅ Reset filters button
-          IconButton(
-            onPressed: _resetFilters,
-            icon: const Icon(Icons.clear_all, color: Colors.white),
-            tooltip: 'Reset Filters',
-          ),
-          // ✅ PDF export button
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-            onPressed: _filteredStudents.isEmpty
-                ? null
-                : () async {
-                    final pdfBytes = await generateStudentsPDF();
-                    final confirmSave =
-                        await PDFPreviewUtil.showPDFPreview(context, pdfBytes);
-                    if (confirmSave) {
-                      await savePDFToFile(
-                          context, pdfBytes, 'attendance_report');
-                    }
-                  },
-            tooltip: 'Export PDF',
-          ),
-          // ✅ Delete all attendance for class (Admin only)
-          // ✅ Delete all attendance for class (Host Admin only)
-          if (_isHost &&
-              _isAdmin &&
-              _selectedClass != null &&
-              _selectedClass != "All")
-            IconButton(
-              onPressed: () => _deleteAllAttendanceForClass(_selectedClass!),
-              icon: const Icon(Icons.delete_outline, color: Colors.white),
-              tooltip: 'Delete All Attendance for Class',
+                  ),
+                ),
+              ],
             ),
-        ],
-        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
-        elevation: 4.0,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 1200),
-                padding: const EdgeInsets.all(16.0),
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ✅ User Role Indicator
-                    // In the User Role Indicator
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: _isAdmin
-                            ? Colors.blue.shade50
-                            : _isTeacher
-                                ? Colors.green.shade50
-                                : Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _isAdmin
-                              ? Colors.blue.shade300
-                              : _isTeacher
-                                  ? Colors.green.shade300
-                                  : Colors.grey.shade300,
+                    // Class Teacher
+                    FutureBuilder<String>(
+                      future: _getClassTeacher(className),
+                      builder: (context, snapshot) {
+                        return Row(
+                          children: [
+                            const Icon(Icons.person, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Class Teacher: ${snapshot.data ?? 'Loading...'}',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Register Status
+                    Row(
+                      children: [
+                        Icon(
+                          isMarked
+                              ? Icons.assignment_turned_in
+                              : Icons.assignment_late,
+                          color: isMarked ? Colors.green : Colors.orange,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isMarked
+                              ? '✓ Register Marked Today'
+                              : '✗ Register Not Marked Today',
+                          style: TextStyle(
+                            color: isMarked ? Colors.green : Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Statistics
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatItem(
+                            'Total', stats['totalStudents'], Colors.blue),
+                        _buildStatItem(
+                            'Present', stats['totalPresent'], Colors.green),
+                        _buildStatItem(
+                            'Absent', stats['totalAbsent'], Colors.red),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ✅ Absent Students List (Sorted by name)
+                    if (stats['absentStudents'].isNotEmpty) ...[
+                      const Text(
+                        'Absent Students:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _isAdmin
-                                ? Icons.admin_panel_settings
-                                : _isTeacher
-                                    ? Icons.school
-                                    : Icons.person,
-                            color: _isAdmin
-                                ? Colors.blue.shade700
-                                : _isTeacher
-                                    ? Colors.green.shade700
-                                    : Colors.grey.shade700,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _isAdmin
-                                  ? '🔑 Administrator - ${_isHost ? "Host" : "Client"} - All Classes'
-                                  : _isTeacher
-                                      ? '👨‍🏫 Teacher - ${_classes.length - 1} classes assigned'
-                                      : '👤 ${_loggedInUser?.role ?? 'User'} - No Access',
-                              style: TextStyle(
-                                color: _isAdmin
-                                    ? Colors.blue.shade700
-                                    : _isTeacher
-                                        ? Colors.green.shade700
-                                        : Colors.grey.shade700,
-                                fontSize: 14,
-                                fontWeight: _isAdmin || _isTeacher
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ✅ Filter summary
-                    if (_selectedClass != "All" ||
-                        _selectedStartDate != null ||
-                        _selectedEndDate != null ||
-                        (_selectedStudentName != null &&
-                            _selectedStudentName!.isNotEmpty))
+                      const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: Colors.red.shade50,
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.filter_alt,
-                                size: 16, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Filtered by: ${_getFilterSummary()}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children:
+                              stats['absentStudents'].map<Widget>((student) {
+                            // ✅ Exclude admin account (if isAdmin property exists)
+                            // if (student.isAdmin) return Container();
 
-                    if (!hasClassAccess) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.lock_outline,
-                              size: 48,
-                              color: Colors.orange.shade700,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _isTeacher
-                                  ? 'You have no classes assigned. Please contact the administrator.'
-                                  : 'You do not have permission to view attendance.',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.orange.shade700,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Only administrators and teachers with assigned classes can view attendance.',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.orange.shade600,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else if (_filteredStudents.isEmpty) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 48,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _isTeacher && _teacherClasses.isNotEmpty
-                                  ? 'No students found for your assigned classes'
-                                  : 'No attendance records found',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _isTeacher && _teacherClasses.isNotEmpty
-                                  ? 'Your assigned classes: ${_teacherClasses.join(", ")}\nTap the sync button to download students from the host.'
-                                  : _selectedClass != "All"
-                                      ? 'No students have attendance records for the selected filters.'
-                                      : 'No attendance records available for the current term.',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade500,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            if (_isTeacher && _teacherClasses.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
-                                onPressed: _syncStudents,
-                                icon: const Icon(Icons.sync),
-                                label: const Text('Sync Students'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  foregroundColor: Colors.white,
+                            final todayStatus = _getTodayAttendance(student);
+                            return Chip(
+                              label: Text('${student.name} ${student.surname}'),
+                              backgroundColor: todayStatus['status'] == 'Absent'
+                                  ? Colors.red.shade100
+                                  : Colors.grey.shade200,
+                              avatar: CircleAvatar(
+                                backgroundColor:
+                                    todayStatus['status'] == 'Absent'
+                                        ? Colors.red
+                                        : Colors.grey,
+                                radius: 10,
+                                child: Text(
+                                  todayStatus['status'] == 'Absent' ? 'A' : '?',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ],
-                          ],
+                            );
+                          }).toList(),
                         ),
                       ),
-                    ] else ...[
-                      const SizedBox(height: 16),
-                      // ✅ Summary stats
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStatItem('Total Students',
-                                _filteredStudents.length, Colors.blue),
-                            _buildStatItem(
-                                'Total Present',
-                                _filteredStudents.fold(
-                                    0, (sum, s) => sum + s.presentDates.length),
-                                Colors.green),
-                            _buildStatItem(
-                                'Total Absent',
-                                _filteredStudents.fold(
-                                    0, (sum, s) => sum + s.absentDates.length),
-                                Colors.red),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
+                    ],
 
-                      // ✅ Data Table with group headers
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.vertical,
-                            child: _buildGroupedDataTable(),
-                          ),
+                    // Present Students List
+                    if (stats['presentStudents'].isNotEmpty) ...[
+                      const Text(
+                        'Present Students:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200),
+                        ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children:
+                              stats['presentStudents'].map<Widget>((student) {
+                            // ✅ Exclude admin account
+                            // if (student.isAdmin) return Container();
+
+                            final todayStatus = _getTodayAttendance(student);
+                            return Chip(
+                              label: Text('${student.name} ${student.surname}'),
+                              backgroundColor:
+                                  todayStatus['status'] == 'Present'
+                                      ? Colors.green.shade100
+                                      : Colors.grey.shade200,
+                              avatar: CircleAvatar(
+                                backgroundColor:
+                                    todayStatus['status'] == 'Present'
+                                        ? Colors.green
+                                        : Colors.grey,
+                                radius: 10,
+                                child: Text(
+                                  todayStatus['status'] == 'Present'
+                                      ? 'P'
+                                      : '?',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
                       ),
                     ],
                   ],
                 ),
               ),
-            ),
+            ],
+          ),
+        );
+      },
     );
   }
 
+  // ✅ Get class teacher information
+  Future<String> _getClassTeacher(String className) async {
+    try {
+      final userBox = await Hive.openBox<User>('users');
+      final allUsers = userBox.values.toList();
+
+      final teacher = allUsers.firstWhere(
+        (user) =>
+            user.role.toLowerCase() == 'teacher' &&
+            user.assignedClasses != null &&
+            user.assignedClasses!
+                .any((c) => c.toLowerCase() == className.toLowerCase()),
+        orElse: () => User(
+          username: 'Not Assigned',
+          password: '',
+          role: 'teacher',
+          securityQuestions: [],
+          securityAnswers: [],
+          phone: '',
+          email: '',
+          assignedClasses: [],
+          isActive: true,
+        ),
+      );
+
+      return teacher.username;
+    } catch (e) {
+      debugPrint('❌ Error getting class teacher: $e');
+      return 'Not Assigned';
+    }
+  }
+
+  // ✅ Check if register is marked for today
+  bool _isRegisterMarkedForClass(String className) {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final todayEnd = todayStart.add(const Duration(days: 1));
+
+    final classStudents =
+        _allStudents.where((s) => s.class_ == className).toList();
+
+    return classStudents.any((student) {
+      final allDates = [...student.presentDates, ...student.absentDates];
+      return allDates
+          .any((date) => date.isAfter(todayStart) && date.isBefore(todayEnd));
+    });
+  }
+
+  // ✅ Get attendance statistics for a class
+  Map<String, dynamic> _getClassAttendanceStats(String className) {
+    final classStudents =
+        _allStudents.where((s) => s.class_ == className).toList();
+
+    int totalStudents = classStudents.length;
+    int totalPresent =
+        classStudents.fold(0, (sum, s) => sum + s.presentDates.length);
+    int totalAbsent =
+        classStudents.fold(0, (sum, s) => sum + s.absentDates.length);
+    int totalDays = totalPresent + totalAbsent;
+    double percentage = totalDays > 0 ? (totalPresent / totalDays) * 100 : 0;
+
+    return {
+      'totalStudents': totalStudents,
+      'totalPresent': totalPresent,
+      'totalAbsent': totalAbsent,
+      'totalDays': totalDays,
+      'percentage': percentage,
+      'absentStudents':
+          classStudents.where((s) => s.absentDates.isNotEmpty).toList(),
+      'presentStudents':
+          classStudents.where((s) => s.presentDates.isNotEmpty).toList(),
+    };
+  }
+
+  // ✅ Get today's attendance for a student
+  Map<String, dynamic> _getTodayAttendance(Student student) {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final todayEnd = todayStart.add(const Duration(days: 1));
+
+    bool isPresent = student.presentDates
+        .any((date) => date.isAfter(todayStart) && date.isBefore(todayEnd));
+
+    bool isAbsent = student.absentDates
+        .any((date) => date.isAfter(todayStart) && date.isBefore(todayEnd));
+
+    return {
+      'isPresent': isPresent,
+      'isAbsent': isAbsent,
+      'status': isPresent
+          ? 'Present'
+          : isAbsent
+              ? 'Absent'
+              : 'Not Marked'
+    };
+  }
+
   Widget _buildGroupedDataTable() {
-    // ✅ Group students by class
     final Map<String, List<Student>> groupedStudents = {};
     for (var student in _filteredStudents) {
       if (!groupedStudents.containsKey(student.class_)) {
@@ -904,10 +899,8 @@ class _ViewAttendanceScreenFilterState
       groupedStudents[student.class_]!.add(student);
     }
 
-    // ✅ Sort classes alphabetically
     final sortedClassNames = groupedStudents.keys.toList()..sort();
 
-    // ✅ Build table with group headers
     return DataTable(
       headingRowColor: MaterialStateProperty.resolveWith(
         (states) => Colors.grey.shade200,
@@ -926,7 +919,6 @@ class _ViewAttendanceScreenFilterState
         final students = groupedStudents[className]!;
         final rows = <DataRow>[];
 
-        // ✅ Add group header row (non-interactive)
         rows.add(
           DataRow(
             color: MaterialStateProperty.resolveWith(
@@ -944,39 +936,17 @@ class _ViewAttendanceScreenFilterState
                 ),
                 placeholder: true,
               ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
-              DataCell(
-                const Text(''),
-                placeholder: true,
-              ),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
+              DataCell(const Text(''), placeholder: true),
             ],
           ),
         );
 
-        // ✅ Add student rows
         for (var student in students) {
           int totalDays =
               student.presentDates.length + student.absentDates.length;
@@ -1031,12 +1001,10 @@ class _ViewAttendanceScreenFilterState
                     ),
                   ),
                 ),
-                // In _buildGroupedDataTable, update the Actions cell
                 DataCell(
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ✅ Only show delete button for Host Admin
                       if (_isHost && _isAdmin)
                         IconButton(
                           icon: const Icon(Icons.delete,
@@ -1139,8 +1107,6 @@ class _ViewAttendanceScreenFilterState
                           ),
                         ),
                         const SizedBox(height: 16),
-
-                        // ✅ Class filter with role-based options
                         DropdownButtonFormField<String>(
                           value: _selectedClass,
                           decoration: const InputDecoration(
@@ -1160,8 +1126,6 @@ class _ViewAttendanceScreenFilterState
                           }).toList(),
                         ),
                         const SizedBox(height: 16),
-
-                        // ✅ Date range filter
                         Row(
                           children: [
                             Expanded(
@@ -1222,8 +1186,6 @@ class _ViewAttendanceScreenFilterState
                           ],
                         ),
                         const SizedBox(height: 16),
-
-                        // ✅ Clear date range button
                         if (_selectedStartDate != null ||
                             _selectedEndDate != null)
                           ElevatedButton(
@@ -1240,8 +1202,6 @@ class _ViewAttendanceScreenFilterState
                             child: const Text('Clear Date Range'),
                           ),
                         const SizedBox(height: 16),
-
-                        // ✅ Student name search
                         TextField(
                           onChanged: (value) {
                             setState(() {
@@ -1258,8 +1218,6 @@ class _ViewAttendanceScreenFilterState
                           ),
                         ),
                         const SizedBox(height: 16),
-
-                        // ✅ Action buttons
                         Row(
                           children: [
                             Expanded(
@@ -1354,6 +1312,347 @@ class _ViewAttendanceScreenFilterState
           ],
         );
       },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasClassAccess = _isAdmin || (_isTeacher && _classes.length > 1);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Center(
+          child: Text(
+            'View Attendance',
+            style: TextStyle(
+              fontSize: 14.0,
+              fontWeight: FontWeight.normal,
+              color: Colors.white,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        actions: [
+          IconButton(
+            onPressed: _syncStudents,
+            icon: _isSyncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.sync, color: Colors.white),
+            tooltip: 'Sync Students from Host',
+          ),
+          IconButton(
+            onPressed: _showFilterOptions,
+            icon: const Icon(Icons.filter_list, color: Colors.white),
+            tooltip: 'Filter Options',
+          ),
+          IconButton(
+            onPressed: _resetFilters,
+            icon: const Icon(Icons.clear_all, color: Colors.white),
+            tooltip: 'Reset Filters',
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+            onPressed: _filteredStudents.isEmpty
+                ? null
+                : () async {
+                    final pdfBytes = await generateStudentsPDF();
+                    final confirmSave =
+                        await PDFPreviewUtil.showPDFPreview(context, pdfBytes);
+                    if (confirmSave) {
+                      await savePDFToFile(
+                          context, pdfBytes, 'attendance_report');
+                    }
+                  },
+            tooltip: 'Export PDF',
+          ),
+          if (_isHost &&
+              _isAdmin &&
+              _selectedClass != null &&
+              _selectedClass != "All")
+            IconButton(
+              onPressed: () => _deleteAllAttendanceForClass(_selectedClass!),
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
+              tooltip: 'Delete All Attendance for Class',
+            ),
+        ],
+        backgroundColor: const Color.fromARGB(255, 38, 140, 191),
+        elevation: 4.0,
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                padding: const EdgeInsets.all(16.0),
+                child: _isAdmin && (_selectedClass == "All")
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '📊 Admin Dashboard - All Classes Summary',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Showing summary for all classes in the current term',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blueGrey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Expanded(
+                            child: _allStudents.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                        'No data available for the current term'),
+                                  )
+                                : _buildAdminSummaryView(),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!_isAdmin) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 8, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _isTeacher
+                                    ? Colors.green.shade50
+                                    : Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _isTeacher
+                                      ? Colors.green.shade300
+                                      : Colors.grey.shade300,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _isTeacher ? Icons.school : Icons.person,
+                                    color: _isTeacher
+                                        ? Colors.green.shade700
+                                        : Colors.grey.shade700,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _isTeacher
+                                          ? '👨‍🏫 Teacher View - ${_classes.length - 1} classes'
+                                          : '👤 ${_loggedInUser?.role ?? 'User'} - Limited Access',
+                                      style: TextStyle(
+                                        color: _isTeacher
+                                            ? Colors.green.shade700
+                                            : Colors.grey.shade700,
+                                        fontSize: 14,
+                                        fontWeight: _isTeacher
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (_selectedClass != "All" ||
+                              _selectedStartDate != null ||
+                              _selectedEndDate != null ||
+                              (_selectedStudentName != null &&
+                                  _selectedStudentName!.isNotEmpty))
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.filter_alt,
+                                      size: 16, color: Colors.grey),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Filtered by: ${_getFilterSummary()}',
+                                      style: const TextStyle(
+                                          fontSize: 12, color: Colors.grey),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (!hasClassAccess) ...[
+                            const SizedBox(height: 20),
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border:
+                                    Border.all(color: Colors.orange.shade300),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline,
+                                    size: 48,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _isTeacher
+                                        ? 'You have no classes assigned. Please contact the administrator.'
+                                        : 'You do not have permission to view attendance.',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Only administrators and teachers with assigned classes can view attendance.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.orange.shade600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else if (_filteredStudents.isEmpty) ...[
+                            const SizedBox(height: 20),
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    size: 48,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _isTeacher && _teacherClasses.isNotEmpty
+                                        ? 'No students found for your assigned classes'
+                                        : 'No attendance records found',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _isTeacher && _teacherClasses.isNotEmpty
+                                        ? 'Your assigned classes: ${_teacherClasses.join(", ")}\nTap the sync button to download students from the host.'
+                                        : _selectedClass != "All"
+                                            ? 'No students have attendance records for the selected filters.'
+                                            : 'No attendance records available for the current term.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (_isTeacher &&
+                                      _teacherClasses.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    ElevatedButton.icon(
+                                      onPressed: _syncStudents,
+                                      icon: const Icon(Icons.sync),
+                                      label: const Text('Sync Students'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildStatItem('Total Students',
+                                      _filteredStudents.length, Colors.blue),
+                                  _buildStatItem(
+                                      'Total Present',
+                                      _filteredStudents.fold(
+                                          0,
+                                          (sum, s) =>
+                                              sum + s.presentDates.length),
+                                      Colors.green),
+                                  _buildStatItem(
+                                      'Total Absent',
+                                      _filteredStudents.fold(
+                                          0,
+                                          (sum, s) =>
+                                              sum + s.absentDates.length),
+                                      Colors.red),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: _buildGroupedDataTable(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+              ),
+            ),
     );
   }
 }

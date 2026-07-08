@@ -298,6 +298,9 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
   double _amountPaid = 0;
   int _purposeListVersion = 0;
 
+// Add these state variables
+  bool _isLoadingArrears = false;
+  String? _arrearsError;
   final ScrollController _mainScrollController = ScrollController();
   final GlobalKey _dataTableKey = GlobalKey();
 
@@ -2522,26 +2525,16 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
   void _confirmPayment() {
     final totalStart = DateTime.now();
-    debugPrint('⏱️ [CONFIRM] START - Confirm Payment button pressed');
 
     final loggedInUser = getLoggedInUser();
     final role = loggedInUser.role;
     final user = loggedInUser.username;
     final received = double.tryParse(_pmAmountCtrl.text.trim()) ?? 0.0;
     finalReceived = received;
-    debugPrint('⏱️ [CONFIRM] Starting auto-split...');
-    final splitStart = DateTime.now();
     _autoSplitPendingPartialPaymentsSync();
 
-    debugPrint(
-        '⏱️ [CONFIRM] Auto-split completed in ${DateTime.now().difference(splitStart).inMilliseconds}ms');
-
     // 🆕 STEP 2: Refresh UI after auto-splitting
-    debugPrint('⏱️ [CONFIRM] Refreshing UI...');
-    final uiStart = DateTime.now();
     setState(() {});
-    debugPrint(
-        '⏱️ [CONFIRM] UI refresh completed in ${DateTime.now().difference(uiStart).inMilliseconds}ms');
 
     // Recalculate totals after auto-splitting
     _updateTotalEntered();
@@ -2566,7 +2559,6 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       _showDialog('Please add at least one payment purpose');
       return;
     }
-    debugPrint('⏱️ [CONFIRM] Showing confirmation dialog...');
     final dialogStart = DateTime.now();
     showDialog(
       context: context,
@@ -3838,16 +3830,20 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       _showDialog("Amount received cannot be less than total payment.");
       return;
     } else if (amountReceived >= totalEntered) {
+      // In _makePayment method - Client mode section
       if (_role == DeviceRole.client) {
         debugPrint('⏱️ [6] CLIENT MODE: Starting payment process...');
+
+        // Show loading overlay
         setState(() => _isProcessingPayment = true);
 
         final paymentsToSend = <Map<String, dynamic>>[];
         debugPrint('⏱️ [6a] Getting next ID...');
         final idStart = DateTime.now();
-        int newId = useId ?? await getNextId(); // ← Use provided ID or fetch
+        int newId = useId ?? await getNextId();
         debugPrint(
             '⏱️ [6a] getNextId completed in ${DateTime.now().difference(idStart).inMilliseconds}ms, newId: $newId');
+
         debugPrint('⏱️ [6b] Building payment payload...');
         final payloadStart = DateTime.now();
         for (var payment in _paymentPurposes) {
@@ -3906,7 +3902,6 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         final uri = Uri.parse('http://$hostIp:8080/api/studentPayments/bulk');
 
         try {
-          // ✅ STEP 1: Save payment to database FIRST
           debugPrint('⏱️ [7] SENDING PAYMENT TO HOST via HTTP POST...');
           final httpStart = DateTime.now();
           final response = await http.post(
@@ -3923,57 +3918,54 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
           if (response.statusCode == 200) {
             debugPrint('⏱️ [8] Payment successful on host!');
 
+            // Send SMS notifications
             final List<Future> smsTasks = [];
-
-            // ✅ Payment successful - Now send SMS notifications
-            debugPrint('⏱️ [9] Sending SMS notifications...');
-            final smsSendStart = DateTime.now();
-
             if (termAggregation) {
               if (phone.isNotEmpty) {
                 smsTasks.add(_sendSmsNotification(allPaymentsInfonew, phone));
-                smsTasks.add(Future.delayed(const Duration(milliseconds: 800)));
               }
               if (phone1 != null && phone1.isNotEmpty) {
                 smsTasks.add(_sendSmsNotification(allPaymentsInfonew1, phone1));
-                smsTasks.add(Future.delayed(const Duration(milliseconds: 800)));
               }
             } else {
               if (phone.isNotEmpty) {
                 smsTasks.add(_sendSmsNotification(allPaymentsInfonew, phone));
-                smsTasks.add(Future.delayed(const Duration(milliseconds: 800)));
               }
               if (phone1 != null && phone1.isNotEmpty) {
                 smsTasks.add(_sendSmsNotification(allPaymentsInfonew1, phone1));
-                smsTasks.add(Future.delayed(const Duration(milliseconds: 800)));
               }
             }
 
+            // Send admin SMS
             final adminUsersClient = _users
                 .where((u) =>
                     u.role.toLowerCase() == "admin" ||
                     u.role.toLowerCase() == "administration")
                 .toList();
 
-            // Send admin SMS
             final adminSmsFutures = <Future>[];
             for (final admin in adminUsersClient) {
               adminSmsFutures
                   .add(sendSms(allPaymentsInfoadminnew, admin.phone));
             }
             await Future.wait(adminSmsFutures);
-            debugPrint(
-                '⏱️ [9] SMS sending completed in ${DateTime.now().difference(smsSendStart).inMilliseconds}ms');
 
-            debugPrint('⏱️ [10] Clearing records and resetting...');
+            // Clear records and reset
             await _clearStudentRecordsAfterPayment();
             await _clearPaymentRecords();
             _resetForm();
             _clearAllServerCaches();
+
+            // Close dialogs
             Navigator.pop(context);
             Navigator.pop(context);
-            debugPrint(
-                '⏱️ [END] Payment completed in ${stopwatch.elapsedMilliseconds}ms');
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Payment completed successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
           } else {
             debugPrint('❌ Host rejected payment: ${response.body}');
             _showDialog("❌ Host rejected payment: ${response.body}");
@@ -5859,7 +5851,10 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
                                                           _fetchArrearsWithRestorations,
                                                       restoredItems:
                                                           _pendingRestorations,
-                                                      onRefreshRequested: () {},
+                                                      onRefreshRequested: () {
+                                                        setState(() =>
+                                                            _arrearsVersion++);
+                                                      },
                                                       onScrollToConfirmButton:
                                                           () {
                                                         _scrollToConfirmButton();
@@ -6351,125 +6346,141 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchArrearsWithRestorations(
       Student student) async {
-    // Fetch original arrears
-    List<Map<String, dynamic>> originalArrears =
-        await _fetchUniquePaymentPurposesByStudentWithArrearsForPreviwNew(
-            student);
+    try {
+      // Show loading state
+      setState(() {
+        _isLoadingArrears = true;
+        _arrearsError = null;
+      });
 
-    if (_pendingRestorations.isEmpty) {
-      return originalArrears;
-    }
+      // Fetch original arrears
+      List<Map<String, dynamic>> originalArrears =
+          await _fetchUniquePaymentPurposesByStudentWithArrearsForPreviwNew(
+              student);
 
-    // Create a map keyed by purpose NAME only (NOT including termId)
-    Map<String, Map<String, dynamic>> purposeMap = {};
-    for (var item in originalArrears) {
-      final purpose = item['purpose'];
-      final purposeName = purpose.paymentPurpose ?? '';
-      purposeMap[purposeName] = item;
-    }
-
-    // Group restorations by purpose name
-    Map<String, List<Map<String, dynamic>>> groupedRestorations = {};
-    for (var restoration in _pendingRestorations) {
-      final purpose = restoration['purpose'];
-      final purposeName = purpose.paymentPurpose ?? '';
-      if (!groupedRestorations.containsKey(purposeName)) {
-        groupedRestorations[purposeName] = [];
+      if (_pendingRestorations.isEmpty) {
+        setState(() => _isLoadingArrears = false);
+        return originalArrears;
       }
-      groupedRestorations[purposeName]!.add(restoration);
-    }
 
-    // Apply restorations to matching purposes
-    for (var entry in groupedRestorations.entries) {
-      final purposeName = entry.key;
-      final restorations = entry.value;
+      // Create a map keyed by purpose NAME only (NOT including termId)
+      Map<String, Map<String, dynamic>> purposeMap = {};
+      for (var item in originalArrears) {
+        final purpose = item['purpose'];
+        final purposeName = purpose.paymentPurpose ?? '';
+        purposeMap[purposeName] = item;
+      }
 
-      if (purposeMap.containsKey(purposeName)) {
-        final existingItem = purposeMap[purposeName]!;
-
-        // Calculate total restoration amount for this purpose
-        double totalRestorationAmount = 0;
-        for (var restoration in restorations) {
-          totalRestorationAmount += restoration['amount'] as double;
+      // Group restorations by purpose name
+      Map<String, List<Map<String, dynamic>>> groupedRestorations = {};
+      for (var restoration in _pendingRestorations) {
+        final purpose = restoration['purpose'];
+        final purposeName = purpose.paymentPurpose ?? '';
+        if (!groupedRestorations.containsKey(purposeName)) {
+          groupedRestorations[purposeName] = [];
         }
+        groupedRestorations[purposeName]!.add(restoration);
+      }
 
-        // Update the parent purpose amount
-        final existingPreview = existingItem['arrearsPreview'] ?? '';
-        final existingAmount = _extractAmountFromPreview(existingPreview);
-        final newAmount = existingAmount + totalRestorationAmount;
-        existingItem['arrearsPreview'] =
-            _updateAmountInPreview(existingPreview, newAmount);
+      // Apply restorations to matching purposes
+      for (var entry in groupedRestorations.entries) {
+        final purposeName = entry.key;
+        final restorations = entry.value;
 
-        // Update subPurposesWithTerms
-        if (existingItem['subPurposesWithTerms'] == null) {
-          existingItem['subPurposesWithTerms'] = [];
-        }
+        if (purposeMap.containsKey(purposeName)) {
+          final existingItem = purposeMap[purposeName]!;
 
-        // Add restored amounts to sub-purposes (by term)
-        for (var restoration in restorations) {
-          final termId = restoration['termId'];
-          final amount = restoration['amount'] as double;
+          // Calculate total restoration amount for this purpose
+          double totalRestorationAmount = 0;
+          for (var restoration in restorations) {
+            totalRestorationAmount += restoration['amount'] as double;
+          }
 
-          // Check if this term already exists in sub-purposes
-          bool termExists = false;
-          for (var subItem in existingItem['subPurposesWithTerms']) {
-            if (subItem['termId'] == termId) {
-              // Update existing term
-              final currentSubAmount = subItem['amount'] as double;
-              subItem['amount'] = currentSubAmount + 0;
-              subItem['preview'] =
-                  _updateAmountInPreview(subItem['preview'], subItem['amount']);
-              termExists = true;
-              break;
+          // Update the parent purpose amount
+          final existingPreview = existingItem['arrearsPreview'] ?? '';
+          final existingAmount = _extractAmountFromPreview(existingPreview);
+          final newAmount = existingAmount + totalRestorationAmount;
+          existingItem['arrearsPreview'] =
+              _updateAmountInPreview(existingPreview, newAmount);
+
+          // Update subPurposesWithTerms
+          if (existingItem['subPurposesWithTerms'] == null) {
+            existingItem['subPurposesWithTerms'] = [];
+          }
+
+          // Add restored amounts to sub-purposes (by term)
+          for (var restoration in restorations) {
+            final termId = restoration['termId'];
+            final amount = restoration['amount'] as double;
+
+            // Check if this term already exists in sub-purposes
+            bool termExists = false;
+            for (var subItem in existingItem['subPurposesWithTerms']) {
+              if (subItem['termId'] == termId) {
+                // Update existing term
+                final currentSubAmount = subItem['amount'] as double;
+                subItem['amount'] = currentSubAmount + 0;
+                subItem['preview'] = _updateAmountInPreview(
+                    subItem['preview'], subItem['amount']);
+                termExists = true;
+                break;
+              }
+            }
+
+            if (!termExists) {
+              // Add new sub-purpose for this term
+              existingItem['subPurposesWithTerms'].add({
+                'preview': '$termId [${_formatCurrency(amount)}] ',
+                'amount': amount,
+                'termId': termId,
+              });
             }
           }
 
-          if (!termExists) {
-            // Add new sub-purpose for this term
-            existingItem['subPurposesWithTerms'].add({
-              'preview': '$termId [${_formatCurrency(amount)}] ',
-              'amount': amount,
-              'termId': termId,
-            });
+          // Rebuild the arrearsPreview from all sub-purposes
+          existingItem['arrearsPreview'] = existingItem['subPurposesWithTerms']
+              .map((sub) => sub['preview'])
+              .join(', ');
+        } else {
+          // Purpose doesn't exist - create new item
+          double totalAmount = 0;
+          String? firstTermId;
+          PaymentPurpose? firstPurpose;
+
+          for (var restoration in restorations) {
+            totalAmount += restoration['amount'] as double;
+            if (firstTermId == null) {
+              firstTermId = restoration['termId'];
+              firstPurpose = restoration['purpose'];
+            }
           }
+
+          final newItem = {
+            'purpose': firstPurpose,
+            'termId': firstTermId,
+            'arrearsPreview': '$firstTermId [${_formatCurrency(totalAmount)}] ',
+            'subPurposesWithTerms': restorations
+                .map((r) => {
+                      'preview':
+                          '$firstTermId [${_formatCurrency(r['amount'])}] ',
+                      'amount': r['amount'],
+                      'termId': r['termId'],
+                    })
+                .toList(),
+          };
+          originalArrears.add(newItem);
         }
-
-        // Rebuild the arrearsPreview from all sub-purposes
-        existingItem['arrearsPreview'] = existingItem['subPurposesWithTerms']
-            .map((sub) => sub['preview'])
-            .join(', ');
-      } else {
-        // Purpose doesn't exist - create new item
-        double totalAmount = 0;
-        String? firstTermId;
-        PaymentPurpose? firstPurpose;
-
-        for (var restoration in restorations) {
-          totalAmount += restoration['amount'] as double;
-          if (firstTermId == null) {
-            firstTermId = restoration['termId'];
-            firstPurpose = restoration['purpose'];
-          }
-        }
-
-        final newItem = {
-          'purpose': firstPurpose,
-          'termId': firstTermId,
-          'arrearsPreview': '$firstTermId [${_formatCurrency(totalAmount)}] ',
-          'subPurposesWithTerms': restorations
-              .map((r) => {
-                    'preview':
-                        '$firstTermId [${_formatCurrency(r['amount'])}] ',
-                    'amount': r['amount'],
-                    'termId': r['termId'],
-                  })
-              .toList(),
-        };
-        originalArrears.add(newItem);
       }
-    }
+      setState(() => _isLoadingArrears = false);
 
-    return originalArrears;
+      return originalArrears;
+    } catch (e) {
+      setState(() {
+        _isLoadingArrears = false;
+        _arrearsError = e.toString();
+      });
+      return [];
+    }
   }
 
   double _extractAmountFromPreview(String preview) {
@@ -8430,6 +8441,8 @@ class ArrearsSection extends StatefulWidget {
 class _ArrearsSectionState extends State<ArrearsSection> {
   List<Map<String, dynamic>> _purposeList = [];
   bool _isLoading = true;
+  bool _hasLoadedOnce = false; // Track if data has been loaded
+
   String? _error;
   Map<String, List<bool>> _selectedSubPurposes = {};
   void refresh() {
@@ -8442,6 +8455,8 @@ class _ArrearsSectionState extends State<ArrearsSection> {
   }
 
   Future<List<Map<String, dynamic>>> refreshAndGetData() async {
+    setState(() => _isLoading = true);
+
     await _loadData();
     return _purposeList;
   }
@@ -8449,16 +8464,22 @@ class _ArrearsSectionState extends State<ArrearsSection> {
   @override
   void initState() {
     super.initState();
+    setState(() => _isLoading = true);
+
     _loadData();
   }
 
   @override
   void didUpdateWidget(ArrearsSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Also check if restoredItems changed
     if (oldWidget.student != widget.student ||
         oldWidget.version != widget.version ||
         oldWidget.restoredItems.length != widget.restoredItems.length) {
+      // Only reload if data actually changed
+      if (_hasLoadedOnce) {
+        // Show loading indicator only on explicit refresh
+        setState(() => _isLoading = true);
+      }
       _loadData();
     }
   }
@@ -8470,13 +8491,18 @@ class _ArrearsSectionState extends State<ArrearsSection> {
       // CRITICAL: Clear selections first to avoid stale data
       _selectedSubPurposes.clear();
     });
-
+    if (!_hasLoadedOnce) {
+      setState(() => _isLoading = true);
+    }
     try {
       final data = await widget.fetchArrears(widget.student);
 
       setState(() {
         _purposeList = data;
         _isLoading = false;
+        _hasLoadedOnce = true; // Mark as loaded after successful fetch
+
+        _error = null;
       });
 
       // Initialize selections AFTER purposeList is updated
@@ -8490,6 +8516,10 @@ class _ArrearsSectionState extends State<ArrearsSection> {
       setState(() {
         _error = e.toString();
         _isLoading = false;
+        // Keep existing data on error if we have it
+        if (!_hasLoadedOnce) {
+          _purposeList = [];
+        }
       });
     }
   }
@@ -8651,16 +8681,84 @@ class _ArrearsSectionState extends State<ArrearsSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+    if (_isLoading && !_hasLoadedOnce) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: const Center(
+          child: Column(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Loading arrears data...',
+                  style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        ),
+      );
     }
 
-    if (_error != null) {
-      return Text('Error: $_error');
+    if (_error != null && !_hasLoadedOnce) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 48),
+            const SizedBox(height: 8),
+            Text('Error: $_error', textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _loadData,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    // Show stale data with refresh button if we have existing data
+    if (_isLoading && _hasLoadedOnce) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Refreshing arrears data...',
+                    style: TextStyle(color: Colors.blue)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      );
     }
 
     if (_purposeList.isEmpty) {
-      return const Text('No Arrears found for this student.');
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.green, size: 48),
+            SizedBox(height: 8),
+            Text('No arrears found for this student.',
+                style: TextStyle(fontSize: 16)),
+          ],
+        ),
+      );
     }
 
     return Card(
