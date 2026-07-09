@@ -2287,10 +2287,15 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
             final body = await response.transform(utf8.decoder).join();
             final parsed = jsonDecode(body) as List<dynamic>;
 
-            results = parsed
-                .map(
-                    (json) => studentsFromJson(Map<String, dynamic>.from(json)))
-                .toList();
+            results = [];
+            for (final json in parsed) {
+              try {
+                results.add(studentsFromJson(Map<String, dynamic>.from(json)));
+              } catch (e) {
+                // Don't let one malformed record fail the whole search.
+                debugPrint('⚠️ Skipping malformed student record: $e');
+              }
+            }
 
             // store in cache for short time (30 seconds)
             _studentsCache[query] = _CachedStudents(
@@ -2309,6 +2314,7 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
         if (showDialog) _displayStudentSelectionDialog(results);
       }
     } catch (e, st) {
+      debugPrint('❌ Error searching students: $e\n$st');
       _showDialog('⚠️ Error searching students.');
     }
   }
@@ -7693,6 +7699,13 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
       });
     });
 
+    if (_role != DeviceRole.host) {
+      // Ensure caches are warmed before reading them below - see comment in
+      // _computeArrearsForPurpose.
+      await fetchTerms();
+      await fetchStudentPayments();
+    }
+
     final List<Terms> allTerms = _role == DeviceRole.host
         ? Hive.box<Terms>('terms').values.toList()
         : _cachedServerTerms ?? [];
@@ -7793,6 +7806,15 @@ class _MakePaymentScreenState extends State<MakePaymentScreen> {
 
   Future<Map<String, double>> _computeArrearsForPurpose(
       PaymentPurpose selectedPurpose) async {
+    if (_role != DeviceRole.host) {
+      // Ensure _cachedServerTerms/_cachedServerStudentPayments are populated
+      // before reading them below - they're normally warmed by fire-and-forget
+      // calls in initState, which may not have completed yet on a client's
+      // first search of the session (host reads Hive directly, so it never
+      // hits this gap).
+      await fetchTerms();
+      await fetchStudentPayments();
+    }
     final List<Terms> allTerms = _role == DeviceRole.host
         ? Hive.box<Terms>('terms').values.toList()
         : _cachedServerTerms ?? [];

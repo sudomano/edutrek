@@ -21,6 +21,10 @@ import 'package:zitf_system/student_management/settings_helper.dart';
 import 'package:zitf_system/student_management/update_student_from_client.dart';
 
 class MarkAttendanceScreen extends StatefulWidget {
+  final String? initialClassName;
+
+  const MarkAttendanceScreen({super.key, this.initialClassName});
+
   @override
   _MarkAttendanceScreenState createState() => _MarkAttendanceScreenState();
 }
@@ -84,6 +88,12 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     await _loadSettings();
     await _loadTerms();
     await _loadClasses();
+
+    final initialClass = widget.initialClassName;
+    if (initialClass != null && _filteredClasses.contains(initialClass)) {
+      setState(() => _selectedClass = initialClass);
+      await _loadStudentsForClass(initialClass);
+    }
   }
 
   // ✅ Load logged in user and determine permissions
@@ -225,6 +235,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   }
 
   Terms? getActiveTerm() {
+    if (_availableTerms.isEmpty) return null;
+
     final now = DateTime.now();
     return _availableTerms.firstWhere(
       (term) =>
@@ -244,6 +256,18 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       setState(() {
         _classes = [];
         _filteredClasses = [];
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  '⚠️ No term found. Attendance cannot be marked until a term is set up.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
       });
       return;
     }
@@ -359,6 +383,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     final currentTerm = getActiveTerm();
     if (currentTerm == null) {
       setState(() => _students = []);
+      _showDialog('No active term found. Attendance cannot be marked.');
       return;
     }
 
@@ -426,8 +451,18 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         });
       }
 
-      // ✅ Mark all as present by default if not already marked
-      if (!isAlreadyMarked) {
+      if (isAlreadyMarked) {
+        // ✅ Reflect the actual historical record for this specific date -
+        // not whatever isPresent happened to be left over from loading a
+        // different day or a previous marking session. isPresent is a
+        // single field on the Student record, not date-scoped, so it must
+        // be re-derived from presentDates/absentDates every time a
+        // possibly-different date is loaded.
+        for (var student in loadedStudents) {
+          student.isPresent = student.presentDates.any((d) => _isSameDay(d, date));
+        }
+      } else {
+        // Mark all as present by default if not already marked
         for (var student in loadedStudents) {
           student.isPresent = true; // Default to present
         }
@@ -449,6 +484,13 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     }
   }
 
+  // Compares calendar day only, ignoring any time component - relying on
+  // exact DateTime equality (via List.contains) silently fails to match if
+  // a stored date ever picked up a differing time from some other code
+  // path.
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   // ✅ Check if attendance already marked for this class and date
   Future<bool> _isAttendanceAlreadyMarkedForClass(
       String className, DateTime date) async {
@@ -458,8 +500,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       final students = box.values.where((s) => s.class_ == className).toList();
 
       for (var student in students) {
-        if (student.presentDates.contains(date) ||
-            student.absentDates.contains(date)) {
+        if (student.presentDates.any((d) => _isSameDay(d, date)) ||
+            student.absentDates.any((d) => _isSameDay(d, date))) {
           return true;
         }
       }
@@ -786,23 +828,23 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     List<String> modifiedFields = [];
 
     if (isPresent) {
-      if (!student.presentDates.contains(date)) {
+      if (!student.presentDates.any((d) => _isSameDay(d, date))) {
         student.presentDates.add(date);
         modifiedFields.add('presentDates');
       }
-      if (student.absentDates.contains(date)) {
-        student.absentDates.remove(date);
+      if (student.absentDates.any((d) => _isSameDay(d, date))) {
+        student.absentDates.removeWhere((d) => _isSameDay(d, date));
         if (!modifiedFields.contains('absentDates')) {
           modifiedFields.add('absentDates');
         }
       }
     } else {
-      if (!student.absentDates.contains(date)) {
+      if (!student.absentDates.any((d) => _isSameDay(d, date))) {
         student.absentDates.add(date);
         modifiedFields.add('absentDates');
       }
-      if (student.presentDates.contains(date)) {
-        student.presentDates.remove(date);
+      if (student.presentDates.any((d) => _isSameDay(d, date))) {
+        student.presentDates.removeWhere((d) => _isSameDay(d, date));
         if (!modifiedFields.contains('presentDates')) {
           modifiedFields.add('presentDates');
         }
@@ -1347,8 +1389,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       _selectedDate.month,
       _selectedDate.day,
     );
-    return student.presentDates.contains(date) ||
-        student.absentDates.contains(date);
+    return student.presentDates.any((d) => _isSameDay(d, date)) ||
+        student.absentDates.any((d) => _isSameDay(d, date));
   }
 
   Future<void> _showDialog(String message) async {

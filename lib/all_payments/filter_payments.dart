@@ -252,6 +252,39 @@ class StudentsArrearsStatementScreenState
   List<ProductBatch>? _cachedProductBatchesClient;
   bool _isClientDataLoaded = false;
 
+  // Client mode only: full list of class names (fetched cheaply up front),
+  // and whether the full student list is still loading in the background
+  // after the first class was loaded and shown.
+  List<String> _knownClasses = [];
+  bool _isLoadingRemainingStudents = false;
+
+  // Resolves once every startup fetch this screen depends on (students,
+  // users, terms, payment purposes, student payments, projects) has
+  // completed - awaited before opening the Filter dialog or generating a
+  // report, instead of guessing from partial data.
+  Future<void>? _initialLoadFuture;
+
+  Future<void> _loadInitialData() async {
+    try {
+      await Future.wait([
+        fetchUsers(),
+        _initializeDataForRole(),
+        fetchTerms(),
+        fetchSchools(),
+        fetchStudentsMetadata(),
+        fetchPaymentPurposes(),
+        fetchStudentPayments(),
+        _fetchProjectsFromServer(),
+        _fetchProjectItemsFromServer(),
+        fetchProductBatch(),
+        fetchBatchSellUnit(),
+        _fetchProjectSaleTransactions(),
+      ]);
+    } catch (e) {
+      debugPrint('❌ Error during initial data load: $e');
+    }
+  }
+
 // Add this to your state variables in StudentsArrearsStatementScreenState
   List<String> _selectedFilterTerms = [];
 // Add this at the beginning of your widget class
@@ -599,20 +632,11 @@ class StudentsArrearsStatementScreenState
     _searchFocusNode = FocusNode();
     _pmAmountDebounceTimer?.cancel();
 
-    fetchTerms();
-    fetchSchools();
-    fetchStudentsMetadata();
-    fetchPaymentPurposes();
-    fetchStudentPayments();
-    fetchUsers(); // <-- NEW
-    _fetchProjectsFromServer();
-    _fetchProjectItemsFromServer();
-    fetchProductBatch();
-    fetchBatchSellUnit();
-    _fetchProjectSaleTransactions();
-
-    // ✅ Initialize data based on device role
-    _initializeDataForRole();
+    // ✅ Track completion of every fetch this screen depends on, so callers
+    // (Filter dialog, PDF/report generation) can await real completion
+    // instead of polling a heuristic like "_students.isNotEmpty" - which
+    // breaks early on the first batch of data, not the full data set.
+    _initialLoadFuture = _loadInitialData();
 
     final tx = widget.transaction;
 
@@ -679,7 +703,7 @@ class StudentsArrearsStatementScreenState
         id: 0,
         username: '',
         password: '',
-        role: 'teacher',
+        role: '', // unmatched/not-yet-loaded user - don't assume teacher
         assignedClasses: [],
         securityQuestions: const [],
         securityAnswers: const [],
@@ -707,7 +731,7 @@ class StudentsArrearsStatementScreenState
         id: 0,
         username: '',
         password: '',
-        role: 'teacher',
+        role: '', // unmatched/not-yet-loaded user - don't assume teacher
         assignedClasses: [],
         securityQuestions: const [],
         securityAnswers: const [],
@@ -1071,21 +1095,46 @@ class StudentsArrearsStatementScreenState
 
       debugPrint('🔄 Fetching client data from $_hostIp...');
 
-      // Fetch students
+      // Fetch students: load the first class immediately so the screen has
+      // something to show fast, then keep loading the rest of the classes
+      // in the background instead of blocking on the entire (potentially
+      // large) student list in one response.
       if (_cachedServerStudents == null) {
-        final response = await HttpClient()
-            .getUrl(Uri.parse('http://$_hostIp:8080/api/students/all'))
-            .then((req) => req.close());
+        try {
+          final classesResponse = await HttpClient()
+              .getUrl(Uri.parse('http://$_hostIp:8080/api/students/classes'))
+              .then((req) => req.close());
 
-        if (response.statusCode == 200) {
-          final jsonString = await response.transform(utf8.decoder).join();
-          final jsonList = jsonDecode(jsonString) as List;
-          _cachedServerStudents = jsonList
-              .map((json) => studentsFromJson(Map<String, dynamic>.from(json)))
-              .toList();
-          debugPrint('✅ Fetched ${_cachedServerStudents!.length} students');
+          if (classesResponse.statusCode == 200) {
+            final classesJsonString =
+                await classesResponse.transform(utf8.decoder).join();
+            _knownClasses = (jsonDecode(classesJsonString) as List)
+                .map((c) => c.toString())
+                .toList();
+          } else {
+            debugPrint(
+                '❌ Failed to fetch classes list: ${classesResponse.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('❌ Error fetching classes list: $e');
+        }
+
+        if (_knownClasses.isNotEmpty) {
+          await _fetchStudentsForClass(_knownClasses.first,
+              replaceCache: true);
+          debugPrint(
+              '✅ Fetched ${_students.length} students for first class (${_knownClasses.first})');
+          if (mounted) setState(() {});
+
+          // Load everything else in the background - don't await this, so
+          // this function (and anything waiting on it, like the Filter
+          // dialog) doesn't get stuck waiting for the full student list.
+          _isLoadingRemainingStudents = true;
+          _loadRemainingStudentsInBackground();
         } else {
-          debugPrint('❌ Failed to fetch students: ${response.statusCode}');
+          // No known classes (e.g. empty school, or the classes endpoint
+          // failed) - fall back to fetching everything directly.
+          await _fetchAllStudents();
         }
       }
 
@@ -1297,6 +1346,92 @@ class StudentsArrearsStatementScreenState
       debugPrint('❌ Error fetching client data: $e');
       _showDialog('Failed to load data from host. Please check connection.');
     }
+  }
+
+  // Fetches students for a single class from the host and merges them into
+  // _students/_cachedServerStudents. Pass replaceCache on the very first
+  // call (establishing the initial partial cache) rather than merging into
+  // an existing one.
+  Future<void> _fetchStudentsForClass(String className,
+      {bool replaceCache = false}) async {
+    try {
+      final response = await HttpClient()
+          .getUrl(Uri.parse(
+              'http://$_hostIp:8080/api/students/all?class=${Uri.encodeQueryComponent(className)}'))
+          .then((req) => req.close());
+
+      if (response.statusCode == 200) {
+        final jsonString = await response.transform(utf8.decoder).join();
+        final jsonList = jsonDecode(jsonString) as List;
+        final fetched = jsonList
+            .map((json) => studentsFromJson(Map<String, dynamic>.from(json)))
+            .toList();
+
+        if (replaceCache || _cachedServerStudents == null) {
+          _cachedServerStudents = fetched;
+        } else {
+          final existingIds =
+              _cachedServerStudents!.map((s) => s.studentIdNumber).toSet();
+          _cachedServerStudents = [
+            ..._cachedServerStudents!,
+            ...fetched.where((s) => !existingIds.contains(s.studentIdNumber)),
+          ];
+        }
+        _students = _cachedServerStudents ?? [];
+      } else {
+        debugPrint(
+            '❌ Failed to fetch students for class "$className": ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching students for class "$className": $e');
+    }
+  }
+
+  Future<void> _fetchAllStudents() async {
+    try {
+      final response = await HttpClient()
+          .getUrl(Uri.parse('http://$_hostIp:8080/api/students/all'))
+          .then((req) => req.close());
+
+      if (response.statusCode == 200) {
+        final jsonString = await response.transform(utf8.decoder).join();
+        final jsonList = jsonDecode(jsonString) as List;
+        _cachedServerStudents = jsonList
+            .map((json) => studentsFromJson(Map<String, dynamic>.from(json)))
+            .toList();
+        _students = _cachedServerStudents ?? [];
+        debugPrint('✅ Fetched ${_students.length} students');
+      } else {
+        debugPrint('❌ Failed to fetch students: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching all students: $e');
+    }
+  }
+
+  Future<void> _loadRemainingStudentsInBackground() async {
+    try {
+      await _fetchAllStudents();
+      debugPrint(
+          '✅ Background load complete: ${_students.length} total students');
+    } finally {
+      _isLoadingRemainingStudents = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  // Passed into FilterDialog so it can fetch a specific class's students on
+  // demand if the user picks one that hasn't finished loading in the
+  // background yet.
+  Future<List<Student>> _fetchStudentsForClassOnDemand(
+      String className) async {
+    await _fetchStudentsForClass(className);
+    if (mounted) setState(() {});
+    return _cachedServerStudents
+            ?.where((s) =>
+                (s.class_ ?? '').toLowerCase() == className.toLowerCase())
+            .toList() ??
+        [];
   }
 
   // ✅ Helper to wait for cached data in client mode
@@ -2718,11 +2853,35 @@ class StudentsArrearsStatementScreenState
       return;
     }
 
+    final progressNotifier = ValueNotifier<int>(0);
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            ValueListenableBuilder<int>(
+              valueListenable: progressNotifier,
+              builder: (context, count, _) => Text(
+                count == 0
+                    ? 'Preparing report for ${students.length} students...'
+                    : 'Processing student $count of ${students.length}...',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+    // showDialog() doesn't paint synchronously - the renderer needs a real
+    // event-loop turn before the frame actually shows. Without this, the
+    // loop below (near-instant Hive reads on host) can run to completion
+    // before the renderer ever gets a turn, so the dialog is requested but
+    // never actually painted - looking like a plain freeze.
+    await Future.delayed(const Duration(milliseconds: 50));
 
     try {
       final pdf = pw.Document();
@@ -2732,7 +2891,8 @@ class StudentsArrearsStatementScreenState
 
       // Load all arrears data for all students
       final Map<String, dynamic> studentArrearsData = {};
-      for (var student in students) {
+      for (var i = 0; i < students.length; i++) {
+        final student = students[i];
         final originalSelectedStudent = _selectedStudent;
         _selectedStudent = student;
 
@@ -2755,6 +2915,12 @@ class StudentsArrearsStatementScreenState
         };
 
         _selectedStudent = originalSelectedStudent;
+        progressNotifier.value = i + 1;
+        // Yield every few students so the counter above actually gets a
+        // chance to paint instead of jumping straight from 0 to the total.
+        if (i % 5 == 0) {
+          await Future.delayed(const Duration(milliseconds: 1));
+        }
       }
 
       // Add each student on a separate page
@@ -2859,6 +3025,8 @@ class StudentsArrearsStatementScreenState
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      progressNotifier.dispose();
     }
   }
 
@@ -3032,20 +3200,31 @@ class StudentsArrearsStatementScreenState
       return;
     }
 
+    final progressNotifier = ValueNotifier<int>(0);
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Column(
+      builder: (context) => AlertDialog(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Generating Summary Report...'),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            ValueListenableBuilder<int>(
+              valueListenable: progressNotifier,
+              builder: (context, count, _) => Text(
+                count == 0
+                    ? 'Generating Summary Report for ${students.length} students...'
+                    : 'Processing student $count of ${students.length}...',
+              ),
+            ),
           ],
         ),
       ),
     );
+    // See comment in _generateMultiPagePdf - without this yield, the loop
+    // below can run to completion before the dialog ever gets painted.
+    await Future.delayed(const Duration(milliseconds: 50));
 
     try {
       final pdf = pw.Document();
@@ -3057,7 +3236,8 @@ class StudentsArrearsStatementScreenState
       final List<Map<String, dynamic>> studentData = [];
       double totalArrears = 0.0;
 
-      for (var student in students) {
+      for (var i = 0; i < students.length; i++) {
+        final student = students[i];
         final originalSelectedStudent = _selectedStudent;
         _selectedStudent = student;
 
@@ -3077,6 +3257,12 @@ class StudentsArrearsStatementScreenState
         totalArrears += grandTotal;
 
         _selectedStudent = originalSelectedStudent;
+        progressNotifier.value = i + 1;
+        // Yield every few students so the counter above actually gets a
+        // chance to paint instead of jumping straight from 0 to the total.
+        if (i % 5 == 0) {
+          await Future.delayed(const Duration(milliseconds: 1));
+        }
       }
 
       // Sort alphabetically by surname
@@ -3323,6 +3509,8 @@ class StudentsArrearsStatementScreenState
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      progressNotifier.dispose();
     }
   }
 
@@ -4027,19 +4215,12 @@ class StudentsArrearsStatementScreenState
                     );
 
                     try {
-                      // Wait for data to load with timeout
-                      int attempts = 0;
-                      const maxAttempts = 30;
-
-                      while (attempts < maxAttempts) {
-                        if (_students.isNotEmpty ||
-                            (_cachedFilteredStudents != null &&
-                                _cachedFilteredStudents!.isNotEmpty)) {
-                          break;
-                        }
-                        await Future.delayed(const Duration(milliseconds: 100));
-                        attempts++;
-                      }
+                      // Wait for the actual load to finish - not a heuristic
+                      // like "_students has at least one entry", which
+                      // terminates early on partial data (e.g. only the
+                      // first class synced so far) and made the class filter
+                      // look like it only ever offered one class.
+                      await _initialLoadFuture;
 
                       if (mounted) Navigator.pop(context);
 
@@ -4071,6 +4252,10 @@ class StudentsArrearsStatementScreenState
                           initialSelections: currentSelections,
                           selectedTerms: _selectedFilterTerms,
                           users: _users, // ✅ Pass the users list here
+                          knownClasses: _knownClasses,
+                          onFetchClassStudents: _role == DeviceRole.host
+                              ? null
+                              : _fetchStudentsForClassOnDemand,
                           onFilterApplied: (filteredStudents, selectedTerms,
                               arrearsFilterType) {
                             setState(() {
@@ -6095,6 +6280,13 @@ class StudentsArrearsStatementScreenState
       });
     });
 
+    if (_role != DeviceRole.host) {
+      // Ensure caches are warmed before reading them below - see comment in
+      // _computeArrearsForPurpose.
+      await fetchTerms();
+      await fetchStudentPayments();
+    }
+
     final List<Terms> allTerms = _role == DeviceRole.host
         ? Hive.box<Terms>('terms').values.toList()
         : _cachedServerTerms ?? [];
@@ -6192,6 +6384,14 @@ class StudentsArrearsStatementScreenState
 
   Future<Map<String, double>> _computeArrearsForPurpose(
       PaymentPurpose selectedPurpose) async {
+    if (_role != DeviceRole.host) {
+      // _cachedServerTerms/_cachedServerStudentPayments are normally warmed
+      // by fire-and-forget calls in initState, which may not have completed
+      // yet the first time this runs (host reads Hive directly, so it never
+      // hits this gap). Ensure they're populated before reading them below.
+      await fetchTerms();
+      await fetchStudentPayments();
+    }
     final List<Terms> allTerms = _role == DeviceRole.host
         ? Hive.box<Terms>('terms').values.toList()
         : _cachedServerTerms ?? [];
@@ -7496,6 +7696,13 @@ class FilterDialog extends StatefulWidget {
   final Map<String, bool>? initialSelections;
   final List<String> selectedTerms;
   final List<User> users; // Add this
+  // Full list of class names, even ones whose students haven't loaded yet
+  // (the parent screen loads the first class fast, then the rest in the
+  // background) - lets the class dropdown offer every class immediately.
+  final List<String> knownClasses;
+  // Fetches a single class's students on demand, for when the user picks a
+  // class that hasn't finished loading in the background yet.
+  final Future<List<Student>> Function(String className)? onFetchClassStudents;
 
   const FilterDialog({
     Key? key,
@@ -7504,6 +7711,8 @@ class FilterDialog extends StatefulWidget {
     this.initialSelections,
     this.selectedTerms = const [],
     required this.users, // Add this
+    this.knownClasses = const [],
+    this.onFetchClassStudents,
   }) : super(key: key);
 
   @override
@@ -7528,6 +7737,7 @@ class _FilterDialogState extends State<FilterDialog> {
   List<Student> _originalStudents = [];
   List<Student> _filteredStudents = [];
   bool _filtersApplied = false;
+  bool _isFetchingClassOnDemand = false;
 
 // Check if current user is a teacher
   bool _isTeacher() {
@@ -7540,7 +7750,7 @@ class _FilterDialogState extends State<FilterDialog> {
         id: 0,
         username: '',
         password: '',
-        role: 'teacher',
+        role: '', // unmatched/not-yet-loaded user - don't assume teacher
         assignedClasses: [],
         securityQuestions: const [],
         securityAnswers: const [],
@@ -7562,7 +7772,7 @@ class _FilterDialogState extends State<FilterDialog> {
         id: 0,
         username: '',
         password: '',
-        role: 'teacher',
+        role: '', // unmatched/not-yet-loaded user - don't assume teacher
         assignedClasses: [],
         securityQuestions: const [],
         securityAnswers: const [],
@@ -7633,13 +7843,18 @@ class _FilterDialogState extends State<FilterDialog> {
   }
 
   void _extractFilterOptions() {
-    // Get all classes from students
-    List<String> allClasses = _originalStudents
-        .map((s) => s.class_)
-        .where((c) => c != null && c.isNotEmpty)
-        .toSet()
-        .cast<String>()
-        .toList()
+    // Get all classes from students, plus the full known-classes list (some
+    // of which may not have any loaded students yet - the parent screen
+    // loads the first class fast and the rest in the background) so the
+    // dropdown offers every class immediately, not just whatever has
+    // finished loading so far.
+    List<String> allClasses = <String>{
+      ..._originalStudents
+          .map((s) => s.class_)
+          .where((c) => c != null && c.isNotEmpty)
+          .cast<String>(),
+      ...widget.knownClasses,
+    }.toList()
       ..sort();
 
     // Check if user is a teacher and filter classes accordingly (case-insensitive)
@@ -7673,6 +7888,38 @@ class _FilterDialogState extends State<FilterDialog> {
         .cast<String>()
         .toList()
       ..sort();
+  }
+
+  // Wraps _applyFilters(): if the selected class hasn't finished loading in
+  // the background yet, fetch just that class on demand first instead of
+  // filtering against data that isn't there yet.
+  Future<void> _onApplyFiltersPressed() async {
+    final selectedClass = _selectedClass;
+    if (selectedClass != null && widget.onFetchClassStudents != null) {
+      final alreadyLoaded = _originalStudents
+          .any((s) => (s.class_ ?? '').toLowerCase() == selectedClass.toLowerCase());
+
+      if (!alreadyLoaded) {
+        setState(() => _isFetchingClassOnDemand = true);
+        try {
+          final fetched = await widget.onFetchClassStudents!(selectedClass);
+          final existingIds =
+              _originalStudents.map((s) => s.studentIdNumber).toSet();
+          final newStudents = fetched
+              .where((s) => !existingIds.contains(s.studentIdNumber))
+              .toList();
+          setState(() {
+            _originalStudents = [..._originalStudents, ...newStudents];
+          });
+        } catch (e) {
+          debugPrint('❌ Failed to fetch class "$selectedClass" on demand: $e');
+        } finally {
+          setState(() => _isFetchingClassOnDemand = false);
+        }
+      }
+    }
+
+    _applyFilters();
   }
 
   void _applyFilters() {
@@ -8028,11 +8275,25 @@ class _FilterDialogState extends State<FilterDialog> {
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 12),
                               ),
-                              onPressed: _applyFilters,
-                              icon: const Icon(Icons.filter_alt),
-                              label: const Text(
-                                'APPLY FILTERS',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              onPressed: _isFetchingClassOnDemand
+                                  ? null
+                                  : _onApplyFiltersPressed,
+                              icon: _isFetchingClassOnDemand
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.filter_alt),
+                              label: Text(
+                                _isFetchingClassOnDemand
+                                    ? 'LOADING CLASS...'
+                                    : 'APPLY FILTERS',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),

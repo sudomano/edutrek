@@ -79,6 +79,13 @@ late final Box<Settings> _settingsBox;
 late final Box<ProjectSaleTransaction> _projectSaleTransactionBox;
 late final Box<PaymentLog> _paymentLogBox;
 
+// Compares calendar day only, ignoring any time component - safer than
+// relying on exact DateTime equality (via List.contains/remove), which
+// silently fails to match if a stored date ever picked up a differing
+// time/offset from some other code path.
+bool isSameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
 Future<void> initializeSettings() async {
   try {
     // Check if settings already exist
@@ -2706,130 +2713,17 @@ Future<void> startAlfredServer() async {
     }
   });
 
-  app.post("/api/register/mark/bulk", (req, res) async {
-    try {
-      final body = await req.bodyAsJsonMap;
-
-      final String className = body['className'];
-      final String termId = body['termId'];
-      final DateTime date = DateTime.parse(body['date']);
-      final List records = body['records'];
-
-      final studentsBox = await Hive.openBox<Student>('students');
-
-      // 🔒 CHECK FOR DOUBLE MARKING
-      final alreadyMarked = studentsBox.values.any((s) =>
-          s.class_ == className &&
-          s.terms!.contains(termId) &&
-          (s.presentDates.contains(date) || s.absentDates.contains(date)));
-
-      // ✅ Check if updates are allowed
-      final allowUpdate =
-          (_settingsBox.get('allowAttendanceUpdate') as bool?) ?? false;
-
-      if (alreadyMarked) {
-        if (allowUpdate) {
-          // ✅ Updates are allowed - proceed with updating
-          print(
-              "📝 Attendance already marked but updates are allowed. Updating records...");
-
-          // Clear existing marks for this date for all students in the class
-          for (final student in studentsBox.values.where(
-              (s) => s.class_ == className && s.terms!.contains(termId))) {
-            student.presentDates.remove(date);
-            student.absentDates.remove(date);
-            await student.save();
-          }
-
-          // Now apply the new marks
-          for (final record in records) {
-            final studentId = record['studentId'];
-            final bool isPresent = record['isPresent'];
-
-            final student = studentsBox.values.firstWhere(
-              (s) => s.studentIdNumber == studentId,
-              orElse: () => throw Exception("Student not found: $studentId"),
-            );
-
-            if (isPresent) {
-              student.presentDates.add(date);
-              student.absentDates.remove(date);
-            } else {
-              student.absentDates.add(date);
-              student.presentDates.remove(date);
-            }
-
-            await student.save();
-          }
-
-          return {
-            "status": "success",
-            "marked": records.length,
-            "updated": true,
-            "message": "Attendance updated successfully"
-          };
-        } else {
-          // ❌ Updates are blocked
-          res.statusCode = 409;
-          return {
-            "error": "Attendance already marked for this class and date",
-            "allowUpdate": false,
-            "message":
-                "Updates are currently blocked by the host. Please contact administrator."
-          };
-        }
-      }
-
-      // ✅ APPLY ATTENDANCE (first time marking)
-      for (final record in records) {
-        final studentId = record['studentId'];
-        final bool isPresent = record['isPresent'];
-
-        final student = studentsBox.values.firstWhere(
-          (s) => s.studentIdNumber == studentId,
-          orElse: () => throw Exception("Student not found: $studentId"),
-        );
-
-        if (isPresent) {
-          student.presentDates.add(date);
-          student.absentDates.remove(date);
-        } else {
-          student.absentDates.add(date);
-          student.presentDates.remove(date);
-        }
-
-        await student.save();
-      }
-
-      return {
-        "status": "success",
-        "marked": records.length,
-        "updated": false,
-        "message": "Attendance marked successfully"
-      };
-    } catch (e) {
-      print("❌ Bulk register error: $e");
-      res.statusCode = 500;
-      return {"error": "Failed to mark attendance", "details": e.toString()};
-    }
-  });
-
-  /// ************************ CHECK if attendance update is allowed ************************
-  app.get("/api/register/allow-update", (req, res) async {
-    try {
-      final allowUpdate =
-          (_settingsBox.get('allowAttendanceUpdate') as bool?) ?? false;
-      return {
-        "allowUpdate": allowUpdate,
-        "message":
-            allowUpdate ? "Updates are allowed" : "Updates are blocked by host"
-      };
-    } catch (e) {
-      print("❌ Error checking update permission: $e");
-      res.statusCode = 500;
-      return {"error": "Failed to check update permission"};
-    }
-  });
+  // NOTE: /api/register/mark/bulk and /api/register/allow-update used to be
+  // registered here a second time, reading allowAttendanceUpdate via
+  // _settingsBox.get('allowAttendanceUpdate') - but _settingsBox is a
+  // Box<Settings> (objects at auto-increment keys), not a key-value store,
+  // so that lookup always returned null -> always treated as "blocked".
+  // Alfred processes duplicate route registrations in order and stops at
+  // the first one that sends a response, so that broken pair was the one
+  // actually running - the host's "allow updates" toggle never reached any
+  // client. Removed in favor of the correct versions further down (which
+  // read settings.allowAttendanceUpdate properly), rather than keeping two
+  // copies of the same route.
   app.get("/api/students", (req, res) async {
     try {
       // Grab search query, normalize it
@@ -2839,7 +2733,7 @@ Future<void> startAlfredServer() async {
 
       // Filter students safely
       final filteredStudents = _studentsBox.values
-          .where((s) => s.termId != null)
+          .where((s) => s.termId != null && !(s.isDeleted ?? false))
           .where((s) => deepMatchStudent(s, search))
           .toList();
 
@@ -2860,21 +2754,57 @@ Future<void> startAlfredServer() async {
   });
 
   /// ************************ GET all students (unlimited) ************************
+  // Optional ?class=X lets clients fetch one class at a time (e.g. to show
+  // the first class quickly, then load the rest in the background) instead
+  // of always pulling the entire school's student list in one response.
   app.get("/api/students/all", (req, res) async {
     try {
-      debugPrint('📘 /api/students/all called');
+      final classFilter = req.uri.queryParameters['class'];
+      debugPrint(
+          '📘 /api/students/all called${classFilter != null && classFilter.isNotEmpty ? " | class=$classFilter" : ""}');
 
-      // Get ALL students without limit
-      final allStudents =
-          _studentsBox.values.where((s) => s.termId != null).toList();
+      var allStudents = _studentsBox.values
+          .where((s) => s.termId != null && !(s.isDeleted ?? false));
 
-      debugPrint('✅ Returning ${allStudents.length} students (unlimited)');
+      if (classFilter != null && classFilter.isNotEmpty) {
+        allStudents = allStudents.where((s) => s.class_ == classFilter);
+      }
 
-      return allStudents.map(studentsToJson).toList();
+      final result = allStudents.toList();
+
+      debugPrint('✅ Returning ${result.length} students'
+          '${classFilter != null && classFilter.isNotEmpty ? " for class $classFilter" : " (unlimited)"}');
+
+      return result.map(studentsToJson).toList();
     } catch (e) {
       print("❌ Error serving all students data: $e");
       res.statusCode = 500;
       return {"error": "Failed to fetch all students info"};
+    }
+  });
+
+  /// ************************ GET distinct class names ************************
+  // Tiny, fast payload so clients can populate a class filter/dropdown and
+  // decide which class to load first, without waiting on the full student
+  // list.
+  app.get("/api/students/classes", (req, res) async {
+    try {
+      final classes = _studentsBox.values
+          .where((s) => s.termId != null && !(s.isDeleted ?? false))
+          .map((s) => s.class_)
+          .where((c) => c != null && c.isNotEmpty)
+          .toSet()
+          .cast<String>()
+          .toList()
+        ..sort();
+
+      debugPrint('✅ Returning ${classes.length} distinct classes');
+
+      return classes;
+    } catch (e) {
+      print("❌ Error serving classes list: $e");
+      res.statusCode = 500;
+      return {"error": "Failed to fetch classes list"};
     }
   });
 
@@ -3270,79 +3200,55 @@ Future<void> startAlfredServer() async {
 
       final String className = body['className'];
       final String termId = body['termId'];
-      final DateTime date = DateTime.parse(body['date']);
+      final rawDate = DateTime.parse(body['date']);
+      final date = DateTime(rawDate.year, rawDate.month, rawDate.day);
       final List records = body['records'];
 
       // 🔒 CHECK FOR DOUBLE MARKING
       final alreadyMarked = _studentsBox.values.any((s) =>
           s.class_ == className &&
           s.terms!.contains(termId) &&
-          (s.presentDates.contains(date) || s.absentDates.contains(date)));
+          (s.presentDates.any((d) => isSameDay(d, date)) ||
+              s.absentDates.any((d) => isSameDay(d, date))));
 
-      // ✅ Get settings from typed box
-      final settings = _settingsBox.values.first;
-      final allowUpdate = settings.allowAttendanceUpdate ?? false;
+      // ✅ Get settings from typed box (defaults to blocked if none exist yet)
+      final settings = _settingsBox.values.firstOrNull;
+      final allowUpdate = settings?.allowAttendanceUpdate ?? false;
 
       debugPrint(
           '📋 Bulk register - className: $className, termId: $termId, date: $date');
       debugPrint('📋 alreadyMarked: $alreadyMarked, allowUpdate: $allowUpdate');
 
-      if (alreadyMarked) {
-        if (allowUpdate) {
-          // ✅ Updates are allowed - proceed with updating
-          debugPrint(
-              "📝 Attendance already marked but updates are allowed. Updating records...");
-
-          // Clear existing marks for this date for all students in the class
-          for (final student in _studentsBox.values.where(
-              (s) => s.class_ == className && s.terms!.contains(termId))) {
-            student.presentDates.remove(date);
-            student.absentDates.remove(date);
-            await student.save();
-          }
-
-          // Now apply the new marks
-          for (final record in records) {
-            final studentId = record['studentId'];
-            final bool isPresent = record['isPresent'];
-
-            final student = _studentsBox.values.firstWhere(
-              (s) => s.studentIdNumber == studentId,
-              orElse: () => throw Exception("Student not found: $studentId"),
-            );
-
-            if (isPresent) {
-              student.presentDates.add(date);
-              student.absentDates.remove(date);
-            } else {
-              student.absentDates.add(date);
-              student.presentDates.remove(date);
-            }
-
-            await student.save();
-          }
-
-          return {
-            "status": "success",
-            "marked": records.length,
-            "updated": true,
-            "message": "Attendance updated successfully"
-          };
-        } else {
-          // ❌ Updates are blocked
-          debugPrint("❌ Attendance already marked and updates are blocked");
-          res.statusCode = 409;
-          return {
-            "error": "Attendance already marked for this class and date",
-            "allowUpdate": false,
-            "message":
-                "Updates are currently blocked by the host. Please contact administrator."
-          };
-        }
+      if (alreadyMarked && !allowUpdate) {
+        // ❌ Updates are blocked
+        debugPrint("❌ Attendance already marked and updates are blocked");
+        res.statusCode = 409;
+        return {
+          "error": "Attendance already marked for this class and date",
+          "allowUpdate": false,
+          "message":
+              "Updates are currently blocked by the host. Please contact administrator."
+        };
       }
 
-      // ✅ APPLY ATTENDANCE (first time marking)
-      debugPrint("✅ Marking attendance for the first time");
+      if (alreadyMarked) {
+        debugPrint(
+            "📝 Attendance already marked but updates are allowed. Updating records...");
+      } else {
+        debugPrint("✅ Marking attendance for the first time");
+      }
+
+      // Clear any existing marks for this date for all students in the
+      // class first (covers both the "update" case, and defensively for
+      // "first time" too in case of any partial/inconsistent prior state),
+      // then apply the new marks fresh.
+      for (final student in _studentsBox.values.where(
+          (s) => s.class_ == className && s.terms!.contains(termId))) {
+        student.presentDates.removeWhere((d) => isSameDay(d, date));
+        student.absentDates.removeWhere((d) => isSameDay(d, date));
+        await student.save();
+      }
+
       for (final record in records) {
         final studentId = record['studentId'];
         final bool isPresent = record['isPresent'];
@@ -3354,10 +3260,8 @@ Future<void> startAlfredServer() async {
 
         if (isPresent) {
           student.presentDates.add(date);
-          student.absentDates.remove(date);
         } else {
           student.absentDates.add(date);
-          student.presentDates.remove(date);
         }
 
         await student.save();
@@ -3366,8 +3270,10 @@ Future<void> startAlfredServer() async {
       return {
         "status": "success",
         "marked": records.length,
-        "updated": false,
-        "message": "Attendance marked successfully"
+        "updated": alreadyMarked,
+        "message": alreadyMarked
+            ? "Attendance updated successfully"
+            : "Attendance marked successfully"
       };
     } catch (e) {
       debugPrint("❌ Bulk register error: $e");
@@ -4301,7 +4207,15 @@ Future<void> startAlfredServer() async {
     }
   });
 
-  final server = await app.listen(8080, InternetAddress.anyIPv4);
-  print(
-      "🚀 Alfred server running on http://${server.address.address}:${server.port}");
+  try {
+    final server = await app.listen(8080, InternetAddress.anyIPv4);
+    print(
+        "🚀 Alfred server running on http://${server.address.address}:${server.port}");
+  } catch (e) {
+    // Most likely port 8080 is already held by another running instance of
+    // this app. Don't let this escape uncaught - the caller (main()) must
+    // still reach runApp() so the app shows a window instead of hanging.
+    print(
+        "❌ Failed to start Alfred server on port 8080 (already in use? another instance running?): $e");
+  }
 }

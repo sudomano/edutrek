@@ -174,9 +174,19 @@ void main() async {
   if (role == DeviceRole.host) {
     await HiveService.openHostOnlyBoxes();
     await HostSeed.run();
-    await startHostIfSupported(() async {
-      await HostBootstrap.start();
-    });
+    try {
+      await startHostIfSupported(() async {
+        await HostBootstrap.start();
+      });
+    } catch (e) {
+      // If this fails (e.g. port 8080 already held by another running
+      // instance of this app), the app must still reach runApp() below -
+      // otherwise the process hangs forever with no window ever created,
+      // since the periodic cleanup timer registered in
+      // openHostOnlyBoxes() keeps the event loop alive regardless.
+      debugPrint(
+          '❌ Host bootstrap failed (server may already be running elsewhere): $e');
+    }
   }
 
   // Initialize SharedPreferences with developer credentials
