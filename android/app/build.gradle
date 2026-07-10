@@ -23,6 +23,20 @@ if (flutterVersionName == null) {
     flutterVersionName = "1.0"
 }
 
+// Release signing: without a STABLE key across builds, Android treats every
+// new build as a different app (signature mismatch) and forces an
+// uninstall-then-reinstall to update it - which wipes all app data. This
+// keystore/key.properties pair is gitignored (it's a secret, back it up
+// somewhere safe outside this repo) and must be reused for every future
+// release build, not regenerated.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader("UTF-8") { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace = "com.example.zitf_system"
     compileSdk = flutter.compileSdkVersion
@@ -48,11 +62,26 @@ android {
         versionName = flutterVersionName
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
+                storePassword = keystoreProperties["storePassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            // Falls back to debug signing if key.properties is missing (e.g.
+            // a fresh clone without the release keystore) so the build still
+            // works - but that fallback build will NOT be able to update any
+            // installation signed with the real release key.
+            signingConfig = keystorePropertiesFile.exists()
+                ? signingConfigs.release
+                : signingConfigs.debug
         }
     }
 }

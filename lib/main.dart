@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -74,6 +75,12 @@ import 'package:flutter/foundation.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+// Held for the app's entire lifetime as a single-instance guard - see
+// main(). Must stay a top-level reference, not a local variable in main(),
+// so it can't be garbage-collected (and the socket closed) once main()
+// itself returns.
+ServerSocket? _singleInstanceLock;
+
 enum DeviceRole { host, client }
 
 void main() async {
@@ -91,6 +98,35 @@ void main() async {
         isLoggedIn: isLoggedIn,
       ),
     );
+    return;
+  }
+
+  // Single-instance guard. Every box Hive opens below takes an exclusive
+  // file lock (RandomAccessFile.lock()) that BLOCKS - it never throws -
+  // when another process already holds it. That means a second launch of
+  // this app used to hang forever inside HiveService.openHostOnlyBoxes(),
+  // with runApp() never reached and no window ever created, silently
+  // piling up as an invisible zombie process. A plain socket bind fails
+  // fast instead of blocking, so it's used here purely as a fast-failing
+  // lock, checked before any Hive initialization begins.
+  try {
+    _singleInstanceLock =
+        await ServerSocket.bind(InternetAddress.loopbackIPv4, 47811);
+  } catch (e) {
+    runApp(const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Text(
+              'This app is already running.\nCheck your taskbar for the existing window.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+          ),
+        ),
+      ),
+    ));
     return;
   }
 
