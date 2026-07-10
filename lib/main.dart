@@ -223,7 +223,10 @@ class HiveService {
     await Hive.openBox<ReceiptSnapshot>('receipt_snapshots');
     await Hive.openBox<NetworkSettings>('network_settings_box');
     await Hive.openBox<Settings>('settings'); // ✅ Open settings box
-
+// Open ID service boxes
+    await Hive.openBox<IdCounter>('id_counter');
+    await Hive.openBox<IdLock>('id_lock');
+    await Hive.openBox<IdAssignmentLog>('id_assignment_log');
     await IdService().initialize();
 
     // Start periodic cleanup
@@ -458,7 +461,7 @@ class _MyAppState extends State<MyApp> {
           '/home': (context) => const HomeScreen(),
           '/homedeveloper': (context) => ViewSecurityScreen(),
           '/forgot': (context) => ForgottenPasswordScreen(),
-          '/device_few_settings': (context) => DeviceFewSettingsScreen(),
+          '/device_few_settings': (context) => const DeviceFewSettingsScreen(),
           '/developer_device_few_settings': (context) =>
               DeveloperDeviceFewSettingsScreen(),
           '/admin': (context) => EditSecurityScreen(),
@@ -473,7 +476,9 @@ class _MyAppState extends State<MyApp> {
           '/profile': (context) => const AdminPanelScreen(),
           '/settings': (context) => const DeveloperHome(),
           '/projects': (context) => const ProjectsHome(),
-          '/term_switch': (context) => TermSwitcher(),
+          '/term_switch': (context) => const TermSwitcher(),
+          // Add to your routes in main.dart
+          '/id_service_settings': (context) => const IdServiceSettingsPage(),
         },
         theme: ThemeData(
           primarySwatch: Colors.blue,

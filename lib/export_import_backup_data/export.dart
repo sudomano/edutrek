@@ -1133,17 +1133,24 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'parentName': log.parentName,
         'parentPhone': log.parentPhone,
 
-        // ✅ Reprint tracking fields
+        // Reprint tracking fields
         'isReprint': log.isReprint ?? false,
         'originalReceiptNumber': log.originalReceiptNumber,
         'reprintCount': log.reprintCount ?? 0,
 
-        // ✅ Sync fields
+        // Sync fields
         'logId': log.logId,
         'syncStatus': log.syncStatus ?? false,
         'lastModified': log.lastModified?.toIso8601String(),
         'operationType': log.operationType ?? 'none',
         'modifiedFields': log.modifiedFields ?? [],
+
+        // ✅ NEW DELETION FIELDS
+        'isDeleted': log.isDeleted ?? false,
+        'deletedAt': log.deletedAt?.toIso8601String(),
+        'deletedBy': log.deletedBy,
+        'deleteReason': log.deleteReason,
+        'deletedSyncStatus': log.deletedSyncStatus ?? false,
       };
 
   Map<String, dynamic> _productBatchToJson(ProductBatch b) => {
@@ -1299,6 +1306,7 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
   }
 
 // JSON Serialization method for ExceptionalStudents
+
   Map<String, dynamic> _exceptionsToJson(ExceptionalStudents exc) {
     return {
       'id': exc.id,
@@ -1311,9 +1319,13 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'lastModified': exc.lastModified?.toIso8601String(),
       'operationType': exc.operationType,
       'priorityFlag': exc.priorityFlag ?? 0,
-
-      //'modifiedFields': exc.modifiedFields,
       'terms': exc.terms,
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': exc.isDeleted ?? false,
+      'deletedAt': exc.deletedAt?.toIso8601String(),
+      'deletedBy': exc.deletedBy,
+      'deleteReason': exc.deleteReason,
+      'deletedSyncStatus': exc.deletedSyncStatus ?? false,
     };
   }
 
@@ -1331,6 +1343,12 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'terms': cls.terms != null
           ? jsonEncode(cls.terms) // JSON encode the list
           : null, //'modifiedFields': cls.modifiedFields,
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
     };
   }
 
@@ -1347,6 +1365,12 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
       'modifiedFields': cls.modifiedFields,
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
     };
   }
 
@@ -1393,6 +1417,12 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'isNewComerFrom': cls.isNewComerFrom?.toIso8601String(),
       'isNewComerUntil': cls.isNewComerUntil?.toIso8601String(),
       //'modifiedFields': cls.modifiedFields,
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
     };
   }
 
@@ -1413,7 +1443,24 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'operationType': cls.operationType,
       'username': cls.username,
       'role': cls.role,
-      //'modifiedFields': cls.modifiedFields,
+
+      // ✅ Payment method fields
+      'paymentMethodType': cls.paymentMethodType,
+      'paymentMethodAmount': cls.paymentMethodAmount,
+      'paymentReference': cls.paymentReference,
+      'mobileMoneyProvider': cls.mobileMoneyProvider,
+      'bankAccountNumber': cls.bankAccountNumber,
+      'bankAccountName': cls.bankAccountName,
+      'changeGiven': cls.changeGiven,
+
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
+
+      // 'modifiedFields': cls.modifiedFields,
     };
   }
 
@@ -1454,6 +1501,13 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
           : null,
       'forNewcomersOnly': cls.forNewcomersOnly,
       //'modifiedFields': cls.modifiedFields,
+
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
     };
   }
 
@@ -1520,6 +1574,12 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
       'lastModified': cls.lastModified?.toIso8601String(),
       'operationType': cls.operationType,
       //'modifiedFields': cls.modifiedFields,
+      // ✅ NEW DELETION FIELDS
+      'isDeleted': cls.isDeleted ?? false,
+      'deletedAt': cls.deletedAt?.toIso8601String(),
+      'deletedBy': cls.deletedBy,
+      'deleteReason': cls.deleteReason,
+      'deletedSyncStatus': cls.deletedSyncStatus ?? false,
     };
   }
 
@@ -1565,6 +1625,11 @@ class _ExportClassesPagesState extends State<ExportClassesPages> {
         'isActive': user.isActive ?? true,
         'createdAt': user.createdAt?.toIso8601String(),
         'modifiedFields': user.modifiedFields,
+        'isDeleted': user.isDeleted ?? false,
+        'deletedAt': user.deletedAt?.toIso8601String(),
+        'deletedBy': user.deletedBy,
+        'deleteReason': user.deleteReason,
+        'deletedSyncStatus': user.deletedSyncStatus ?? false,
       };
 
   Map<String, dynamic> _accountsToJson(Account acc) => {

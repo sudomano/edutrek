@@ -360,6 +360,7 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
 
 // Create PaymentLog from JSON
   /// Convert JSON to PaymentLog with ALL fields including sync fields
+
   PaymentLog _paymentLogFromJson(Map<String, dynamic> json) => PaymentLog(
         // Core fields
         receiptNumber: json['receiptNumber'] as int? ?? 0,
@@ -374,12 +375,12 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
         parentName: json['parentName'] as String?,
         parentPhone: json['parentPhone'] as String?,
 
-        // ✅ Reprint tracking fields
+        // Reprint tracking fields
         isReprint: json['isReprint'] as bool? ?? false,
         originalReceiptNumber: json['originalReceiptNumber'] as String?,
         reprintCount: json['reprintCount'] as int? ?? 0,
 
-        // ✅ Sync fields
+        // Sync fields
         logId: json['logId'] as String?,
         syncStatus: json['syncStatus'] as bool? ?? false,
         lastModified: json['lastModified'] != null
@@ -390,6 +391,15 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
                 ?.map((e) => e.toString())
                 .toList() ??
             [],
+
+        // ✅ NEW DELETION FIELDS
+        isDeleted: json['isDeleted'] as bool? ?? false,
+        deletedAt: json['deletedAt'] != null
+            ? DateTime.tryParse(json['deletedAt'] as String)
+            : null,
+        deletedBy: json['deletedBy'] as String?,
+        deleteReason: json['deleteReason'] as String?,
+        deletedSyncStatus: json['deletedSyncStatus'] as bool? ?? false,
       );
 
   ProductBatch _productBatchFromJson(Map<String, dynamic> json) => ProductBatch(
@@ -588,13 +598,20 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['lastModified'])
           : null,
       operationType: json['operationType'],
-      //modifiedFields: json['modifiedFields'],
       terms: json['terms'] != null
           ? (json['terms'] is String
               ? List<String>.from(jsonDecode(json['terms']))
               : List<String>.from(json['terms']))
           : null,
       priorityFlag: json['priorityFlag'] ?? 0,
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] as bool? ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.tryParse(json['deletedAt'] as String)
+          : null,
+      deletedBy: json['deletedBy'] as String?,
+      deleteReason: json['deleteReason'] as String?,
+      deletedSyncStatus: json['deletedSyncStatus'] as bool? ?? false,
     );
   }
 
@@ -617,6 +634,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
               : List<String>.from(json['terms']))
           : null,
       //modifiedFields: json['modifiedFields'],
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] as bool? ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.tryParse(json['deletedAt'] as String)
+          : null,
+      deletedBy: json['deletedBy'] as String?,
+      deleteReason: json['deleteReason'] as String?,
+      deletedSyncStatus: json['deletedSyncStatus'] as bool? ?? false,
     );
   }
 
@@ -635,6 +660,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
       operationType: json['operationType'],
       modifiedFields: json['modifiedFields'],
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] as bool? ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.tryParse(json['deletedAt'] as String)
+          : null,
+      deletedBy: json['deletedBy'] as String?,
+      deleteReason: json['deleteReason'] as String?,
+      deletedSyncStatus: json['deletedSyncStatus'] as bool? ?? false,
     );
   }
 
@@ -697,6 +730,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           ? DateTime.parse(json['isNewComerUntil'])
           : null,
       //modifiedFields: json['modifiedFields'],
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] as bool? ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.tryParse(json['deletedAt'] as String)
+          : null,
+      deletedBy: json['deletedBy'] as String?,
+      deleteReason: json['deleteReason'] as String?,
+      deletedSyncStatus: json['deletedSyncStatus'] as bool? ?? false,
     );
   }
 
@@ -719,6 +760,24 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
       operationType: json['operationType'],
       username: json['username'],
       role: json['role'],
+
+      // ✅ Payment method fields
+      paymentMethodType: json['paymentMethodType'],
+      paymentMethodAmount: json['paymentMethodAmount'],
+      paymentReference: json['paymentReference'],
+      mobileMoneyProvider: json['mobileMoneyProvider'],
+      bankAccountNumber: json['bankAccountNumber'],
+      bankAccountName: json['bankAccountName'],
+      changeGiven: json['changeGiven'],
+
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] ?? false,
+      deletedAt:
+          json['deletedAt'] != null ? DateTime.parse(json['deletedAt']) : null,
+      deletedBy: json['deletedBy'],
+      deleteReason: json['deleteReason'],
+      deletedSyncStatus: json['deletedSyncStatus'] ?? false,
+
       //modifiedFields: json['modifiedFields'],
     );
   }
@@ -764,6 +823,13 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
           : null,
       forNewcomersOnly: json['forNewcomersOnly'],
       //modifiedFields: json['modifiedFields'],
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] ?? false,
+      deletedAt:
+          json['deletedAt'] != null ? DateTime.parse(json['deletedAt']) : null,
+      deletedBy: json['deletedBy'],
+      deleteReason: json['deleteReason'],
+      deletedSyncStatus: json['deletedSyncStatus'] ?? false,
     );
   }
 
@@ -891,6 +957,13 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
 
       operationType: json['operationType'],
       //modifiedFields: json['modifiedFields'],
+      // ✅ NEW DELETION FIELDS
+      isDeleted: json['isDeleted'] ?? false,
+      deletedAt:
+          json['deletedAt'] != null ? DateTime.parse(json['deletedAt']) : null,
+      deletedBy: json['deletedBy'],
+      deleteReason: json['deleteReason'],
+      deletedSyncStatus: json['deletedSyncStatus'] ?? false,
     );
   }
 
@@ -930,6 +1003,14 @@ class _ImportClassesPagesState extends State<ImportClassesPages> {
             ? DateTime.parse(json['createdAt'])
             : null,
         modifiedFields: json['modifiedFields'],
+        // ✅ NEW DELETION FIELDS
+        isDeleted: json['isDeleted'] ?? false,
+        deletedAt: json['deletedAt'] != null
+            ? DateTime.parse(json['deletedAt'])
+            : null,
+        deletedBy: json['deletedBy'],
+        deleteReason: json['deleteReason'],
+        deletedSyncStatus: json['deletedSyncStatus'] ?? false,
       );
 
   Account _accountsFromJson(Map<String, dynamic> json) => Account(

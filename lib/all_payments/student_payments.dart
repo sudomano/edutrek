@@ -59,23 +59,21 @@ class _MyPageState extends State<MakePayment> {
     final subadmin = loggedInUser?.role.toLowerCase() == 'sub-admin';
     final administration = loggedInUser.role.toLowerCase() == 'administration';
 
-    // CONDITIONAL: Check if device is client - if so, hide view/update/delete
+    // Determine device mode
     final isClient = _deviceRole == DeviceRole.client;
     final isHost = _deviceRole == DeviceRole.host;
 
-    // Determine what permissions to show based on role AND device type
+    // Permissions based on role (device no longer restricts viewing)
     final bool canCreatePayments =
         (admin || administration || secretary || subadmin);
     final bool canViewPayments =
-        (admin || administration || secretary || subadmin) && !isClient;
-    final bool canReprintReceipts = (admin || administration) && !isClient;
-    final bool canUpdatePayments = (admin || administration) && !isClient;
-    final bool canDeletePayments = admin && !isClient;
+        (admin || administration || secretary || subadmin);
+    final bool canReprintReceipts = (admin || administration);
+    final bool canUpdatePayments = (admin || administration);
+    final bool canDeletePayments = admin;
 
-    // Special case: If device is client, only show limitFed functionality
-    // For clients, we might want to show only view if they have permission
-    final bool showLimitedView =
-        isClient && (!admin || !administration || !secretary || !subadmin);
+    // Show a subtle indicator for client mode instead of a warning banner
+    final bool isClientMode = isClient;
 
     return Scaffold(
       appBar: const CustomAppBar(title: 'Payments'),
@@ -94,8 +92,7 @@ class _MyPageState extends State<MakePayment> {
                     Expanded(
                       child: LayoutBuilder(builder: (context, constraints) {
                         bool isLargeScreen = constraints.maxWidth >= 500;
-                        // Adjust crossAxisCount based on screen width
-                        int crossAxisCount = 2; // Default 2 items per row
+                        int crossAxisCount = 2;
                         double crossAxisSpacing = 16.0;
 
                         if (constraints.maxWidth >= 1200) {
@@ -113,6 +110,7 @@ class _MyPageState extends State<MakePayment> {
                         } else {
                           crossAxisCount = 1;
                         }
+
                         return Container(
                           decoration: BoxDecoration(
                             color: isLargeScreen
@@ -146,46 +144,108 @@ class _MyPageState extends State<MakePayment> {
                                   buildFutureSchoolsWidget(
                                       isLargeScreen: isLargeScreen),
 
-                                  // If device is client, show a message about limited access
-                                  if (isClient && !isHost)
-                                    Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange[50],
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          border: Border.all(
-                                              color: Colors.orange[300]!),
-                                        ),
-                                        child: const Column(
-                                          children: [
-                                            Icon(
-                                              Icons.info_outline,
-                                              color: Colors.orange,
-                                              size: 32,
+                                  // ✅ PROFESSIONAL CLIENT MODE INDICATOR
+                                  if (isClientMode && !isHost)
+                                    Container(
+                                      margin: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: Colors.grey.shade300,
+                                            width: 1),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.grey.shade200,
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                             ),
-                                            SizedBox(height: 8),
-                                            Text(
-                                              'Client Mode - Limited Access',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.orange,
+                                            child: Icon(
+                                              Icons.devices,
+                                              size: 18,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  'Client Mode',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.grey.shade800,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'Connected to host server',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.green.shade200,
+                                                width: 1,
                                               ),
                                             ),
-                                            SizedBox(height: 4),
-                                            Text(
-                                              'You are connected as a client. Some features may be restricted.',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.grey,
-                                              ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Container(
+                                                  width: 6,
+                                                  height: 6,
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                    color: Colors.green,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Connected',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w500,
+                                                    color:
+                                                        Colors.green.shade700,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
                                     ),
 
@@ -198,7 +258,7 @@ class _MyPageState extends State<MakePayment> {
                                           crossAxisSpacing: crossAxisSpacing,
                                           padding: const EdgeInsets.all(8),
                                           children: [
-                                            // CONDITIONAL: Show payment creation - only if not client
+                                            // New Payment - always shown for authorized roles
                                             if (canCreatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
@@ -207,7 +267,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: true,
                                               ),
 
-                                            // CONDITIONAL: Show view payments - only if not client
+                                            // View Payments - always shown for authorized roles
                                             if (canViewPayments)
                                               const ElevatedCard(
                                                 icon: Icons.list,
@@ -217,7 +277,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: true,
                                               ),
 
-                                            // CONDITIONAL: Show reprint receipts - only if not client
+                                            // Re-print Receipts
                                             if (canReprintReceipts)
                                               const ElevatedCard(
                                                 icon: Icons.print,
@@ -226,7 +286,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: true,
                                               ),
 
-                                            // CONDITIONAL: Show update payments - only if not client
+                                            // Update Payments
                                             if (canUpdatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.update,
@@ -235,31 +295,20 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: true,
                                               ),
 
-                                            // CONDITIONAL: Show delete payments - only if not client
+                                            // Delete Payments
                                             if (canDeletePayments)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
                                                 target:
                                                     DeletePaidStudentBySurname(),
-                                                isLargeScreen: true,
-                                              ),
-
-                                            // CONDITIONAL: If client and has view permission, show limited view
-                                            if (showLimitedView)
-                                              const ElevatedCard(
-                                                icon: Icons.visibility,
-                                                text:
-                                                    'View Payments (Read Only)',
-                                                target:
-                                                    ViewAllStudentPayments(),
                                                 isLargeScreen: true,
                                               ),
                                           ],
                                         )
                                       : Column(
                                           children: [
-                                            // CONDITIONAL: Show payment creation - only if not client
+                                            // New Payment
                                             if (canCreatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.person_add,
@@ -268,7 +317,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: false,
                                               ),
 
-                                            // CONDITIONAL: Show view payments - only if not client
+                                            // View Payments
                                             if (canViewPayments)
                                               const ElevatedCard(
                                                 icon: Icons.list,
@@ -278,7 +327,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: false,
                                               ),
 
-                                            // CONDITIONAL: Show reprint receipts - only if not client
+                                            // Re-print Receipts
                                             if (canReprintReceipts)
                                               const ElevatedCard(
                                                 icon: Icons.print,
@@ -287,7 +336,7 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: false,
                                               ),
 
-                                            // CONDITIONAL: Show update payments - only if not client
+                                            // Update Payments
                                             if (canUpdatePayments)
                                               const ElevatedCard(
                                                 icon: Icons.update,
@@ -296,24 +345,13 @@ class _MyPageState extends State<MakePayment> {
                                                 isLargeScreen: false,
                                               ),
 
-                                            // CONDITIONAL: Show delete payments - only if not client
+                                            // Delete Payments
                                             if (canDeletePayments)
                                               const ElevatedCard(
                                                 icon: Icons.delete,
                                                 text: 'Delete Student Payments',
                                                 target:
                                                     DeletePaidStudentBySurname(),
-                                                isLargeScreen: false,
-                                              ),
-
-                                            // CONDITIONAL: If client and has view permission, show limited view
-                                            if (showLimitedView)
-                                              const ElevatedCard(
-                                                icon: Icons.visibility,
-                                                text:
-                                                    'View Payments (Read Only)',
-                                                target:
-                                                    ViewAllStudentPayments(),
                                                 isLargeScreen: false,
                                               ),
 

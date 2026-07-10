@@ -11,10 +11,12 @@ import 'package:zitf_system/revenues/accounts_vs_incomes_home.dart';
 import 'package:zitf_system/revenues/expenditures/expenditures_home.dart';
 import 'package:zitf_system/school_info/school_home.dart';
 import 'package:zitf_system/student_management/create_students/student_home.dart';
+import 'package:zitf_system/student_payments/receipt_history_page.dart';
 import 'package:zitf_system/teachers/teachers_creations/create_teachers_Home/teachers_options.dart';
 import 'package:zitf_system/teachers/teachers_payments/all_payments/payment_purpose/teacher_payments_purpose_home.dart';
 import 'package:zitf_system/terms/manage_terms.dart';
 import 'package:zitf_system/auth/userdb.dart';
+import 'package:zitf_system/student_payments/id_service.dart.dart'; // Add this import
 
 class CustomDrawerAdmin extends StatelessWidget {
   final User? loggedInUser;
@@ -144,6 +146,24 @@ class CustomDrawerAdmin extends StatelessWidget {
                             'Registers',
                             () => _navigate(
                                 context, const RegistersHomeScreen())),
+                      const Divider(),
+                      // ✅ ADD ID SERVICE SETTINGS - Only for Admin/SubAdmin
+                      if (isAdmin || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.numbers,
+                            'ID Service Settings',
+                            () => _navigate(
+                                context, const IdServiceSettingsPage())),
+                      const Divider(),
+                      // ✅ ADD RECEIPT HISTORY - For Admin/SubAdmin/Secretary
+                      if (isAdmin || isSubAdmin)
+                        _drawerItem(
+                            context,
+                            Icons.receipt,
+                            'Receipt History',
+                            () =>
+                                _navigate(context, const ReceiptHistoryPage())),
                       const Divider(),
                       _drawerItem(context, Icons.home, 'Home',
                           () => _navigate(context, const HomeScreen())),

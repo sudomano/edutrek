@@ -59,6 +59,16 @@ class _DeletePaidStudentBySurnameState
                 (payment.isDeleted ?? false))
             .toList();
         _deletedPayments = deleted;
+
+        // Log deleted payments for debugging
+        if (deleted.isNotEmpty) {
+          debugPrint(
+              '🔍 Found ${deleted.length} deleted payments for "$query"');
+          for (var p in deleted) {
+            debugPrint(
+                '  - ID: ${p.id}, Student: ${p.studentName} ${p.studentSurname}, Deleted: ${p.deletedAt}');
+          }
+        }
       } else {
         _deletedPayments = [];
       }
@@ -70,6 +80,9 @@ class _DeletePaidStudentBySurnameState
 
       if (payments.isEmpty && _deletedPayments.isEmpty) {
         _showDialog('No payments found for "$query"');
+      } else if (payments.isEmpty && _deletedPayments.isNotEmpty) {
+        _showDialog(
+            'Only deleted payments found for "$query". Toggle "Show Deleted" to view them.');
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -141,6 +154,9 @@ class _DeletePaidStudentBySurnameState
         throw Exception('Payment data is null');
       }
 
+      debugPrint(
+          '📝 Before delete - ID: ${currentPayment.id}, isDeleted: ${currentPayment.isDeleted}');
+
       // ✅ Mark as SOFT DELETED with sync flags
       currentPayment.markDeleted(
         deletedBy:
@@ -167,20 +183,37 @@ class _DeletePaidStudentBySurnameState
       // ✅ Save the updated (soft-deleted) payment
       await box.put(key, currentPayment);
 
+      debugPrint(
+          '✅ After delete - ID: ${currentPayment.id}, isDeleted: ${currentPayment.isDeleted}, deletedAt: ${currentPayment.deletedAt}');
+
       _showDialog('✅ Payment soft-deleted successfully!\n\n'
           'Student: ${currentPayment.studentName} ${currentPayment.studentSurname}\n'
           'Purpose: ${currentPayment.paymentPurpose}\n'
           'Amount: \$${currentPayment.amountToPay?.toStringAsFixed(2) ?? '0.00'}\n'
           'Deletion will sync to host when online.');
 
-      // ✅ Remove from active list
-      setState(() {
-        _matchingPayments.remove(paymentToDelete);
-        _isLoading = false;
-      });
+      // ✅ Remove from active list and refresh
+      await _refreshAfterDelete(paymentToDelete);
     } catch (e) {
       setState(() => _isLoading = false);
       _showDialog('❌ Error deleting payment: $e');
+    }
+  }
+
+  // ✅ Helper to refresh after delete/restore
+  Future<void> _refreshAfterDelete(StudentPayment? paymentToRemove) async {
+    setState(() {
+      if (paymentToRemove != null) {
+        _matchingPayments.remove(paymentToRemove);
+      }
+      _isLoading = false;
+    });
+
+    // ✅ Re-run search to refresh lists
+    if (_searchController.text.isNotEmpty) {
+      _searchPaymentsBySurname();
+    } else {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -192,12 +225,23 @@ class _DeletePaidStudentBySurnameState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Restore'),
-        content: Text(
-          'Restore payment record?\n\n'
-          'Student: ${paymentToRestore.studentName} ${paymentToRestore.studentSurname}\n'
-          'Purpose: ${paymentToRestore.paymentPurpose}\n'
-          'Amount: \$${paymentToRestore.amountToPay?.toStringAsFixed(2) ?? '0.00'}\n'
-          'Deleted: ${paymentToRestore.deletedAt?.toLocal() ?? 'Unknown'}',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Restore this payment record?',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+                'Student: ${paymentToRestore.studentName} ${paymentToRestore.studentSurname}'),
+            Text('Purpose: ${paymentToRestore.paymentPurpose}'),
+            Text(
+                'Amount: \$${paymentToRestore.amountToPay?.toStringAsFixed(2) ?? '0.00'}'),
+            if (paymentToRestore.deletedAt != null)
+              Text('Deleted: ${paymentToRestore.deletedAt!.toLocal()}'),
+          ],
         ),
         actions: [
           TextButton(
@@ -232,6 +276,9 @@ class _DeletePaidStudentBySurnameState
         throw Exception('Payment data is null');
       }
 
+      debugPrint(
+          '📝 Before restore - ID: ${currentPayment.id}, isDeleted: ${currentPayment.isDeleted}');
+
       // ✅ Restore the payment
       currentPayment.restoreDeleted();
       currentPayment.syncStatus = false;
@@ -251,19 +298,24 @@ class _DeletePaidStudentBySurnameState
 
       await box.put(key, currentPayment);
 
+      debugPrint(
+          '✅ After restore - ID: ${currentPayment.id}, isDeleted: ${currentPayment.isDeleted}');
+
       _showDialog('✅ Payment restored successfully!\n\n'
           'Student: ${currentPayment.studentName} ${currentPayment.studentSurname}\n'
           'Purpose: ${currentPayment.paymentPurpose}\n'
           'Restoration will sync to host when online.');
 
-      // ✅ Remove from deleted list and refresh search
+      // ✅ Remove from deleted list and refresh
       setState(() {
         _deletedPayments.remove(paymentToRestore);
         _isLoading = false;
       });
 
       // ✅ Re-run search to refresh lists
-      _searchPaymentsBySurname();
+      if (_searchController.text.isNotEmpty) {
+        _searchPaymentsBySurname();
+      }
     } catch (e) {
       setState(() => _isLoading = false);
       _showDialog('❌ Error restoring payment: $e');
@@ -418,6 +470,13 @@ class _DeletePaidStudentBySurnameState
       displayPayments.addAll(_deletedPayments);
     }
 
+    // Sort display payments: active first, then deleted
+    displayPayments.sort((a, b) {
+      if ((a.isDeleted ?? false) && !(b.isDeleted ?? false)) return 1;
+      if (!(a.isDeleted ?? false) && (b.isDeleted ?? false)) return -1;
+      return a.id?.compareTo(b.id ?? 0) ?? 0;
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -439,6 +498,24 @@ class _DeletePaidStudentBySurnameState
             onPressed: _toggleShowDeleted,
             tooltip: _showDeleted ? 'Hide Deleted' : 'Show Deleted',
           ),
+          // ✅ Show count badge on toggle
+          if (_deletedPayments.isNotEmpty && !_showDeleted)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_deletedPayments.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           IconButton(
             icon: const Icon(
               Icons.delete_forever,
@@ -620,6 +697,15 @@ class _DeletePaidStudentBySurnameState
                                           style: const TextStyle(
                                             fontSize: 12,
                                             color: Colors.grey,
+                                          ),
+                                        ),
+                                      // ✅ Show sync status
+                                      if (isDeleted)
+                                        Text(
+                                          'Sync Status: ${payment.deletedSyncStatus == true ? "✅ Synced" : "🔄 Pending Sync"}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.orange,
                                           ),
                                         ),
                                     ],
