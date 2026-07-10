@@ -459,8 +459,12 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         // be re-derived from presentDates/absentDates every time a
         // possibly-different date is loaded.
         for (var student in loadedStudents) {
+<<<<<<< HEAD
           student.isPresent =
               student.presentDates.any((d) => _isSameDay(d, date));
+=======
+          student.isPresent = student.presentDates.any((d) => _isSameDay(d, date));
+>>>>>>> 7d311023c2619e7d7fa273d034388c9ed21d5c8d
         }
       } else {
         // Mark all as present by default if not already marked

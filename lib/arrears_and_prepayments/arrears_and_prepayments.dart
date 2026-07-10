@@ -768,7 +768,7 @@ class _ViewByScreenState extends State<ArrearsAndPrepayments> {
       appBar: AppBar(
         title: const Center(
             child: Text(
-          'Arrears And Payments',
+          'Arrears And Paymentss',
           style: TextStyle(
             fontSize: 14.0, // Adjust font size
             fontWeight: FontWeight.normal, // Font weight

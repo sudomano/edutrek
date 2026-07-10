@@ -73,7 +73,7 @@ dependencies:
   crypto: ^3.0.7
   device_info_plus: ^11.3.0
   flutter_esc_pos_utils: ^1.0.1
-  flutter_plugin_android_lifecycle: 2.0.18
+  flutter_plugin_android_lifecycle: ^2.0.35
 
   #flexi_whatsapp_share: ^0.0.1
   #Sflutter_sms: ^2.3.3
@@ -83,8 +83,20 @@ dependencies:
   #sms_advanced: ^1.1.0
 
 dependency_overrides:
-  flutter_plugin_android_lifecycle: 2.0.18
+  flutter_plugin_android_lifecycle: ^2.0.35
   flutter_pdfview: 1.3.2
+  # background_sms, bluetooth_print and image_gallery_saver are unmaintained
+  # (no newer pub.dev release exists) and their Android code referenced
+  # PluginRegistry.Registrar, a Flutter v1-embedding class removed from the
+  # engine. Vendored copies in third_party/ have that dead code stripped
+  # (each already implements the modern v2 FlutterPlugin/onAttachedToEngine
+  # API, so removing it changes no runtime behavior).
+  background_sms:
+    path: third_party/background_sms
+  bluetooth_print:
+    path: third_party/bluetooth_print
+  image_gallery_saver:
+    path: third_party/image_gallery_saver
 
 
 dev_dependencies:

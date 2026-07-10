@@ -51,6 +51,13 @@ Map<String, dynamic> studentsToJson(Student cls) {
     'modifiedFields': cls.modifiedFields != null
         ? jsonEncode(cls.modifiedFields) // JSON encode the list
         : null,
+    'healthStauts': cls.healthStauts,
+    'healthDetailedInformation': cls.healthDetailedInformation,
+    'isDeleted': cls.isDeleted,
+    'deletedAt': cls.deletedAt?.toIso8601String(),
+    'deletedBy': cls.deletedBy,
+    'deleteReason': cls.deleteReason,
+    'deletedSyncStatus': cls.deletedSyncStatus,
   };
 }
 
@@ -61,7 +68,7 @@ Student studentsFromJson(Map<String, dynamic> json) {
     surname: json['surname'],
     class_: json['class'],
     gender: json['gender'],
-    age: DateTime.parse(json['age']),
+    age: json['age'] != null ? DateTime.parse(json['age']) : DateTime.now(),
     nationality: json['nationality'],
     district: json['district'],
     nationalIdNumber: json['nationalIdNumber'],
@@ -81,12 +88,14 @@ Student studentsFromJson(Map<String, dynamic> json) {
     enrollmentStatus: json['enrollmentStatus'],
 
     // Correctly parsing presentDates and absentDates as lists of DateTime
-    presentDates: (json['presentDates'] as List<dynamic>)
-        .map((date) => DateTime.parse(date as String))
-        .toList(),
-    absentDates: (json['absentDates'] as List<dynamic>)
-        .map((date) => DateTime.parse(date as String))
-        .toList(),
+    presentDates: (json['presentDates'] as List<dynamic>?)
+            ?.map((date) => DateTime.parse(date as String))
+            .toList() ??
+        [],
+    absentDates: (json['absentDates'] as List<dynamic>?)
+            ?.map((date) => DateTime.parse(date as String))
+            .toList() ??
+        [],
 
     termId: json['termId'],
     syncStatus: json['syncStatus'],
@@ -111,5 +120,14 @@ Student studentsFromJson(Map<String, dynamic> json) {
         ? DateTime.parse(json['isNewComerUntil'])
         : null,
     modifiedFields: parseStringList(json['modifiedFields']),
+    healthStauts: json['healthStauts'],
+    healthDetailedInformation: json['healthDetailedInformation'],
+    isDeleted: json['isDeleted'] ?? false,
+    deletedAt: json['deletedAt'] != null
+        ? DateTime.parse(json['deletedAt'])
+        : null,
+    deletedBy: json['deletedBy'],
+    deleteReason: json['deleteReason'],
+    deletedSyncStatus: json['deletedSyncStatus'] ?? false,
   );
 }

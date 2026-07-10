@@ -39,6 +39,65 @@ rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+
+// Several old, unmaintained plugins (background_sms, bluetooth_print,
+// image_gallery_saver, etc.) never added a namespace to their build.gradle,
+// which AGP 8+ requires. Backfill it from their own AndroidManifest.xml
+// package attribute instead of patching each one in the pub cache.
+// Must be registered before evaluationDependsOn(":app") below, which forces
+// early evaluation and would otherwise make afterEvaluate throw here.
+subprojects {
+    afterEvaluate { project ->
+        def androidExtension = project.extensions.findByName("android")
+        if (androidExtension != null && androidExtension.hasProperty("namespace") && androidExtension.namespace == null) {
+            def manifestFile = project.file("src/main/AndroidManifest.xml")
+            if (manifestFile.exists()) {
+                def matcher = (manifestFile.text =~ /package="([^"]+)"/)
+                if (matcher.find()) {
+                    androidExtension.namespace = matcher.group(1)
+                }
+            }
+        }
+        // Compiling with a JDK 9+ compiler (the only kind available on this
+        // machine) against compileSdkVersion < 30 is a hard AGP error,
+        // regardless of source/targetCompatibility. Old plugins pin very low
+        // compileSdkVersions (e.g. background_sms at 28); bump those up.
+        if (androidExtension != null) {
+            def currentCompileSdk = androidExtension.compileSdkVersion
+            def sdkNum = currentCompileSdk?.toString()?.replaceAll(/[^0-9]/, '')?.toInteger()
+            if (sdkNum != null && sdkNum < 36) {
+                androidExtension.compileSdkVersion(36)
+            }
+        }
+        // Old Kotlin-based plugins compile their Java sources at 1.8 but let
+        // Kotlin default its JVM target to whatever JDK runs Gradle (21 here),
+        // which Gradle rejects as an inconsistent JVM-target mismatch. Force
+        // both to 17 (AGP 8.13's own minimum), but only for modules that
+        // actually apply Kotlin - pure-Java plugins like background_sms pin
+        // their own low compileSdkVersion (28) that can't compile Java 17.
+        def hasKotlin = project.plugins.hasPlugin("org.jetbrains.kotlin.android") || project.plugins.hasPlugin("kotlin-android")
+        if (hasKotlin) {
+            if (androidExtension != null && androidExtension.hasProperty("compileOptions")) {
+                androidExtension.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+                androidExtension.compileOptions.targetCompatibility = JavaVersion.VERSION_17
+            }
+            project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = "17"
+                }
+            }
+        } else if (androidExtension != null && androidExtension.hasProperty("compileOptions")) {
+            // Pure-Java plugins that never set compileOptions themselves
+            // (e.g. background_sms) otherwise fall back to whatever JDK runs
+            // Gradle (21), which their old low compileSdkVersion can't
+            // compile against. Pin them explicitly to the Java 8 they were
+            // actually written for.
+            androidExtension.compileOptions.sourceCompatibility = JavaVersion.VERSION_1_8
+            androidExtension.compileOptions.targetCompatibility = JavaVersion.VERSION_1_8
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
