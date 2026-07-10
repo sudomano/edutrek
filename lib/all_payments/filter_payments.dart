@@ -1120,12 +1120,8 @@ class StudentsArrearsStatementScreenState
         }
 
         if (_knownClasses.isNotEmpty) {
-<<<<<<< HEAD
-          await _fetchStudentsForClass(_knownClasses.first, replaceCache: true);
-=======
           await _fetchStudentsForClass(_knownClasses.first,
               replaceCache: true);
->>>>>>> 7d311023c2619e7d7fa273d034388c9ed21d5c8d
           debugPrint(
               '✅ Fetched ${_students.length} students for first class (${_knownClasses.first})');
           if (mounted) setState(() {});
@@ -1427,12 +1423,8 @@ class StudentsArrearsStatementScreenState
   // Passed into FilterDialog so it can fetch a specific class's students on
   // demand if the user picks one that hasn't finished loading in the
   // background yet.
-<<<<<<< HEAD
-  Future<List<Student>> _fetchStudentsForClassOnDemand(String className) async {
-=======
   Future<List<Student>> _fetchStudentsForClassOnDemand(
       String className) async {
->>>>>>> 7d311023c2619e7d7fa273d034388c9ed21d5c8d
     await _fetchStudentsForClass(className);
     if (mounted) setState(() {});
     return _cachedServerStudents
@@ -7904,13 +7896,8 @@ class _FilterDialogState extends State<FilterDialog> {
   Future<void> _onApplyFiltersPressed() async {
     final selectedClass = _selectedClass;
     if (selectedClass != null && widget.onFetchClassStudents != null) {
-<<<<<<< HEAD
       final alreadyLoaded = _originalStudents.any(
           (s) => (s.class_ ?? '').toLowerCase() == selectedClass.toLowerCase());
-=======
-      final alreadyLoaded = _originalStudents
-          .any((s) => (s.class_ ?? '').toLowerCase() == selectedClass.toLowerCase());
->>>>>>> 7d311023c2619e7d7fa273d034388c9ed21d5c8d
 
       if (!alreadyLoaded) {
         setState(() => _isFetchingClassOnDemand = true);
